@@ -108,3 +108,143 @@ def test_request_exception_yields_missing(monkeypatch: pytest.MonkeyPatch):
     result = source.fetch(["EUNL"], date(2026, 8, 24))
 
     assert result["EUNL"].status == "missing"
+
+
+# --- USD-Ticker: EUR/USD-Umrechnung (Waehrungskonsistenz-Fix) ------------------
+
+
+def _dispatch_by_function(responses: dict[str, dict]):
+    def _get(url, params, timeout):
+        return _FakeResponse(responses[params["function"]])
+
+    return _get
+
+
+def test_usd_ticker_is_converted_to_eur(monkeypatch: pytest.MonkeyPatch):
+    responses = {
+        "CURRENCY_EXCHANGE_RATE": {"Realtime Currency Exchange Rate": {"5. Exchange Rate": "0.90"}},
+        "GLOBAL_QUOTE": {"Global Quote": {"05. price": "100.00"}},
+    }
+    monkeypatch.setattr(av.requests, "get", _dispatch_by_function(responses))
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["LITE"], date(2026, 8, 24))
+
+    assert result["LITE"].status == "ok"
+    assert result["LITE"].price == pytest.approx(90.0)
+
+
+def test_usd_eur_rate_fetched_only_once_for_multiple_usd_tickers(monkeypatch: pytest.MonkeyPatch):
+    call_count = {"CURRENCY_EXCHANGE_RATE": 0, "GLOBAL_QUOTE": 0}
+
+    def _get(url, params, timeout):
+        call_count[params["function"]] += 1
+        if params["function"] == "CURRENCY_EXCHANGE_RATE":
+            return _FakeResponse({"Realtime Currency Exchange Rate": {"5. Exchange Rate": "0.90"}})
+        return _FakeResponse({"Global Quote": {"05. price": "100.00"}})
+
+    monkeypatch.setattr(av.requests, "get", _get)
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["LITE", "TSLA"], date(2026, 8, 24))
+
+    assert call_count["CURRENCY_EXCHANGE_RATE"] == 1
+    assert call_count["GLOBAL_QUOTE"] == 2
+    assert result["LITE"].price == pytest.approx(90.0)
+    assert result["TSLA"].price == pytest.approx(90.0)
+
+
+def test_eur_ticker_is_not_converted(monkeypatch: pytest.MonkeyPatch):
+    def _fail_on_fx(url, params, timeout):
+        if params["function"] == "CURRENCY_EXCHANGE_RATE":
+            raise AssertionError("EUR-Ticker sollte keinen EUR/USD-Kurs abrufen")
+        return _FakeResponse({"Global Quote": {"05. price": "82.10"}})
+
+    monkeypatch.setattr(av.requests, "get", _fail_on_fx)
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].price == 82.10
+
+
+def test_usd_ticker_yields_missing_when_fx_rate_unavailable(monkeypatch: pytest.MonkeyPatch):
+    def _get(url, params, timeout):
+        if params["function"] == "CURRENCY_EXCHANGE_RATE":
+            return _FakeResponse({"Information": "rate limit"})
+        raise AssertionError("sollte ohne EUR/USD-Kurs keinen Kurs mehr abrufen")
+
+    monkeypatch.setattr(av.requests, "get", _get)
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["LITE"], date(2026, 8, 24))
+
+    assert result["LITE"].status == "missing"
+    assert result["LITE"].price is None
+
+
+# --- Historische Wochenkurse (fuer scripts/backfill_history.py) ---------------
+
+
+def test_fetch_weekly_history_filters_by_since_date(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "Weekly Time Series": {
+            "2026-08-14": {"4. close": "90.00"},
+            "2020-01-03": {"4. close": "50.00"},
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch_weekly_history("EUNL", since=date(2024, 1, 1))
+
+    assert result == {date(2026, 8, 14): 90.0}
+
+
+def test_fetch_weekly_history_raises_for_unmapped_ticker():
+    source = av.AlphaVantageSource(api_key="dummy")
+    with pytest.raises(ValueError):
+        source.fetch_weekly_history("UNKNOWN", since=date(2020, 1, 1))
+
+
+def test_fetch_weekly_history_raises_when_series_missing(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse({"Information": "..."}))
+    source = av.AlphaVantageSource(api_key="dummy")
+    with pytest.raises(RuntimeError):
+        source.fetch_weekly_history("EUNL", since=date(2020, 1, 1))
+
+
+def test_fetch_fx_weekly_eur_per_usd(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "Weekly Time Series (FX)": {
+            "2026-08-14": {"4. close": "0.9200"},
+            "2019-01-04": {"4. close": "0.8700"},
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch_fx_weekly_eur_per_usd(since=date(2024, 1, 1))
+
+    assert result == {date(2026, 8, 14): 0.92}
+
+
+def test_fetch_crypto_weekly_history_prefers_eur_column(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "Time Series (Digital Currency Weekly)": {
+            "2026-08-14": {"4a. close (USD)": "70000.00", "4b. close (EUR)": "58000.00"},
+            "2015-01-04": {"4a. close (USD)": "300.00", "4b. close (EUR)": "250.00"},
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch_crypto_weekly_history(since=date(2024, 1, 1))
+
+    assert result == {date(2026, 8, 14): 58000.0}
+
+
+def test_fetch_crypto_weekly_history_flat_format(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "Time Series (Digital Currency Weekly)": {
+            "2026-08-14": {"4. close": "58000.00"},
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch_crypto_weekly_history(since=date(2020, 1, 1))
+
+    assert result == {date(2026, 8, 14): 58000.0}

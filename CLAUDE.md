@@ -23,6 +23,7 @@ pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # 
 
 python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
 python scripts/record_prices.py --date 2026-08-17 --prices '{"EUNL": 82.1, ...}'  # manueller Kurseintrag
+python scripts/backfill_history.py --years 5        # einmaliger historischer Backfill (ersetzt price_history.csv, ~18 API-Requests)
 python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
 python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
 ```
@@ -98,7 +99,13 @@ inkrementell fortgeschrieben).
   `instruments.py` (außer BTC-EUR, eigener Krypto-Endpunkt) braucht einen
   Eintrag in `ALPHAVANTAGE_SYMBOLS`, sonst liefert der Abruf stillschweigend
   "missing" (siehe `tests/test_satellit_strategy.py` für den
-  Regressionstest, der das für alle Ticker prüft).
+  Regressionstest, der das für alle Ticker prüft). **Währungskonsistenz:**
+  `USD_TICKERS` markiert die Satelliten-Aktien ohne EUR-Notierung (alle
+  außer S92/SMA Solar) - `AlphaVantageSource.fetch()` rechnet sie bei jedem
+  Abruf per aktuellem `CURRENCY_EXCHANGE_RATE` (USD→EUR) um, damit die
+  (währungsblinde) Engine nicht USD-Beträge als EUR fehlinterpretiert.
+  Schlägt der EUR/USD-Abruf fehl, werden betroffene Ticker als `missing`
+  markiert statt falsch umgerechnet zu werden.
 - `engine.py` — die Simulation. Modellierungsentscheidungen, die beim
   Ändern zu beachten sind: Initialkauf-Gebühren werden vom Startkapital
   *vor* der Aufteilung abgezogen; spätere Trades (Rebalancing,
@@ -124,6 +131,26 @@ statt `scripts/run_fetch.py` einfach `scripts/record_prices.py --date ...
 GitHub-Actions-Cron-Schritt kann dafür deaktiviert werden, ohne den Rest des
 Systems anzufassen.
 
+### Historischer Backfill
+
+`data/price_history.csv` wächst im Normalbetrieb nur Woche für Woche seit
+Projektstart, weil `GLOBAL_QUOTE` nur den aktuellen Kurs liefert.
+`scripts/backfill_history.py` nutzt stattdessen `TIME_SERIES_WEEKLY` /
+`DIGITAL_CURRENCY_WEEKLY` (komplette verfügbare Historie in **einem**
+Request pro Ticker) und schreibt über `history_store.record_week()`
+(derselbe Pfad wie der Live-Abruf) die komplette Historie neu. USD-Ticker
+werden mit dem historischen `FX_WEEKLY`-Kurs derselben Woche umgerechnet
+(Forward-Fill bei fehlender Woche). Reine Datenbeschaffung
+(`collect_weekly_series`) und CSV-Schreiben (`write_backfilled_history`)
+sind als separate, unabhängig testbare Funktionen im Skript
+implementiert - siehe `tests/test_backfill_history.py` (mockt
+`AlphaVantageSource`, kein echter Netzwerkzugriff). **Stand:** Skript ist
+implementiert und per Mock-Tests verifiziert, aber noch nicht live gegen
+die echte Alpha-Vantage-API gelaufen (Tageslimit beim Verifizieren der
+Satelliten-Ticker-Symbole aufgebraucht) — vor dem ersten echten Lauf kurz
+gegenprüfen, dass `TIME_SERIES_WEEKLY`/`FX_WEEKLY`/`DIGITAL_CURRENCY_WEEKLY`
+im Free-Tier verfügbar sind.
+
 ### GitHub Actions (`.github/workflows/weekly-update.yml`)
 
 Läuft wöchentlich (Montag 06:00 UTC) + `workflow_dispatch`: Tests →
@@ -147,4 +174,7 @@ in der Engine anhand handgerechneter Werte sowie die konkreten Szenarien
 `tests/test_satellit_strategy.py` prüft den Einzelaktien-Satellit
 (`BARBELL_20_60_20_SATELLIT`): Symbol-Mapping-Vollständigkeit, Ziel-Gewichte
 summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
-mit allen 17 Instrumenten.
+mit allen 17 Instrumenten. `tests/test_backfill_history.py` prüft
+`scripts/backfill_history.py` (USD/EUR-Umrechnung inkl. Forward-Fill,
+ISO-Wochen-Gruppierung, Carry-Forward fehlender Ticker) gegen ein
+Fake-`AlphaVantageSource`-Objekt.

@@ -36,6 +36,7 @@ Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
 | `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html` |
 | `scripts/run_fetch.py` | Automatisierter wöchentlicher Kursabruf (GitHub Actions) |
 | `scripts/record_prices.py` | Manueller Andockpunkt für Kurse aus anderer Quelle (z. B. Cowork/Websuche) |
+| `scripts/backfill_history.py` | Einmaliger historischer Backfill von `price_history.csv` (echte Wochenkurse statt nur live gesammelter Wochen, siehe unten) |
 | `scripts/build_dashboard.py` | Baut `docs/index.html` neu aus der aktuellen Kurshistorie |
 
 ## Kursquelle wechseln
@@ -85,7 +86,40 @@ werden, ohne Code umzubauen.
    läuft über den separaten `DIGITAL_CURRENCY_DAILY`-Endpunkt. Die 10
    Einzelaktien des Satelliten-Topfs laufen bis auf SMA Solar (`S92.DEX`,
    Xetra) direkt über ihren US-Ticker in USD, inkl. der beiden ADRs BYDDY
-   (BYD) und RHHBY (Roche).
+   (BYD) und RHHBY (Roche) - eine durchgängige EUR-Notierung an der
+   Frankfurter Börse/Xetra existiert nicht für jeden Wert (z. B. nicht für
+   Coca-Cola). Deshalb rechnet `AlphaVantageSource` diese `USD_TICKERS` bei
+   jedem Abruf per aktuellem `CURRENCY_EXCHANGE_RATE` (USD→EUR) um - sonst
+   würde die (währungsblinde) Engine USD-Beträge fälschlich als EUR
+   behandeln. Schlägt der EUR/USD-Abruf fehl, werden die betroffenen Ticker
+   für diese Woche als `missing` markiert (Carry-Forward greift), statt
+   einen falsch umgerechneten Kurs zu speichern.
+
+## Historischer Backfill
+
+`data/price_history.csv` wächst im Normalbetrieb nur Woche für Woche seit
+Projektstart (`GLOBAL_QUOTE` liefert nur den aktuellen Kurs). Für
+aussagekräftige Simulationen über mehrere Marktzyklen (z. B. damit
+saisonale Szenarien wie "Sell in May" oder der 40-Wochen-SMA-Crossover
+überhaupt genug Historie zum Greifen haben) gibt es
+`scripts/backfill_history.py`: nutzt `TIME_SERIES_WEEKLY` /
+`DIGITAL_CURRENCY_WEEKLY` (liefern die komplette verfügbare Historie in
+**einem** Request pro Ticker, anders als `GLOBAL_QUOTE`) und schreibt das
+Ergebnis über `history_store.record_week()` (denselben Pfad wie der
+Live-Abruf, inkl. Wochen-Idempotenz und Carry-Forward) komplett neu in
+`price_history.csv`. USD-notierte Ticker werden dabei mit dem historischen
+`FX_WEEKLY`-Kurs der jeweils selben Woche umgerechnet (Forward-Fill, falls
+für eine Woche kein FX-Kurs vorliegt).
+
+```bash
+python scripts/backfill_history.py --years 5   # Default: 5 Jahre zurück
+```
+
+Verbraucht einmalig ca. 18 Requests (16 nicht-Krypto-Ticker + 1× `FX_WEEKLY`
++ 1× Krypto) - passt ins tägliche Free-Tier-Limit von 25, sollte aber nicht
+mehrfach am selben Tag laufen. **Ersetzt** `price_history.csv` komplett -
+kein Zusammenführen mit zuvor live gesammelten Wochen nötig, da der Backfill
+dieselben (und ältere) Wochen ohnehin mit abdeckt.
 
 ## Strategie hinzufügen
 
