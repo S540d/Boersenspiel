@@ -58,14 +58,20 @@ inkrementell fortgeschrieben).
   Optionales Feld `Strategy.gewichte_fn` macht die Ziel-Gewichte zeitabhängig
   statt konstant (Signatur `(rows, i) -> dict[ticker, Decimal]`, darf nur auf
   `rows[:i+1]` zugreifen, kein Lookahead-Bias) — Basis für `scenarios.py`.
-- `scenarios.py` — Auswertungs-Szenarien (Börsenweisheiten, Charttechnik) als
-  gewöhnliche `Strategy`-Instanzen mit gesetztem `gewichte_fn`: "Sell in May
-  and Go Away" (saisonal defensiv Mai–September), "Buy & Hold" (nie aktiv
-  rebalancieren) und ein SMA-Crossover (Golden/Death Cross, 10/40 Wochen) auf
-  dem MSCI-World-ETF als Trendindikator. Erster Ansatz, Parameter nicht
-  optimiert/gebacktestet. Weitere denkbare Szenarien (nicht implementiert):
-  Momentum-/Relative-Stärke-Rotation zwischen den Wachstums-Instrumenten,
-  volatilitätsbasierte Aktienquote, Cost-Average-Einstieg statt Einmalanlage.
+- `scenarios.py` — Auswertungs-Szenarien als gewöhnliche `Strategy`-Instanzen
+  mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten —
+  "Sell in May and Go Away" (saisonal defensiv Mai–September), "Buy & Hold"
+  (nie aktiv rebalancieren), "Jahresendrallye" (Dez/Jan Wachstumsquote auf
+  95%), "Antizyklisch kaufen" (Wachstumsquote auf 95% nach >10% Rückgang vom
+  Rolling-Hoch) und "Verluste begrenzen" (Trailing-Stop je Wachstums-
+  Instrument, >15% Rückgang vom eigenen Rolling-Hoch schaltet nur dieses
+  Instrument auf 0%); (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
+  10/40 Wochen) auf dem MSCI-World-ETF; (3) weitere Ansätze — Momentum-/
+  Relative-Stärke-Rotation (Top-2 der Wachstums-Instrumente nach
+  12-Wochen-Trailing-Rendite), volatilitätsbasierte Aktienquote (50–90%
+  Wachstum je nach realisierter EUNL-Volatilität) und Cost-Average-Einstieg
+  (Wachstumsquote rampt über 10 Wochen linear hoch statt Einmalanlage).
+  Erster Ansatz, Parameter nicht optimiert/gebacktestet.
   `scripts/build_dashboard.py` rendert `STRATEGIES + SCENARIOS` standardmäßig.
 - `history_store.py` — **einziger** Schreibzugriff auf
   `data/price_history.csv` / `data/fetch_log.csv`. `record_week()` ist
