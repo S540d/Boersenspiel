@@ -14,6 +14,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from decimal import Decimal
+from typing import TYPE_CHECKING, Callable
+
+if TYPE_CHECKING:
+    from .history_store import PriceRow
 
 
 @dataclass(frozen=True)
@@ -36,6 +40,14 @@ class Strategy:
     ziel_topf: str  # Name des Topfs, dessen Gewicht am Gesamtdepot überwacht wird (Rebalancing-Trigger)
     ziel_gewicht: Decimal  # Zielgewicht dieses Topfs, z. B. Decimal("0.20")
     rebalancing_schwelle_pp: Decimal  # Abweichung in Prozentpunkten, ab der rebalanciert wird
+    # Optional: macht die Ziel-Gewichte zeitabhängig statt konstant (z. B. saisonale
+    # Regeln oder charttechnische Signale wie "Sell in May" / SMA-Crossover). Bekommt
+    # die komplette (chronologisch sortierte) Kurshistorie plus den Index der aktuellen
+    # Zeile und liefert die Ziel-Gewichte am Gesamtdepot für GENAU diese Zeile - darf
+    # dabei nur auf rows[:i+1] zugreifen, um kein "Blick in die Zukunft" (Lookahead-Bias)
+    # einzubauen. None bedeutet: konstante Gewichte aus den toepfe/sub_gewichte (Barbell-
+    # Rebalancing-Verhalten, wie bisher).
+    gewichte_fn: Callable[[list["PriceRow"], int], dict[str, Decimal]] | None = None
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""

@@ -23,8 +23,8 @@ pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # 
 
 python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
 python scripts/record_prices.py --date 2026-08-17 --prices '{"EUNL": 82.1, ...}'  # manueller Kurseintrag
-python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv
-python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie rendern
+python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
+python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
 ```
 
 Kein Lint-/Format-Tooling konfiguriert; `pytest.ini` setzt `pythonpath = src`,
@@ -55,6 +55,18 @@ inkrementell fortgeschrieben).
   Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
   Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
   Annahmen — neue Strategien sind nur ein weiterer Eintrag in `STRATEGIES`.
+  Optionales Feld `Strategy.gewichte_fn` macht die Ziel-Gewichte zeitabhängig
+  statt konstant (Signatur `(rows, i) -> dict[ticker, Decimal]`, darf nur auf
+  `rows[:i+1]` zugreifen, kein Lookahead-Bias) — Basis für `scenarios.py`.
+- `scenarios.py` — Auswertungs-Szenarien (Börsenweisheiten, Charttechnik) als
+  gewöhnliche `Strategy`-Instanzen mit gesetztem `gewichte_fn`: "Sell in May
+  and Go Away" (saisonal defensiv Mai–September), "Buy & Hold" (nie aktiv
+  rebalancieren) und ein SMA-Crossover (Golden/Death Cross, 10/40 Wochen) auf
+  dem MSCI-World-ETF als Trendindikator. Erster Ansatz, Parameter nicht
+  optimiert/gebacktestet. Weitere denkbare Szenarien (nicht implementiert):
+  Momentum-/Relative-Stärke-Rotation zwischen den Wachstums-Instrumenten,
+  volatilitätsbasierte Aktienquote, Cost-Average-Einstieg statt Einmalanlage.
+  `scripts/build_dashboard.py` rendert `STRATEGIES + SCENARIOS` standardmäßig.
 - `history_store.py` — **einziger** Schreibzugriff auf
   `data/price_history.csv` / `data/fetch_log.csv`. `record_week()` ist
   Wochen-idempotent (schlüsselt über ISO-Kalenderwoche, nicht Kalenderdatum)
@@ -109,3 +121,6 @@ Strategien plus Determinismus (zweifacher Lauf → identisches Ergebnis).
 `tests/test_history_store.py` prüft Wochen-Idempotenz und Carry-Forward.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
 Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
+`tests/test_scenarios.py` verifiziert die generische `gewichte_fn`-Mechanik
+in der Engine anhand handgerechneter Werte sowie die konkreten Szenarien
+(Sell in May, Buy & Hold, SMA-Crossover) als End-to-End-Smoke-Tests.
