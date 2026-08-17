@@ -120,6 +120,11 @@ inkrementell fortgeschrieben).
 - `dashboard.py` + `templates/dashboard.html.j2` — reine Darstellungsschicht,
   rendert `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
   Strategie(n) aus `STRATEGIES` nach `docs/index.html`. Chart.js per CDN.
+  Ganz oben steht eine strategieübergreifende Vergleichsübersicht
+  ("Übersicht: Rendite im Vergleich" - Balkendiagramm + nach Rendite
+  sortierte Tabelle mit Sprunglinks zu den Detailabschnitten), Rendite und
+  URL-Slug je Strategie werden rein aus den vorhandenen
+  `engine.simulate()`-Ergebnissen abgeleitet.
 
 ### Kursquelle wechseln
 

@@ -33,7 +33,7 @@ Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
 | `src/boersenspiel/history_store.py` | Einziger Schreibzugriff auf `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Reine Simulationsfunktion: (Kurshistorie, Strategie) → Portfolio-/Steuerzustand |
-| `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html` |
+| `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html`, inkl. strategieübergreifender Renditen-Vergleichsübersicht oben |
 | `scripts/run_fetch.py` | Automatisierter wöchentlicher Kursabruf (GitHub Actions) |
 | `scripts/record_prices.py` | Manueller Andockpunkt für Kurse aus anderer Quelle (z. B. Cowork/Websuche) |
 | `scripts/backfill_history.py` | Einmaliger historischer Backfill von `price_history.csv` (echte Wochenkurse statt nur live gesammelter Wochen, siehe unten) |
