@@ -28,7 +28,7 @@ Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
 
 | Datei | Zweck |
 |---|---|
-| `src/boersenspiel/instruments.py` | Die 7 Instrumente (Ticker, ISIN) – quellenunabhängig |
+| `src/boersenspiel/instruments.py` | Die 17 Instrumente (7 Barbell-Basisinstrumente + 10 Einzelaktien-Satellit; Ticker, ISIN) – quellenunabhängig |
 | `src/boersenspiel/strategies.py` | Austauschbare Strategie-Definitionen (Gewichte, Töpfe, Rebalancing-Schwelle) + Steuer-/Gebührkonstanten |
 | `src/boersenspiel/history_store.py` | Einziger Schreibzugriff auf `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `alphavantage.py`) |
@@ -72,8 +72,9 @@ werden, ohne Code umzubauen.
 ### Alpha Vantage einrichten
 
 1. API-Key auf [alphavantage.co](https://www.alphavantage.co/support/#api-key)
-   holen (kostenloser Plan: 25 Requests/Tag, max. 1 Request/Sekunde – für 7
-   Ticker einmal wöchentlich ausreichend).
+   holen (kostenloser Plan: 25 Requests/Tag, max. 1 Request/Sekunde – bei
+   aktuell 17 Tickern einmal wöchentlich noch ausreichend, aber ohne viel
+   Spielraum für zusätzliche manuelle Abrufe am selben Tag).
 2. Als GitHub-Actions-Secret hinterlegen: Settings → Secrets and variables
    → Actions → New repository secret → Name `ALPHAVANTAGE_API_KEY`.
 3. Ticker-Symbole wurden per `SYMBOL_SEARCH` verifiziert und weichen teils
@@ -81,7 +82,10 @@ werden, ohne Code umzubauen.
    läuft auf Xetra unter dem lokalen Kürzel `IBC3.DEX`; SEMI (iShares
    Global Semiconductors) ist auf Xetra nicht gelistet, nur über die
    Amsterdam-Notierung `SEMI.AMS` (ebenfalls in EUR) verfügbar. BTC-EUR
-   läuft über den separaten `DIGITAL_CURRENCY_DAILY`-Endpunkt.
+   läuft über den separaten `DIGITAL_CURRENCY_DAILY`-Endpunkt. Die 10
+   Einzelaktien des Satelliten-Topfs laufen bis auf SMA Solar (`S92.DEX`,
+   Xetra) direkt über ihren US-Ticker in USD, inkl. der beiden ADRs BYDDY
+   (BYD) und RHHBY (Roche).
 
 ## Strategie hinzufügen
 
@@ -91,8 +95,14 @@ Sub-Gewichten, Ziel-Topf, Ziel-Gewicht, Rebalancing-Schwelle in
 Prozentpunkten) und zur `STRATEGIES`-Liste hinzugefügt – die Engine enthält
 keine Barbell-spezifischen Annahmen, `dashboard.py` rendert automatisch
 alle in `STRATEGIES` hinterlegten Strategien nebeneinander. Aktuell
-hinterlegt: `Barbell 20/80` (aus dem Pflichtenheft) und `Barbell 30/70`
-(Beispiel für eine alternative Gewichtung).
+hinterlegt: `Barbell 20/80` (aus dem Pflichtenheft), `Barbell 30/70`
+(Beispiel für eine alternative Gewichtung) und `Barbell 20/60/20 +
+Einzelaktien-Satellit` (erweitert Barbell 20/80 um einen dritten Topf mit
+10 gleichgewichteten Einzelaktien statt breiter ETFs – Gesamtrisikoprofil
+80% riskant / 20% sicher bleibt erhalten, siehe `strategies.py` für die
+Details und Auswahlbegründung). Zusätzlich gibt es in `scenarios.py`
+zeitabhängige Auswertungs-Szenarien (Börsenweisheiten, Charttechnik,
+weitere Ansätze) auf Basis der Barbell-20/80-Instrumente.
 
 ## Lokale Ausführung
 
@@ -147,7 +157,8 @@ pytest -q
   Crumb/Cookie-Authentifizierung, die die gepinnte Version (0.2.43) nicht
   mehr unterstützte. Deshalb Umstieg auf Alpha Vantage als Standardquelle.
 - **Alpha Vantage Free-Tier-Limit:** 25 Requests/Tag, max. 1 Request/Sekunde.
-  Bei 7 Tickern einmal wöchentlich unproblematisch; `AlphaVantageSource`
+  Bei aktuell 17 Tickern einmal wöchentlich noch unproblematisch, aber kaum
+  noch Puffer für weitere manuelle Abrufe am selben Tag; `AlphaVantageSource`
   hält zwischen den Requests einen Sleep ein. Schlägt ein Kurs dennoch fehl
   (z. B. durch Rate-Limit oder eine leere Antwort), wird der letzte bekannte
   Kurs übernommen und in `fetch_log.csv` vermerkt (nie eine Zeile mit

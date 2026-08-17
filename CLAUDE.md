@@ -49,8 +49,9 @@ inkrementell fortgeschrieben).
 
 ### Trennung der Verantwortlichkeiten (wichtig beim Erweitern)
 
-- `instruments.py` — die 7 Instrumente (Ticker, ISIN), **quellenunabhängig**.
-  Kein Provider-Symbol-Mapping hier.
+- `instruments.py` — die 17 Instrumente (7 Barbell-Basisinstrumente + 10
+  Einzelaktien-Satellit, s.u.), **quellenunabhängig**. Kein
+  Provider-Symbol-Mapping hier.
 - `strategies.py` — austauschbare `Strategy`-Definitionen (Töpfe,
   Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
   Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
@@ -58,6 +59,15 @@ inkrementell fortgeschrieben).
   Optionales Feld `Strategy.gewichte_fn` macht die Ziel-Gewichte zeitabhängig
   statt konstant (Signatur `(rows, i) -> dict[ticker, Decimal]`, darf nur auf
   `rows[:i+1]` zugreifen, kein Lookahead-Bias) — Basis für `scenarios.py`.
+  `BARBELL_20_60_20_SATELLIT` erweitert Barbell 20/80 um einen dritten Topf
+  "Einzelaktien-Satellit" (10 gleichgewichtete Einzelaktien statt breiter
+  ETFs): Topf A (Sicherheit) bleibt bei 20%, Topf B (breite ETFs/BTC) sinkt
+  von 80% auf 60%, die freiwerdenden 20% gehen in den neuen Topf C — das
+  80/20-Risikoprofil bleibt damit erhalten. Die 10 Aktien mischen bewusst
+  hoch-volatile Wachstums-/Themenwerte (Lumentum, BYD, SolarEdge, SMA Solar,
+  Tesla, Palantir, Strategy/vorm. MicroStrategy, Rivian) mit zwei defensiven
+  Blue Chips (Coca-Cola, Roche) als Gegenbeispiel — erster Ansatz, keine
+  Optimierung/Backtesting der Auswahl oder Gewichtung.
 - `scenarios.py` — Auswertungs-Szenarien als gewöhnliche `Strategy`-Instanzen
   mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten —
   "Sell in May and Go Away" (saisonal defensiv Mai–September), "Buy & Hold"
@@ -84,7 +94,11 @@ inkrementell fortgeschrieben).
   `yfinance_stooq.py` existiert noch als Referenzimplementierung, wird aber
   von `scripts/run_fetch.py` nicht mehr aufgerufen (yfinance scheiterte
   produktiv wiederholt an Yahoos Crumb/Cookie-Auth). Provider-Symbol-Mapping
-  gehört ausschließlich in die jeweilige Source-Datei.
+  gehört ausschließlich in die jeweilige Source-Datei — jeder Ticker in
+  `instruments.py` (außer BTC-EUR, eigener Krypto-Endpunkt) braucht einen
+  Eintrag in `ALPHAVANTAGE_SYMBOLS`, sonst liefert der Abruf stillschweigend
+  "missing" (siehe `tests/test_satellit_strategy.py` für den
+  Regressionstest, der das für alle Ticker prüft).
 - `engine.py` — die Simulation. Modellierungsentscheidungen, die beim
   Ändern zu beachten sind: Initialkauf-Gebühren werden vom Startkapital
   *vor* der Aufteilung abgezogen; spätere Trades (Rebalancing,
@@ -130,3 +144,7 @@ Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
 `tests/test_scenarios.py` verifiziert die generische `gewichte_fn`-Mechanik
 in der Engine anhand handgerechneter Werte sowie die konkreten Szenarien
 (Sell in May, Buy & Hold, SMA-Crossover) als End-to-End-Smoke-Tests.
+`tests/test_satellit_strategy.py` prüft den Einzelaktien-Satellit
+(`BARBELL_20_60_20_SATELLIT`): Symbol-Mapping-Vollständigkeit, Ziel-Gewichte
+summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
+mit allen 17 Instrumenten.

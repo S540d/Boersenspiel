@@ -2,9 +2,11 @@
 Scraping - deutlich zuverlässiger für GitHub Actions als yfinance, das
 wiederholt an Yahoos Crumb/Cookie-Authentifizierung scheiterte (siehe README).
 
-Free-Tier-Limits: 25 Requests/Tag, max. 1 Request/Sekunde. Bei 7 Tickern
-einmal wöchentlich unproblematisch; zwischen den Requests wird ein kleiner
-Sleep eingehalten, um das Sekundenlimit nicht zu reißen.
+Free-Tier-Limits: 25 Requests/Tag, max. 1 Request/Sekunde. Bei aktuell 17
+Tickern (7 Barbell-Basisinstrumente + 10 Einzelaktien-Satellit) einmal
+wöchentlich noch unproblematisch, lässt aber kaum noch Spielraum für
+zusätzliche manuelle Abrufe am selben Tag; zwischen den Requests wird ein
+kleiner Sleep eingehalten, um das Sekundenlimit nicht zu reißen.
 
 Läuft in GitHub Actions gegen die reine REST-API (nicht über den
 Alpha-Vantage-MCP-Server, der nur innerhalb einer Claude-Session verfügbar
@@ -31,6 +33,10 @@ ALPHAVANTAGE_URL = "https://www.alphavantage.co/query"
 # Semiconductors) ist auf Xetra nicht verfuegbar, nur ueber die
 # Amsterdam-Notierung ".AMS" (ebenfalls in EUR). BTC-EUR laeuft ueber einen
 # eigenen Krypto-Endpunkt, siehe _fetch_crypto.
+#
+# Einzelaktien-Satellit: US-notierte Werte (inkl. ADRs wie BYDDY/RHHBY)
+# laufen direkt unter ihrem Ticker in USD, nur SMA Solar (S92) ist analog zu
+# den ETFs oben ueber die Xetra-Notierung (".DEX") angebunden.
 ALPHAVANTAGE_SYMBOLS: dict[str, str] = {
     "EUNL": "EUNL.DEX",
     "EUNA": "EUNA.DEX",
@@ -38,6 +44,16 @@ ALPHAVANTAGE_SYMBOLS: dict[str, str] = {
     "LYMS": "LYMS.DEX",
     "EIMI": "IBC3.DEX",
     "SEMI": "SEMI.AMS",
+    "LITE": "LITE",
+    "BYDDY": "BYDDY",
+    "SEDG": "SEDG",
+    "S92": "S92.DEX",
+    "TSLA": "TSLA",
+    "PLTR": "PLTR",
+    "MSTR": "MSTR",
+    "RIVN": "RIVN",
+    "KO": "KO",
+    "RHHBY": "RHHBY",
 }
 
 _REQUEST_INTERVAL_SECONDS = 1.1

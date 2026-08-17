@@ -126,7 +126,66 @@ BARBELL_30_70 = Strategy(
     rebalancing_schwelle_pp=Decimal("15"),
 )
 
-STRATEGIES: list[Strategy] = [BARBELL_20_80, BARBELL_30_70]
+# --- Strategie 3: Barbell 20/60/20 + Einzelaktien-Satellit -----------------
+#
+# Erweitert Barbell 20/80 um einen dritten Topf mit 10 volatilen
+# Einzelaktien (statt breiter ETFs) als Satelliten-Beimischung. Topf A
+# (Sicherheit) bleibt bei 20% unveraendert; der bisherige Wachstums-Topf
+# (breite ETFs/BTC) wird von 80% auf 60% reduziert, die freiwerdenden 20%
+# gehen 1:1 in den neuen Einzelaktien-Topf - das Gesamtrisikoprofil (80%
+# "riskant" vs. 20% "sicher") bleibt damit wie beim Original-Barbell
+# erhalten, nur granularer gestreut. Die 10 Einzelaktien sind bewusst
+# gleichgewichtet (je 10% des Topfs) und mischen hoch-volatile Wachstums-
+# /Themenwerte mit zwei defensiven Blue Chips (Coca-Cola, Roche) als
+# Gegenbeispiel - kein Optimierungsziel, sondern Illustrationszweck fuer den
+# Renditevergleich mit den reinen ETF-Strategien.
+
+BARBELL_20_60_20_SATELLIT = Strategy(
+    name="Barbell 20/60/20 + Einzelaktien-Satellit",
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Sicherheit",
+            gewicht_gesamt=Decimal("0.20"),
+            sub_gewichte={
+                "EUNL": Decimal("0.50"),
+                "EUNA": Decimal("0.35"),
+                "4GLD": Decimal("0.15"),
+            },
+        ),
+        Topf(
+            name="Topf B - Wachstum",
+            gewicht_gesamt=Decimal("0.60"),
+            sub_gewichte={
+                "LYMS": Decimal("0.40"),
+                "SEMI": Decimal("0.30"),
+                "EIMI": Decimal("0.20"),
+                "BTC-EUR": Decimal("0.10"),
+            },
+        ),
+        Topf(
+            name="Topf C - Einzelaktien-Satellit",
+            gewicht_gesamt=Decimal("0.20"),
+            sub_gewichte={
+                "LITE": Decimal("0.10"),
+                "BYDDY": Decimal("0.10"),
+                "SEDG": Decimal("0.10"),
+                "S92": Decimal("0.10"),
+                "TSLA": Decimal("0.10"),
+                "PLTR": Decimal("0.10"),
+                "MSTR": Decimal("0.10"),
+                "RIVN": Decimal("0.10"),
+                "KO": Decimal("0.10"),
+                "RHHBY": Decimal("0.10"),
+            },
+        ),
+    ],
+    ziel_topf="Topf A - Sicherheit",
+    ziel_gewicht=Decimal("0.20"),
+    rebalancing_schwelle_pp=Decimal("10"),
+)
+
+STRATEGIES: list[Strategy] = [BARBELL_20_80, BARBELL_30_70, BARBELL_20_60_20_SATELLIT]
 
 STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
 
