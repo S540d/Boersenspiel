@@ -94,6 +94,10 @@
   th { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
   .overflow-x { overflow-x: auto; }
   footer { max-width: 1100px; margin: 24px auto 0; color: var(--text-muted); font-size: 0.8rem; }
+  .summary-chart-box { position: relative; height: 340px; margin-bottom: 20px; }
+  table.summary-table a { color: inherit; text-decoration: underline; text-decoration-color: var(--border); }
+  .positive { color: var(--good); }
+  .negative { color: var(--series-2); }
 </style>
 </head>
 <body>
@@ -102,8 +106,27 @@
   <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
 </header>
 <main>
+  <section class="strategy" id="uebersicht">
+    <h2>Übersicht: Rendite im Vergleich</h2>
+    <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
+    <div class="overflow-x">
+      <table class="summary-table">
+        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
+        <tbody>
+        {% for s in summary %}
+          <tr>
+            <td><a href="#{{ s.id }}">{{ s.name }}</a></td>
+            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
+            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
+            <td>{{ s.total_value }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
 {% for s in strategies %}
-  <section class="strategy">
+  <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
     <div class="stat-row">
       <div class="stat-tile"><div class="label">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
@@ -163,6 +186,27 @@
     y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
   };
   const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
+
+  new Chart(document.getElementById('summary-chart'), {
+    type: 'bar',
+    data: {
+      labels: {{ summary | map(attribute='name') | list | tojson }},
+      datasets: [{
+        label: 'Rendite %',
+        data: {{ summary | map(attribute='rendite_pct') | list | tojson }},
+        backgroundColor: {{ summary | map(attribute='rendite_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, title: { display: true, text: 'Rendite seit Simulationsbeginn (%)', color: colors.text } },
+      scales: {
+        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+      },
+    },
+  });
 
   {% for s in strategies %}
   new Chart(document.getElementById('value-chart-{{ loop.index }}'), {
