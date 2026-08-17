@@ -1,5 +1,7 @@
 # Börsenspiel – Barbell-Portfolio-Dashboard
 
+**📊 Dashboard:** [s540d.github.io/Boersenspiel](https://s540d.github.io/Boersenspiel/)
+
 Virtuelles Portfolio nach Barbell-Strategie, auf Basis des Pflichtenhefts
 `Pflichtenheft_PortfolioProjekt_v2.md`. Technisch wurde bewusst abweichend
 umgesetzt (siehe [Abweichungen](#abweichungen-vom-pflichtenheft) unten):
