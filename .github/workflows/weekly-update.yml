@@ -30,7 +30,9 @@ jobs:
       - name: Tests ausführen
         run: pytest -q
 
-      - name: Kurse abrufen (yfinance primär, Stooq-Fallback)
+      - name: Kurse abrufen (Alpha Vantage)
+        env:
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
         run: python scripts/run_fetch.py
 
       - name: Dashboard neu bauen

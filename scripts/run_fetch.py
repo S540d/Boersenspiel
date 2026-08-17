@@ -1,11 +1,14 @@
 #!/usr/bin/env python3
 """Wöchentlicher automatisierter Kursabruf (Standardweg, für GitHub Actions).
 
-Nutzt die austauschbare ``YfinanceStooqSource`` (yfinance primär, Stooq als
-Fallback) und schreibt das Ergebnis über ``history_store.record_week`` in
-``data/price_history.csv``. Soll der Kursabruf stattdessen manuell/über
-Cowork laufen, wird dieses Script einfach nicht aufgerufen - siehe
-``record_prices.py`` für den alternativen Weg mit identischem Ergebnisformat.
+Nutzt die austauschbare ``AlphaVantageSource`` (offizielle, API-Key-basierte
+REST-API - zuverlässiger als das zuvor genutzte yfinance/Stooq-Scraping, das
+an Yahoos Crumb/Cookie-Authentifizierung scheiterte) und schreibt das Ergebnis
+über ``history_store.record_week`` in ``data/price_history.csv``. Benötigt die
+Umgebungsvariable ``ALPHAVANTAGE_API_KEY`` (als GitHub-Actions-Secret
+hinterlegt). Soll der Kursabruf stattdessen manuell/über Cowork laufen, wird
+dieses Script einfach nicht aufgerufen - siehe ``record_prices.py`` für den
+alternativen Weg mit identischem Ergebnisformat.
 """
 
 from __future__ import annotations
@@ -18,7 +21,7 @@ import _bootstrap  # noqa: F401
 
 from boersenspiel.history_store import record_week
 from boersenspiel.instruments import TICKERS
-from boersenspiel.sources.yfinance_stooq import YfinanceStooqSource
+from boersenspiel.sources.alphavantage import AlphaVantageSource
 
 
 def main() -> int:
@@ -31,7 +34,7 @@ def main() -> int:
     )
     args = parser.parse_args()
 
-    source = YfinanceStooqSource()
+    source = AlphaVantageSource()
     quotes = source.fetch(TICKERS, args.date)
 
     missing = [t for t, q in quotes.items() if q.status != "ok"]

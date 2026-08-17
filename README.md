@@ -29,7 +29,7 @@ Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
 | `src/boersenspiel/instruments.py` | Die 7 Instrumente (Ticker, ISIN) – quellenunabhängig |
 | `src/boersenspiel/strategies.py` | Austauschbare Strategie-Definitionen (Gewichte, Töpfe, Rebalancing-Schwelle) + Steuer-/Gebührkonstanten |
 | `src/boersenspiel/history_store.py` | Einziger Schreibzugriff auf `data/price_history.csv` / `data/fetch_log.csv` |
-| `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `yfinance_stooq.py`) |
+| `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Reine Simulationsfunktion: (Kurshistorie, Strategie) → Portfolio-/Steuerzustand |
 | `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html` |
 | `scripts/run_fetch.py` | Automatisierter wöchentlicher Kursabruf (GitHub Actions) |
@@ -44,20 +44,42 @@ egal woher die Kurse kommen, landen sie im selben CSV-Format mit derselben
 Wochen-Idempotenz und demselben Carry-Forward-Vermerk bei fehlenden Kursen.
 
 - **Standard (GitHub Actions):** `scripts/run_fetch.py` nutzt
-  `YfinanceStooqSource` (yfinance primär, Stooq-CSV als Fallback). Dafür
-  muss pro Ticker ein Symbol bei beiden Anbietern gepflegt werden (siehe
-  `src/boersenspiel/sources/yfinance_stooq.py`).
-- **Alternative (Cowork/Websuche):** Um keine Ticker-Symbol-Mappings
-  pflegen zu müssen, kann der Kursabruf stattdessen manuell/über einen
-  Cowork-Scheduled-Task laufen, der die Kurse per Websuche ermittelt und
-  direkt an `scripts/record_prices.py --date ... --prices '{"EUNL": ..., ...}'`
+  `AlphaVantageSource` – die offizielle, API-Key-basierte Alpha-Vantage-
+  REST-API (`src/boersenspiel/sources/alphavantage.py`). Benötigt die
+  Umgebungsvariable `ALPHAVANTAGE_API_KEY` (siehe unten). Ticker-Symbol-
+  Mapping liegt ausschließlich in dieser Datei.
+- **Zuvor genutzt, weiterhin im Repo vorhanden:** `YfinanceStooqSource`
+  (`src/boersenspiel/sources/yfinance_stooq.py`, yfinance primär, Stooq-CSV
+  als Fallback) – wurde als Standardquelle abgelöst, da yfinance
+  wiederholt an Yahoos Crumb/Cookie-Authentifizierung scheiterte (leere
+  Antworten für alle Ticker, siehe Bekannte Einschränkungen unten). Bleibt
+  als Beispiel für eine austauschbare Quelle im Repo, wird aber von
+  `run_fetch.py` nicht mehr aufgerufen.
+- **Alternative (Cowork/Websuche):** Um weder ein API-Key-Limit noch
+  Ticker-Symbol-Mappings pflegen zu müssen, kann der Kursabruf stattdessen
+  manuell/über einen Cowork-Scheduled-Task laufen, der die Kurse per
+  Websuche ermittelt und direkt an
+  `scripts/record_prices.py --date ... --prices '{"EUNL": ..., ...}'`
   übergibt. Dazu einfach den `run_fetch.py`-Schritt (oder den ganzen Cron)
   im Workflow deaktivieren. Engine, Dashboard und Tests bleiben davon
   unberührt.
 
-Die Entscheidung zwischen beiden Wegen kann jederzeit und situativ
-getroffen werden (z. B. bei Yahoo-Blockaden auf Cowork umstellen), ohne
-Code umzubauen.
+Die Entscheidung zwischen den Wegen kann jederzeit und situativ getroffen
+werden, ohne Code umzubauen.
+
+### Alpha Vantage einrichten
+
+1. API-Key auf [alphavantage.co](https://www.alphavantage.co/support/#api-key)
+   holen (kostenloser Plan: 25 Requests/Tag, max. 1 Request/Sekunde – für 7
+   Ticker einmal wöchentlich ausreichend).
+2. Als GitHub-Actions-Secret hinterlegen: Settings → Secrets and variables
+   → Actions → New repository secret → Name `ALPHAVANTAGE_API_KEY`.
+3. Ticker-Symbole wurden per `SYMBOL_SEARCH` verifiziert und weichen teils
+   vom naheliegenden Muster ab: Xetra-Suffix ist `.DEX` (nicht `.DE`); EIMI
+   läuft auf Xetra unter dem lokalen Kürzel `IBC3.DEX`; SEMI (iShares
+   Global Semiconductors) ist auf Xetra nicht gelistet, nur über die
+   Amsterdam-Notierung `SEMI.AMS` (ebenfalls in EUR) verfügbar. BTC-EUR
+   läuft über den separaten `DIGITAL_CURRENCY_DAILY`-Endpunkt.
 
 ## Strategie hinzufügen
 
@@ -79,7 +101,7 @@ pip install -r requirements.txt
 python scripts/record_prices.py --date 2026-08-17 \
   --prices '{"EUNL": 82.1, "EUNA": 4.95, "4GLD": 61.3, "LYMS": 21.4, "SEMI": 47.8, "EIMI": 29.1, "BTC-EUR": 58000}'
 
-# oder automatisiert via yfinance/Stooq
+# oder automatisiert via Alpha Vantage (ALPHAVANTAGE_API_KEY muss gesetzt sein)
 python scripts/run_fetch.py
 
 # Dashboard bauen
@@ -116,11 +138,18 @@ pytest -q
 
 ## Bekannte Einschränkungen
 
-- **yfinance** ist eine inoffizielle Bibliothek gegen undokumentierte
-  Yahoo-Endpunkte und kann brechen oder IP-seitig blockiert werden. Der
-  Stooq-Fallback mindert das Risiko; schlägt für einen Ticker auch das
-  fehl, wird der letzte bekannte Kurs übernommen und in `fetch_log.csv`
-  vermerkt (nie eine Zeile mit Lücke).
+- **yfinance** (nicht mehr Standardquelle) ist eine inoffizielle Bibliothek
+  gegen undokumentierte Yahoo-Endpunkte. Im ersten produktiven Workflow-Lauf
+  (17.08.2026) scheiterte sie für alle 7 Ticker mit
+  `Expecting value: line 1 column 1` – Yahoo verlangt inzwischen eine
+  Crumb/Cookie-Authentifizierung, die die gepinnte Version (0.2.43) nicht
+  mehr unterstützte. Deshalb Umstieg auf Alpha Vantage als Standardquelle.
+- **Alpha Vantage Free-Tier-Limit:** 25 Requests/Tag, max. 1 Request/Sekunde.
+  Bei 7 Tickern einmal wöchentlich unproblematisch; `AlphaVantageSource`
+  hält zwischen den Requests einen Sleep ein. Schlägt ein Kurs dennoch fehl
+  (z. B. durch Rate-Limit oder eine leere Antwort), wird der letzte bekannte
+  Kurs übernommen und in `fetch_log.csv` vermerkt (nie eine Zeile mit
+  Lücke).
 - **BTC-EUR/Xetra-Zeitversatz:** Ein Montagvormittag-Lauf liefert für die
   Xetra-ETFs den Freitagsschluss der Vorwoche, für BTC-EUR (24/7-Markt)
   aber einen zeitlich leicht abweichenden, aktuelleren Kurs – die
