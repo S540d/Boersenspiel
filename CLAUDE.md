@@ -1,0 +1,111 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
+## Project
+
+Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie (siehe
+`Pflichtenheft_PortfolioProjekt_v2.md` für die ursprünglichen Anforderungen).
+Wöchentlicher Kursabruf via GitHub Actions, Kurshistorie als CSV im Repo,
+statisches Dashboard (Chart.js) auf GitHub Pages. Es gibt keinen PR-Workflow
+in diesem Repo — Änderungen gehen direkt auf den Default-Branch
+(`claude/pflichtenheft-umsetzung-planen-6kf05s`, fungiert als `main`, da das
+Repo ursprünglich leer war).
+
+## Commands
+
+```bash
+pip install -r requirements.txt
+
+pytest -q                          # gesamte Testsuite
+pytest tests/test_engine.py -q     # einzelne Testdatei
+pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # einzelner Test
+
+python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
+python scripts/record_prices.py --date 2026-08-17 --prices '{"EUNL": 82.1, ...}'  # manueller Kurseintrag
+python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv
+python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie rendern
+```
+
+Kein Lint-/Format-Tooling konfiguriert; `pytest.ini` setzt `pythonpath = src`,
+sodass `boersenspiel` ohne Installation importierbar ist.
+
+## Architektur
+
+```
+Kursquelle (austauschbar) --> data/price_history.csv --> engine.simulate() --> docs/index.html
+                                       ^                        |
+                                data/fetch_log.csv        (pro Strategie)
+```
+
+**Leitprinzip:** Nur Rohdaten (Kurse) werden dauerhaft gespeichert. Alles
+Abgeleitete (Positionswerte, Rebalancing, Steuer, Freibetrag, Verlustvortrag)
+wird bei jeder Dashboard-Erzeugung komplett neu aus der Kurshistorie
+berechnet — `engine.simulate(price_history, strategy)` ist eine **reine
+Funktion** ohne eigenen Zustand, kein I/O, kein `datetime.now()`. Das
+garantiert Determinismus: identische Kurshistorie + identische Strategie
+ergeben immer dasselbe Ergebnis, bei jedem Aufruf neu simuliert (nicht
+inkrementell fortgeschrieben).
+
+### Trennung der Verantwortlichkeiten (wichtig beim Erweitern)
+
+- `instruments.py` — die 7 Instrumente (Ticker, ISIN), **quellenunabhängig**.
+  Kein Provider-Symbol-Mapping hier.
+- `strategies.py` — austauschbare `Strategy`-Definitionen (Töpfe,
+  Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
+  Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
+  Annahmen — neue Strategien sind nur ein weiterer Eintrag in `STRATEGIES`.
+- `history_store.py` — **einziger** Schreibzugriff auf
+  `data/price_history.csv` / `data/fetch_log.csv`. `record_week()` ist
+  Wochen-idempotent (schlüsselt über ISO-Kalenderwoche, nicht Kalenderdatum)
+  und macht Carry-Forward bei fehlenden Kursen (nie eine Zeile mit Lücke,
+  sofern ein Vorwert existiert).
+- `sources/` — austauschbare `PriceSource`-Implementierungen
+  (`sources/__init__.py` definiert das Protokoll). **Standard:**
+  `alphavantage.py` (offizielle REST-API, braucht `ALPHAVANTAGE_API_KEY`).
+  `yfinance_stooq.py` existiert noch als Referenzimplementierung, wird aber
+  von `scripts/run_fetch.py` nicht mehr aufgerufen (yfinance scheiterte
+  produktiv wiederholt an Yahoos Crumb/Cookie-Auth). Provider-Symbol-Mapping
+  gehört ausschließlich in die jeweilige Source-Datei.
+- `engine.py` — die Simulation. Modellierungsentscheidungen, die beim
+  Ändern zu beachten sind: Initialkauf-Gebühren werden vom Startkapital
+  *vor* der Aufteilung abgezogen; spätere Trades (Rebalancing,
+  Dezember-Harvest) mindern beim Verkauf den realisierten Gewinn um die
+  Gebühr und schlagen sie beim Kauf auf die Kostenbasis; Kostenbasis läuft
+  nach der Durchschnittskosten-Methode (kein FIFO/LIFO); Rebalancing bringt
+  bei Auslösung *alle* Instrumente auf ihr Zielgewicht zurück, nicht nur den
+  auslösenden Topf; alle Geld-/Stückzahl-Arithmetik nutzt `Decimal`, nie
+  `float`. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
+  verbleibende Sparerpauschbetrag des Jahres gedeckt ist, mit sofortigem
+  Rückkauf zum selben Kurs.
+- `dashboard.py` + `templates/dashboard.html.j2` — reine Darstellungsschicht,
+  rendert `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
+  Strategie(n) aus `STRATEGIES` nach `docs/index.html`. Chart.js per CDN.
+
+### Kursquelle wechseln
+
+Jede Quelle liefert nur `dict[ticker, PriceQuote]` an
+`history_store.record_week()` — Engine/Dashboard/Tests sind davon
+unabhängig. Um z. B. auf manuellen Kursabruf (Websuche/Cowork) umzustellen,
+statt `scripts/run_fetch.py` einfach `scripts/record_prices.py --date ...
+--prices '{...}'` mit den ermittelten Kursen aufrufen; der
+GitHub-Actions-Cron-Schritt kann dafür deaktiviert werden, ohne den Rest des
+Systems anzufassen.
+
+### GitHub Actions (`.github/workflows/weekly-update.yml`)
+
+Läuft wöchentlich (Montag 06:00 UTC) + `workflow_dispatch`: Tests →
+Kursabruf (Alpha Vantage) → Dashboard-Build → Commit von
+`data/price_history.csv`/`data/fetch_log.csv` zurück ins Repo →
+GitHub-Pages-Deploy. Braucht die Secrets/Settings: Repo-Secret
+`ALPHAVANTAGE_API_KEY`; Settings → Actions → Workflow permissions → "Read
+and write permissions"; Settings → Pages → Source → "GitHub Actions".
+
+### Tests
+
+`tests/test_engine.py` verifiziert die Simulation gegen von Hand
+vorgerechnete Werte (nicht nur Smoke-Tests) für zwei unterschiedliche
+Strategien plus Determinismus (zweifacher Lauf → identisches Ergebnis).
+`tests/test_history_store.py` prüft Wochen-Idempotenz und Carry-Forward.
+`tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
+Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
