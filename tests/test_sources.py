@@ -49,7 +49,7 @@ def test_yfinance_failure_falls_back_to_stooq(monkeypatch: pytest.MonkeyPatch):
         def raise_for_status(self) -> None:
             return None
 
-    monkeypatch.setattr(ys.requests, "get", lambda url, timeout: _FakeResponse())
+    monkeypatch.setattr(ys.requests, "get", lambda url, timeout, headers=None: _FakeResponse())
 
     source = ys.YfinanceStooqSource()
     result = source.fetch(["EUNL"], date(2024, 1, 1))
