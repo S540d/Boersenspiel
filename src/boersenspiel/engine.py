@@ -92,8 +92,16 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         raise ValueError("Kurshistorie ist leer - Simulation benötigt mindestens eine Zeile")
 
     rows = sorted(price_history, key=lambda r: r.date)
-    weights = strategy.alle_ticker_gewichte()
-    tickers = sorted(weights.keys())
+    base_weights = strategy.alle_ticker_gewichte()
+    tickers = sorted(base_weights.keys())
+
+    def weights_at(i: int) -> dict[str, Decimal]:
+        """Ziel-Gewichte für Zeile ``i``: dynamisch via ``gewichte_fn`` (z. B.
+        saisonale/charttechnische Szenarien) oder sonst die konstanten
+        Barbell-Gewichte, unverändert wie bisher."""
+        if strategy.gewichte_fn is not None:
+            return strategy.gewichte_fn(rows, i)
+        return base_weights
 
     positions: dict[str, _Position] = {t: _Position() for t in tickers}
     trades: list[Trade] = []
@@ -129,13 +137,15 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         return {t: positions[t].units * prices[t] for t in tickers if t in prices}
 
     def rebalance_to_targets(
-        prices: dict[str, Decimal], trade_date: date, reason: str
+        prices: dict[str, Decimal], trade_date: date, reason: str, weights: dict[str, Decimal]
     ) -> bool:
         values = current_values(prices)
         total_value = sum(values.values(), Decimal(0))
         if total_value <= 0:
             return False
-        diffs = {t: weights[t] * total_value - values.get(t, Decimal(0)) for t in tickers}
+        diffs = {
+            t: weights.get(t, Decimal(0)) * total_value - values.get(t, Decimal(0)) for t in tickers
+        }
         executed = False
         for t in tickers:
             diff = diffs[t]
@@ -227,6 +237,7 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         reset_year_if_needed(row.date.year)
 
         if i == 0:
+            initial_weights = weights_at(0)
             num_instruments = len(tickers)
             total_fees = ORDERGEBUEHR * num_instruments
             investable = strategy.startkapital - total_fees
@@ -234,7 +245,7 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                 price = prices.get(t)
                 if price is None:
                     continue
-                buy_value = investable * weights[t]
+                buy_value = investable * initial_weights.get(t, Decimal(0))
                 units = buy_value / price
                 positions[t].units = units
                 positions[t].cost_total = buy_value
@@ -244,13 +255,21 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             total_value = sum(values.values(), Decimal(0))
             if total_value > 0:
                 ziel_topf = next(t for t in strategy.toepfe if t.name == strategy.ziel_topf)
+                if strategy.gewichte_fn is not None:
+                    current_weights = strategy.gewichte_fn(rows, i)
+                    ziel_gewicht_effektiv = sum(
+                        (current_weights.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
+                    )
+                else:
+                    current_weights = base_weights
+                    ziel_gewicht_effektiv = strategy.ziel_gewicht
                 ziel_topf_value = sum(
                     (values.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
                 )
                 ist_gewicht = ziel_topf_value / total_value
-                abweichung_pp = abs(ist_gewicht - strategy.ziel_gewicht) * 100
+                abweichung_pp = abs(ist_gewicht - ziel_gewicht_effektiv) * 100
                 if abweichung_pp > strategy.rebalancing_schwelle_pp:
-                    if rebalance_to_targets(prices, row.date, "rebalance"):
+                    if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
                         last_rebalance_date = row.date
 
         if row.date in harvest_dates:

@@ -27,16 +27,24 @@ def _f(value: Decimal) -> float:
     return float(value)
 
 
-def _build_strategy_view(strategy: Strategy, result: SimulationResult) -> dict:
+def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
     points = result.value_history
     labels = [vp.date.isoformat() for vp in points]
     total_values = [_f(vp.total_value) for vp in points]
 
     topf_names = [topf.name for topf in strategy.toepfe]
     topf_series = {name: [_f(vp.topf_weights.get(name, Decimal(0))) * 100 for vp in points] for name in topf_names}
-    topf_targets = {topf.name: _f(topf.gewicht_gesamt) * 100 for topf in strategy.toepfe}
 
-    ticker_targets = strategy.alle_ticker_gewichte()
+    # Bei Szenario-Strategien (gewichte_fn gesetzt) sind die Ziel-Gewichte zeitabhängig -
+    # fuer die Anzeige wird das Ziel-Regime der letzten Kurszeile herangezogen.
+    if strategy.gewichte_fn is not None:
+        ticker_targets = strategy.gewichte_fn(rows, len(rows) - 1)
+    else:
+        ticker_targets = strategy.alle_ticker_gewichte()
+    topf_targets = {
+        topf.name: _f(sum((ticker_targets.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0))) * 100
+        for topf in strategy.toepfe
+    }
     last = points[-1]
     holdings_table = []
     for ticker, units in sorted(result.holdings.items()):
@@ -87,8 +95,9 @@ def build_dashboard(
     if not price_history:
         raise ValueError("Kurshistorie ist leer - kein Dashboard erzeugbar")
     strategies = strategies if strategies is not None else STRATEGIES
+    rows = sorted(price_history, key=lambda r: r.date)
 
-    views = [_build_strategy_view(s, simulate(price_history, s)) for s in strategies]
+    views = [_build_strategy_view(s, simulate(rows, s), rows) for s in strategies]
 
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
