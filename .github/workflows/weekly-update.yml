@@ -1,0 +1,63 @@
+name: Wöchentliches Kurs-Update & Dashboard
+
+on:
+  schedule:
+    # Montag 06:00 UTC - nach Xetra-Vorwochenschluss, vor Xetra-Handelsbeginn.
+    - cron: "0 6 * * 1"
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  fetch-and-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Tests ausführen
+        run: pytest -q
+
+      - name: Kurse abrufen (yfinance primär, Stooq-Fallback)
+        run: python scripts/run_fetch.py
+
+      - name: Dashboard neu bauen
+        run: python scripts/build_dashboard.py
+
+      - name: Kurshistorie committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/price_history.csv data/fetch_log.csv
+          git diff --cached --quiet || git commit -m "chore: wöchentliches Kurs-Update $(date -u +%F)"
+          git push
+
+      - name: Pages-Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: fetch-and-build
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

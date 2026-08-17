@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Barbell-Portfolio Dashboard</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+  :root {
+    color-scheme: light;
+    --surface-1: #fcfcfb;
+    --page: #f9f9f7;
+    --text-primary: #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted: #898781;
+    --grid: #e1e0d9;
+    --axis: #c3c2b7;
+    --border: rgba(11,11,11,0.10);
+    --series-1: #2a78d6;
+    --series-2: #eb6834;
+    --series-3: #1baf7a;
+    --series-4: #eda100;
+    --good: #006300;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:not([data-theme="light"]) {
+      color-scheme: dark;
+      --surface-1: #1a1a19;
+      --page: #0d0d0d;
+      --text-primary: #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted: #898781;
+      --grid: #2c2c2a;
+      --axis: #383835;
+      --border: rgba(255,255,255,0.10);
+      --series-1: #3987e5;
+      --series-2: #d95926;
+      --series-3: #199e70;
+      --series-4: #c98500;
+      --good: #0ca30c;
+    }
+  }
+  :root[data-theme="dark"] {
+    color-scheme: dark;
+    --surface-1: #1a1a19;
+    --page: #0d0d0d;
+    --text-primary: #ffffff;
+    --text-secondary: #c3c2b7;
+    --text-muted: #898781;
+    --grid: #2c2c2a;
+    --axis: #383835;
+    --border: rgba(255,255,255,0.10);
+    --series-1: #3987e5;
+    --series-2: #d95926;
+    --series-3: #199e70;
+    --series-4: #c98500;
+    --good: #0ca30c;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    color: var(--text-primary);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    padding: 24px;
+  }
+  header { max-width: 1100px; margin: 0 auto 24px; }
+  h1 { font-size: 1.5rem; margin: 0 0 4px; }
+  .meta { color: var(--text-secondary); font-size: 0.9rem; }
+  main { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
+  section.strategy {
+    background: var(--surface-1);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 20px 24px;
+  }
+  h2 { margin: 0 0 12px; font-size: 1.2rem; }
+  .stat-row { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
+  .stat-tile {
+    flex: 1 1 140px;
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 10px 14px;
+  }
+  .stat-tile .label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
+  .stat-tile .value { font-size: 1.1rem; font-variant-numeric: tabular-nums; margin-top: 2px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
+  @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
+  .chart-box { position: relative; height: 260px; }
+  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
+  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
+  .overflow-x { overflow-x: auto; }
+  footer { max-width: 1100px; margin: 24px auto 0; color: var(--text-muted); font-size: 0.8rem; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Barbell-Portfolio Dashboard</h1>
+  <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
+</header>
+<main>
+{% for s in strategies %}
+  <section class="strategy">
+    <h2>{{ s.name }}</h2>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Startkapital</div><div class="value">{{ s.startkapital }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Trades gesamt</div><div class="value">{{ s.trade_count }}</div></div>
+      <div class="stat-tile"><div class="label">Letztes Rebalancing</div><div class="value">{{ s.last_rebalance_date }}</div></div>
+      <div class="stat-tile"><div class="label">Letzter Dez.-Harvest</div><div class="value">{{ s.last_harvest_date }}</div></div>
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value">{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Freibetrag verbleibend</div><div class="value">{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Kumulierte Steuer</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
+    </div>
+    <div class="charts">
+      <div class="chart-box"><canvas id="value-chart-{{ loop.index }}"></canvas></div>
+      <div class="chart-box"><canvas id="topf-chart-{{ loop.index }}"></canvas></div>
+    </div>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th></tr></thead>
+        <tbody>
+        {% for row in s.holdings_table %}
+          <tr>
+            <td>{{ row.ticker }}</td>
+            <td>{{ row.units }}</td>
+            <td>{{ row.price }}</td>
+            <td>{{ row.value }}</td>
+            <td>{{ row.ist_gewicht }}</td>
+            <td>{{ row.ziel_gewicht }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endfor %}
+</main>
+<footer>
+  Barbell-Portfolio-Dashboard &middot; statisch erzeugt, keine Live-Daten &middot;
+  Kurshistorie und Simulation deterministisch aus <code>data/price_history.csv</code>.
+</footer>
+<script>
+  const style = getComputedStyle(document.documentElement);
+  const cssVar = (name) => style.getPropertyValue(name).trim();
+  const colors = {
+    series1: cssVar('--series-1'),
+    series2: cssVar('--series-2'),
+    series3: cssVar('--series-3'),
+    series4: cssVar('--series-4'),
+    grid: cssVar('--grid'),
+    axis: cssVar('--axis'),
+    text: cssVar('--text-secondary'),
+  };
+  const commonScales = {
+    x: { grid: { color: colors.grid }, ticks: { color: colors.text, maxTicksLimit: 8 } },
+    y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+  };
+  const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
+
+  {% for s in strategies %}
+  new Chart(document.getElementById('value-chart-{{ loop.index }}'), {
+    type: 'line',
+    data: {
+      labels: {{ s.labels_json | safe }},
+      datasets: [{
+        label: 'Gesamtwert (€)',
+        data: {{ s.total_values_json | safe }},
+        borderColor: colors.series1,
+        backgroundColor: colors.series1,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf', color: colors.text } },
+      scales: commonScales,
+    },
+  });
+
+  new Chart(document.getElementById('topf-chart-{{ loop.index }}'), {
+    type: 'line',
+    data: {
+      labels: {{ s.labels_json | safe }},
+      datasets: [
+        {% for topf_name, target in s.topf_targets.items() %}
+        {
+          label: {{ topf_name | tojson }} + ' Ist %',
+          data: {{ s.topf_series_json | safe }}[{{ topf_name | tojson }}],
+          borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
+          backgroundColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
+          borderWidth: 2,
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {
+          label: {{ topf_name | tojson }} + ' Ziel %',
+          data: {{ s.labels_json | safe }}.map(() => {{ target }}),
+          borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
+          borderDash: [6, 4],
+          borderWidth: 1.5,
+          pointRadius: 0,
+        },
+        {% endfor %}
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Topf-Gewichtung Ist vs. Ziel (%)', color: colors.text } },
+      scales: commonScales,
+    },
+  });
+  {% endfor %}
+</script>
+</body>
+</html>
