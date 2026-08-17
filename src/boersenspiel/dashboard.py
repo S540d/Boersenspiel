@@ -9,6 +9,7 @@ Berechnungslogik - alle Zahlen kommen aus ``engine.simulate()``.
 from __future__ import annotations
 
 import json
+import re
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -25,6 +26,14 @@ DEFAULT_OUTPUT = Path(__file__).resolve().parents[2] / "docs" / "index.html"
 
 def _f(value: Decimal) -> float:
     return float(value)
+
+
+_UMLAUT_TRANSLIT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
+
+
+def _slug(name: str) -> str:
+    normalisiert = name.lower().translate(_UMLAUT_TRANSLIT)
+    return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", normalisiert)).strip("-")
 
 
 def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
@@ -63,8 +72,15 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
             }
         )
 
+    gewinn = last.total_value - strategy.startkapital
+    rendite_pct = (gewinn / strategy.startkapital) * 100 if strategy.startkapital > 0 else Decimal(0)
+
     return {
         "name": result.strategy_name,
+        "id": _slug(result.strategy_name),
+        "rendite_pct": _f(rendite_pct),
+        "rendite_pct_label": f"{rendite_pct:+.2f}",
+        "gewinn_label": f"{gewinn:+.2f}",
         "labels_json": json.dumps(labels),
         "total_values_json": json.dumps(total_values),
         "topf_series_json": json.dumps(topf_series),
@@ -98,6 +114,7 @@ def build_dashboard(
     rows = sorted(price_history, key=lambda r: r.date)
 
     views = [_build_strategy_view(s, simulate(rows, s), rows) for s in strategies]
+    summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
 
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -106,6 +123,7 @@ def build_dashboard(
     template = env.get_template("dashboard.html.j2")
     html = template.render(
         strategies=views,
+        summary=summary,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         row_count=len(price_history),
         last_date=price_history[-1].date.isoformat(),
