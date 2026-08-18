@@ -30,6 +30,13 @@ class PriceQuote:
     price: float | None
     status: str  # "ok" oder "missing"
     source: str = ""
+    # Handelstag, auf den sich ``price`` bezieht - NICHT der Tag des Abrufs.
+    # Ein Montagslauf liefert vor Börsenbeginn den Freitagsschluss; ohne diese
+    # Angabe landet der Kurs in der falschen Kalenderwoche (siehe
+    # ``scripts/run_fetch.py``). Quellen, die keinen Handelstag mitliefern
+    # (z. B. der manuelle Weg über ``record_prices.py``), lassen das Feld
+    # None - dann bleibt das übergebene Abrufdatum maßgeblich.
+    quote_date: date | None = None
 
 
 class PriceSource(Protocol):

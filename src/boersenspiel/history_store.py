@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import csv
 import os
+from collections import Counter
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -71,6 +72,34 @@ def read_price_history(data_dir: Path = DEFAULT_DATA_DIR) -> list[PriceRow]:
 def _iso_week(d: date) -> tuple[int, int]:
     iso = d.isocalendar()
     return iso[0], iso[1]  # (ISO-Jahr, ISO-Kalenderwoche)
+
+
+def row_date_from_quotes(quotes: dict[str, PriceQuote], fallback: date) -> date:
+    """Datum, unter dem eine Abruf-Charge abgelegt wird: der Handelstag, auf
+    den sich die Kurse beziehen - nicht der Tag des Abrufs.
+
+    Ein Montagslauf vor Börsenbeginn liefert den Freitagsschluss der Vorwoche.
+    Wird der Montag als Zeilendatum genommen, landet dieser Kurs in der
+    falschen ISO-Woche - und damit eine Woche versetzt gegenüber dem
+    historischen Backfill, der dieselben Kurse über ihren Handelstag
+    einsortiert.
+
+    Da die Ticker unterschiedliche Handelskalender haben (Xetra-Freitag vs.
+    BTC-EUR als 24/7-Markt), wird der HÄUFIGSTE Handelstag der erfolgreichen
+    Quotes genommen, bei Gleichstand der frühere. Das ist robust gegen
+    einzelne Ticker mit abweichendem Feiertag und trifft bei den Börsentickern
+    zuverlässig deren gemeinsamen letzten Handelstag.
+
+    ``fallback`` (üblicherweise das Abrufdatum) greift, wenn keine einzige
+    Quote einen Handelstag mitliefert - etwa beim manuellen Weg über
+    ``record_prices.py``.
+    """
+    tage = [q.quote_date for q in quotes.values() if q.status == "ok" and q.quote_date is not None]
+    if not tage:
+        return fallback
+    haeufigkeit = Counter(tage)
+    hoechste = max(haeufigkeit.values())
+    return min(d for d, anzahl in haeufigkeit.items() if anzahl == hoechste)
 
 
 def record_week(

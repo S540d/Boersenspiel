@@ -10,11 +10,118 @@ Google Sheet, Ausgabe als statisches Dashboard auf GitHub Pages.
 
 ## Architektur
 
+Das Projekt zerfällt in zwei Hälften, die sich ausschließlich über eine CSV-Datei
+berühren: eine **schreibende** Hälfte, die Kurse beschafft, und eine **lesende**
+Hälfte, die daraus Auswertungen rechnet.
+
+```mermaid
+flowchart TB
+    subgraph beschaffung["① Datenbeschaffung — wöchentlich, schreibend"]
+        direction TB
+        cron["GitHub Actions<br/>Mo 06:00 UTC"] --> fetch["run_fetch.py"]
+        fetch --> av["AlphaVantageSource<br/>Symbol-Mapping · USD→EUR"]
+        av --> store
+        manual["record_prices.py<br/>manuell / Cowork"] --> store
+        back["backfill_history.py<br/>einmalig, Jahre rückwirkend"] --> store
+        store["history_store.record_week()<br/><b>einziger Schreibzugriff</b><br/>Wochen-Idempotenz · Carry-Forward"]
+    end
+
+    store ==> csv[("<b>data/price_history.csv</b><br/>Datum × 17 Ticker<br/><i>nur Rohkurse, nichts Abgeleitetes</i>")]
+    store -.Protokoll.-> log[("data/fetch_log.csv")]
+
+    subgraph auswertung["② Auswertung — bei jedem Build neu, lesend"]
+        direction TB
+        sim["engine.simulate(rows, strategy)<br/><b>reine Funktion</b> — kein I/O, kein now()"]
+        sim --> dash["dashboard.py + Jinja-Template"]
+    end
+
+    csv ==> sim
+    strat["strategies.py<br/>3 Strategien<br/><i>konstante Gewichte</i>"] --> sim
+    scen["scenarios.py<br/>9 Szenarien<br/><i>gewichte_fn(rows, i)</i>"] --> sim
+    dash ==> html[("docs/index.html<br/>GitHub Pages")]
 ```
-Kursquelle (austauschbar) --> data/price_history.csv --> engine.simulate() --> docs/index.html
-                                       ^                        |
-                                data/fetch_log.csv        (pro Strategie)
-```
+
+### Prozess im Überblick
+
+**① Datenbeschaffung.** Einmal pro Woche holt der Workflow für jeden der 17 Ticker
+einen Kurs. Alles, was quellenspezifisch ist — Alpha-Vantage-Symbole, die
+USD→EUR-Umrechnung der Satelliten-Aktien, der eigene Krypto-Endpunkt — bleibt in
+`sources/`. Am Ende steht immer dasselbe: ein `PriceQuote` je Ticker. Wer die
+Kurse geliefert hat, ist ab da nicht mehr erkennbar und auch nicht mehr relevant.
+
+`history_store.record_week()` ist der einzige Weg in die CSV. Es schlüsselt über
+die **ISO-Kalenderwoche**, nicht über das Kalenderdatum: ein zweiter Lauf in
+derselben Woche aktualisiert die bestehende Zeile, statt eine Dublette anzuhängen.
+Fehlt ein Kurs, wird der letzte bekannte übernommen (Carry-Forward) und in
+`fetch_log.csv` vermerkt — die Zeile bleibt lückenlos. Eingeordnet wird die Zeile
+über den **Handelstag**, den die Quelle meldet, nicht über den Tag des Abrufs:
+ein Montagslauf vor Börsenbeginn liefert den Freitagsschluss der Vorwoche, und der
+gehört in die Freitags-Woche.
+
+**Gespeichert wird ausschließlich der Rohkurs.** Keine Positionswerte, keine
+Stückzahlen, kein Steuerstand. Das ist die zentrale Entscheidung des Projekts:
+alles Abgeleitete entsteht bei jeder Auswertung neu.
+
+**② Auswertung.** `engine.simulate(price_history, strategy)` bekommt die komplette
+Kurshistorie und eine Strategie und rechnet die gesamte Depotentwicklung von der
+ersten Woche an durch — Initialkauf, Rebalancing, Gebühren, Verlustverrechnung,
+Freibetrag, Steuer. Kein I/O, kein `datetime.now()`, kein Zustand über den Aufruf
+hinaus. Nichts wird fortgeschrieben, alles wird neu gerechnet. Daraus folgt der
+Determinismus: gleiche Kurshistorie + gleiche Strategie ⇒ garantiert gleiches
+Ergebnis.
+
+Weil die Simulation nichts kostet außer Rechenzeit, kann `build_dashboard.py`
+sie beliebig oft laufen lassen — einmal pro Strategie und Szenario, alle gegen
+dieselbe Kurshistorie, und stellt die Ergebnisse nebeneinander.
+
+### Strategien, Szenarien und was quer dazu liegt
+
+Eine **Strategie** ist eine Ziel-Gewichtung über Instrumente, gruppiert in Töpfe.
+Ein **Szenario** ist dieselbe Datenstruktur mit einem zusätzlichen Feld
+`gewichte_fn(rows, i)` — die Gewichte sind dann nicht mehr konstant, sondern
+werden je Kurszeile neu bestimmt (saisonal, charttechnisch, nach Momentum …).
+Für die Engine ist das kein Unterschied: sie ruft die Funktion auf und
+rebalanciert auf das, was zurückkommt. Sie kennt keine einzige Regel namentlich.
+
+Drei Eigenschaften, die dabei leicht übersehen werden:
+
+- **Szenarien sind vollständig unabhängig voneinander.** Jeder Lauf startet bei
+  Woche 0 mit dem vollen Startkapital und sieht nur seine eigene `gewichte_fn`.
+  Es gibt keinen gemeinsamen Zustand, keine Reihenfolge, keine Wechselwirkung —
+  die Läufe könnten in beliebiger Ordnung oder parallel stattfinden.
+- **Szenarien nutzen nur einen Teil der Daten.** Alle Szenarien in `scenarios.py`
+  bauen auf den Töpfen von `Barbell 20/80` auf und rühren damit nur **7 der 17**
+  Ticker an; die 10 Satelliten-Aktien kommen ausschließlich in
+  `Barbell 20/60/20 + Einzelaktien-Satellit` vor. Die Kurshistorie ist bewusst
+  breiter als jede einzelne Auswertung.
+- **Kein Lookahead.** Jede `gewichte_fn` darf ausschließlich `rows[:i+1]` lesen.
+  Eine Regel, die in Woche i entscheidet, darf Woche i+1 nicht kennen — sonst
+  wäre jedes Ergebnis wertlos.
+
+**Quer zu allen Strategien und Szenarien** liegen Mechanismen, die die Engine
+immer und für jeden Lauf identisch anwendet:
+
+| Mechanismus | Wirkung |
+|---|---|
+| Rebalancing | Rückführung auf die Zielgewichte bei Überschreiten der Schwelle |
+| Steueroptimierung am Jahresende | Realisierung von Verlusten bzw. Gewinnen zur Jahresgrenze |
+| Ordergebühren | 1 € je Kauf und Verkauf |
+| Besteuerung | Verlustvortrag → Freibetrag → 26,375 % |
+
+Diese Mechanismen sind heute **nicht abschaltbar**. Der Dashboard-Vergleich
+beantwortet damit nur die Frage „welche Gewichtungsregel war besser?", nicht die
+Frage „wie viel hat eigentlich die Steueroptimierung beigetragen?". Ein Vorschlag,
+sie einzeln zuschaltbar zu machen und damit ihren Beitrag als Differenz messbar zu
+machen, liegt als [#17](https://github.com/S540d/Boersenspiel/issues/17) vor.
+
+> **Hinweis zum Stand:** An zwei Stellen weicht das tatsächliche Verhalten von der
+> hier beschriebenen Absicht ab — die Jahresend-Steueroptimierung feuert auch im
+> laufenden, unvollständigen Jahr ([#9](https://github.com/S540d/Boersenspiel/issues/9)),
+> und ihre Auslösebedingung ist steuerlich nicht sinnvoll gewählt
+> ([#13](https://github.com/S540d/Boersenspiel/issues/13),
+> [#16](https://github.com/S540d/Boersenspiel/issues/16)). Instrumente ohne Kurs in
+> der ersten Zeile verlieren zudem still ihren Kapitalanteil
+> ([#10](https://github.com/S540d/Boersenspiel/issues/10)).
 
 **Leitprinzip (aus dem Pflichtenheft übernommen):** Nur Rohdaten (Kurse)
 werden dauerhaft gespeichert. Alles Abgeleitete (Positionswerte,
@@ -213,7 +320,10 @@ pytest -q
   Xetra-ETFs den Freitagsschluss der Vorwoche, für BTC-EUR (24/7-Markt)
   aber einen zeitlich leicht abweichenden, aktuelleren Kurs – die
   "wöchentliche" Zeile mischt dadurch Kurse aus einem Fenster von bis zu
-  ca. 2–3 Tagen.
+  ca. 2–3 Tagen. Welcher Woche die Zeile zugeordnet wird, entscheidet
+  dagegen der *häufigste* gemeldete Handelstag (also der gemeinsame
+  Börsen-Handelstag, nicht der abweichende BTC-Tag) – siehe
+  `history_store.row_date_from_quotes()`.
 - **Einmalige manuelle Repo-Einstellungen** (nicht per Workflow-YAML
   setzbar): Settings → Actions → General → Workflow permissions → "Read and
   write permissions"; Settings → Pages → Source → "GitHub Actions".

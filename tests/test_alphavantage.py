@@ -248,3 +248,49 @@ def test_fetch_crypto_weekly_history_flat_format(monkeypatch: pytest.MonkeyPatch
     result = source.fetch_crypto_weekly_history(since=date(2020, 1, 1))
 
     assert result == {date(2026, 8, 14): 58000.0}
+
+
+def test_quote_reports_trading_day_not_request_day(monkeypatch: pytest.MonkeyPatch):
+    """Ein Montagslauf liefert den Freitagsschluss - der Handelstag aus
+    "07. latest trading day" muss durchgereicht werden, sonst landet der Kurs
+    eine Woche zu spaet in der Historie (siehe row_date_from_quotes)."""
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse(
+            {"Global Quote": {"05. price": "82.10", "07. latest trading day": "2026-08-21"}}
+        ),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))  # Montag
+
+    assert result["EUNL"].quote_date == date(2026, 8, 21)  # Freitag
+
+
+def test_quote_without_trading_day_field_stays_usable(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse({"Global Quote": {"05. price": "82.10"}}),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].status == "ok"
+    assert result["EUNL"].quote_date is None
+
+
+def test_unparsable_trading_day_does_not_break_the_quote(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse(
+            {"Global Quote": {"05. price": "82.10", "07. latest trading day": "keinDatum"}}
+        ),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].status == "ok"
+    assert result["EUNL"].price == 82.10
+    assert result["EUNL"].quote_date is None

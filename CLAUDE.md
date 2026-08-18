@@ -88,7 +88,14 @@ inkrementell fortgeschrieben).
   `data/price_history.csv` / `data/fetch_log.csv`. `record_week()` ist
   Wochen-idempotent (schlüsselt über ISO-Kalenderwoche, nicht Kalenderdatum)
   und macht Carry-Forward bei fehlenden Kursen (nie eine Zeile mit Lücke,
-  sofern ein Vorwert existiert).
+  sofern ein Vorwert existiert) — dabei ausschließlich aus Wochen **vor**
+  der Zielwoche, damit ein nachträglich gefüllter Eintrag keinen Kurs aus
+  der Zukunft übernimmt. `row_date_from_quotes()` bestimmt das Zeilendatum
+  aus dem von der Quelle gemeldeten **Handelstag** (häufigster Handelstag
+  der erfolgreichen Quotes, bei Gleichstand der frühere) statt aus dem
+  Abrufdatum: ein Montagslauf vor Börsenbeginn liefert den Freitagsschluss
+  der Vorwoche, der sonst eine ISO-Woche zu spät und damit versetzt zum
+  Backfill einsortiert würde.
 - `sources/` — austauschbare `PriceSource`-Implementierungen
   (`sources/__init__.py` definiert das Protokoll). **Standard:**
   `alphavantage.py` (offizielle REST-API, braucht `ALPHAVANTAGE_API_KEY`).

@@ -19,7 +19,7 @@ from datetime import date, datetime
 
 import _bootstrap  # noqa: F401
 
-from boersenspiel.history_store import record_week
+from boersenspiel.history_store import record_week, row_date_from_quotes
 from boersenspiel.instruments import TICKERS
 from boersenspiel.sources.alphavantage import AlphaVantageSource
 
@@ -30,7 +30,16 @@ def main() -> int:
         "--date",
         type=lambda s: datetime.strptime(s, "%Y-%m-%d").date(),
         default=date.today(),
-        help="Datum, dem die abgerufenen Kurse zugeordnet werden (Default: heute)",
+        help=(
+            "Abrufdatum (Default: heute). Dient nur als Rueckfallwert - "
+            "einsortiert werden die Kurse ueber den von der Quelle gemeldeten "
+            "Handelstag, siehe --ignore-handelstag"
+        ),
+    )
+    parser.add_argument(
+        "--ignore-handelstag",
+        action="store_true",
+        help="Kurse stur unter --date ablegen, statt unter ihrem Handelstag",
     )
     args = parser.parse_args()
 
@@ -41,7 +50,14 @@ def main() -> int:
     if missing:
         print(f"WARNUNG: Kein aktueller Kurs gefunden fuer: {', '.join(missing)}", file=sys.stderr)
 
-    row = record_week(args.date, quotes)
+    # Ein Montagslauf vor Boersenbeginn liefert den Freitagsschluss der
+    # Vorwoche - unter dem Montag abgelegt landete der Kurs in der falschen
+    # ISO-Woche und damit eine Woche versetzt gegenueber dem Backfill.
+    as_of = args.date if args.ignore_handelstag else row_date_from_quotes(quotes, args.date)
+    if as_of != args.date:
+        print(f"Kurse beziehen sich auf den Handelstag {as_of.isoformat()} (Abruf: {args.date.isoformat()})")
+
+    row = record_week(as_of, quotes)
     print(f"Kurshistorie aktualisiert fuer {row.date.isoformat()}: {row.prices}")
     return 0
 

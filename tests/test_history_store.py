@@ -4,7 +4,7 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from boersenspiel.history_store import read_price_history, record_week
+from boersenspiel.history_store import read_price_history, record_week, row_date_from_quotes
 from boersenspiel.sources import PriceQuote
 
 
@@ -78,3 +78,50 @@ def test_carry_forward_uses_previous_week_not_a_later_one(tmp_path: Path):
 
     rows = read_price_history(tmp_path)
     assert [r.prices["EUNL"] for r in rows] == [Decimal("100.0"), Decimal("100.0"), Decimal("200.0")]
+
+
+def _quote(ticker: str, price: float, quote_date: date | None) -> PriceQuote:
+    return PriceQuote(ticker=ticker, price=price, status="ok", source="test", quote_date=quote_date)
+
+
+def test_row_date_uses_the_reported_trading_day_not_the_request_day():
+    """Montagslauf, Kurse vom Freitag -> die Zeile gehoert in die Freitags-Woche."""
+    quotes = {
+        "EUNL": _quote("EUNL", 80.0, date(2026, 8, 21)),
+        "EUNA": _quote("EUNA", 5.0, date(2026, 8, 21)),
+    }
+    assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 21)
+
+
+def test_row_date_picks_the_most_common_trading_day():
+    """BTC-EUR handelt 24/7 und meldet einen spaeteren Tag als die Boersen -
+    ein einzelner Ausreisser darf die ganze Zeile nicht verschieben."""
+    quotes = {
+        "EUNL": _quote("EUNL", 80.0, date(2026, 8, 21)),
+        "EUNA": _quote("EUNA", 5.0, date(2026, 8, 21)),
+        "BTC-EUR": _quote("BTC-EUR", 55000.0, date(2026, 8, 23)),
+    }
+    assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 21)
+
+
+def test_row_date_breaks_ties_towards_the_earlier_day():
+    quotes = {
+        "EUNL": _quote("EUNL", 80.0, date(2026, 8, 21)),
+        "BTC-EUR": _quote("BTC-EUR", 55000.0, date(2026, 8, 23)),
+    }
+    assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 21)
+
+
+def test_row_date_ignores_failed_quotes():
+    quotes = {
+        "EUNL": _quote("EUNL", 80.0, date(2026, 8, 21)),
+        "EUNA": PriceQuote("EUNA", None, "missing", "test", quote_date=date(2026, 1, 1)),
+    }
+    assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 21)
+
+
+def test_row_date_falls_back_when_no_source_reports_a_trading_day():
+    """Der manuelle Weg (record_prices.py) liefert keinen Handelstag -
+    dort bleibt das uebergebene Datum massgeblich."""
+    quotes = {"EUNL": _quote("EUNL", 80.0, None)}
+    assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 24)

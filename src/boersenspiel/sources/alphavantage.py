@@ -152,14 +152,15 @@ class AlphaVantageSource:
             )
             resp.raise_for_status()
             data = resp.json()
-            price_str = data.get("Global Quote", {}).get("05. price")
+            quote = data.get("Global Quote", {})
+            price_str = quote.get("05. price")
             if not price_str:
                 print(f"alphavantage: keine Kursdaten fuer {symbol}: {data!r}", file=sys.stderr)
                 return PriceQuote(ticker, None, "missing", "alphavantage")
             price = float(price_str)
             if fx_rate is not None:
                 price *= fx_rate
-            return PriceQuote(ticker, price, "ok", "alphavantage")
+            return PriceQuote(ticker, price, "ok", "alphavantage", _parse_trading_day(quote.get("07. latest trading day")))
         except Exception as exc:
             print(f"alphavantage fehlgeschlagen fuer {symbol}: {exc!r}", file=sys.stderr)
             return PriceQuote(ticker, None, "missing", "alphavantage")
@@ -195,7 +196,9 @@ class AlphaVantageSource:
             if close_key is None:
                 print(f"alphavantage: unerwartetes Kryptoformat fuer BTC-EUR: {latest!r}", file=sys.stderr)
                 return PriceQuote(ticker, None, "missing", "alphavantage")
-            return PriceQuote(ticker, float(latest[close_key]), "ok", "alphavantage")
+            return PriceQuote(
+                ticker, float(latest[close_key]), "ok", "alphavantage", _parse_trading_day(latest_date)
+            )
         except Exception as exc:
             print(f"alphavantage fehlgeschlagen fuer BTC-EUR: {exc!r}", file=sys.stderr)
             return PriceQuote(ticker, None, "missing", "alphavantage")
@@ -269,6 +272,19 @@ class AlphaVantageSource:
                 continue
             result[d] = float(values[close_key])
         return result
+
+
+def _parse_trading_day(raw: str | None) -> date | None:
+    """Handelstag aus einer Alpha-Vantage-Antwort, oder None wenn das Feld
+    fehlt/unlesbar ist - ein unbrauchbares Datum darf den Kursabruf nicht
+    scheitern lassen, der Aufrufer faellt dann auf das Abrufdatum zurueck."""
+    if not raw:
+        return None
+    try:
+        return date.fromisoformat(raw)
+    except ValueError:
+        print(f"alphavantage: unlesbarer Handelstag {raw!r}", file=sys.stderr)
+        return None
 
 
 def _parse_weekly_close_series(series: dict, since: date) -> dict[date, float]:
