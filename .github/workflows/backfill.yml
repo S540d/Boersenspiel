@@ -1,0 +1,110 @@
+name: Historischer Backfill (manuell)
+
+# Einmaliger historischer Backfill von data/price_history.csv, siehe Issue #6.
+#
+# Bewusst ein EIGENER, ausschliesslich manuell startbarer Workflow (kein
+# Cron): der Backfill ERSETZT die Kurshistorie komplett und verbraucht ~18
+# der 25 taeglichen Alpha-Vantage-Free-Tier-Requests. Er laeuft hier statt
+# lokal, weil der API-Key als Repo-Secret vorliegt und nicht auf jeder
+# Entwicklermaschine verfuegbar ist.
+#
+# WICHTIG: nicht am selben Tag wie der woechentliche Kursabruf starten -
+# beide zusammen (18 + 18 Requests) reissen das Tageslimit.
+
+on:
+  workflow_dispatch:
+    inputs:
+      years:
+        description: "Wie viele Jahre Historie zurueck"
+        required: true
+        default: "5"
+      confirm:
+        description: "Ersetzt data/price_history.csv KOMPLETT. Zum Bestaetigen 'REPLACE' eintippen."
+        required: true
+        default: ""
+
+permissions:
+  contents: write
+
+concurrency:
+  group: "pages"
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Bestaetigung pruefen
+        if: inputs.confirm != 'REPLACE'
+        run: |
+          echo "::error::Abbruch: der Backfill ersetzt data/price_history.csv komplett."
+          echo "::error::Zum Bestaetigen den Workflow erneut mit confirm='REPLACE' starten."
+          exit 1
+
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip"
+
+      - name: Abhängigkeiten installieren
+        run: pip install -r requirements.txt
+
+      - name: Tests ausführen
+        run: pytest -q
+
+      - name: Backfill ausführen
+        env:
+          ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
+        run: python scripts/backfill_history.py --years "${{ inputs.years }}"
+
+      - name: Ergebnis prüfen
+        run: |
+          echo "### Backfill-Ergebnis" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Zeilen (ohne Header): $(($(wc -l < data/price_history.csv) - 1))" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Erste Woche: $(sed -n '2p' data/price_history.csv | cut -d, -f1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "- Letzte Woche: $(tail -n 1 data/price_history.csv | cut -d, -f1)" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Ticker mit fehlenden Kursen (leere Zellen je Spalte):" >> "$GITHUB_STEP_SUMMARY"
+          python - <<'PY' >> "$GITHUB_STEP_SUMMARY"
+          import csv
+          with open("data/price_history.csv", newline="") as f:
+              rows = list(csv.DictReader(f))
+          if not rows:
+              raise SystemExit("::error::price_history.csv enthaelt keine Datenzeilen")
+          for ticker in [c for c in rows[0] if c != "Date"]:
+              leer = sum(1 for r in rows if not r[ticker])
+              if leer:
+                  print(f"- {ticker}: {leer} von {len(rows)} Wochen ohne Kurs")
+          PY
+
+      - name: Dashboard neu bauen
+        run: python scripts/build_dashboard.py
+
+      - name: Kurshistorie committen
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add data/price_history.csv data/fetch_log.csv
+          git diff --cached --quiet || git commit -m "chore: historischer Backfill (${{ inputs.years }} Jahre)"
+          git push
+
+      - name: Pages-Artefakt hochladen
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: docs
+
+  deploy:
+    needs: backfill
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4

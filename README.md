@@ -121,6 +121,18 @@ mehrfach am selben Tag laufen. **Ersetzt** `price_history.csv` komplett -
 kein Zusammenführen mit zuvor live gesammelten Wochen nötig, da der Backfill
 dieselben (und ältere) Wochen ohnehin mit abdeckt.
 
+Weil der API-Key als Repo-Secret vorliegt (und nicht auf jeder
+Entwicklermaschine), gibt es dafür zusätzlich den manuell startbaren
+Workflow **"Historischer Backfill (manuell)"**
+(`.github/workflows/backfill.yml`): Actions → Workflow auswählen → *Run
+workflow* → `years` setzen und zur Bestätigung `REPLACE` eintippen (der Lauf
+bricht sonst ab, da er die Kurshistorie komplett ersetzt). Der Workflow
+führt Tests, Backfill, eine Plausibilitätsprüfung (Zeilenzahl, Datumsspanne,
+Ticker mit Kurslücken landen in der Job-Summary), den Dashboard-Build, den
+Commit der Datendateien und den Pages-Deploy aus. **Nicht am selben Tag wie
+den wöchentlichen Kursabruf starten** - 18 + 18 Requests reißen das
+Tageslimit von 25.
+
 ## Strategie hinzufügen
 
 Neue Strategien werden als weiterer `Strategy`-Eintrag in
