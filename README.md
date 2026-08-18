@@ -3,8 +3,9 @@
 **📊 Dashboard:** [s540d.github.io/Boersenspiel](https://s540d.github.io/Boersenspiel/)
 
 Virtuelles Portfolio nach Barbell-Strategie, auf Basis des Pflichtenhefts
-`Pflichtenheft_PortfolioProjekt_v2.md`. Technisch wurde bewusst abweichend
-umgesetzt (siehe [Abweichungen](#abweichungen-vom-pflichtenheft) unten):
+`Pflichtenheft_PortfolioProjekt_v2.md` (liegt **nicht** in diesem Repo, siehe
+Hinweis unten). Technisch wurde bewusst abweichend umgesetzt (siehe
+[Abweichungen](#abweichungen-vom-pflichtenheft) unten):
 Kursabruf wöchentlich statt täglich, Persistenz als CSV im Git-Repo statt
 Google Sheet, Ausgabe als statisches Dashboard auf GitHub Pages.
 
@@ -253,9 +254,44 @@ hinterlegt: `Barbell 20/80` (aus dem Pflichtenheft), `Barbell 30/70`
 Einzelaktien-Satellit` (erweitert Barbell 20/80 um einen dritten Topf mit
 10 gleichgewichteten Einzelaktien statt breiter ETFs – Gesamtrisikoprofil
 80% riskant / 20% sicher bleibt erhalten, siehe `strategies.py` für die
-Details und Auswahlbegründung). Zusätzlich gibt es in `scenarios.py`
-zeitabhängige Auswertungs-Szenarien (Börsenweisheiten, Charttechnik,
-weitere Ansätze) auf Basis der Barbell-20/80-Instrumente.
+Details und Auswahlbegründung).
+
+### Szenarien
+
+Zusätzlich zu den Strategien gibt es in `scenarios.py` zeitabhängige
+Auswertungs-Szenarien: dieselbe Barbell-20/80-Struktur (Topf A "Sicherheit",
+Topf B "Wachstum", 7 Instrumente), aber mit einer Regel, die die Ziel-Gewichte
+je Kurszeile neu bestimmt statt sie konstant zu lassen. Erster Ansatz –
+Parameter sind nicht optimiert oder gebacktestet. Startkapital jeweils
+10.000 €, alle Läufe unabhängig voneinander (siehe
+[Architektur](#architektur) oben).
+
+**Börsenweisheiten**
+
+| Szenario | Regel |
+|---|---|
+| Sell in May | Mai–September defensiv (100% Sicherheit), Oktober–April normale 20/80-Verteilung |
+| Buy & Hold | Startallokation wird nie aktiv rebalanciert (Rebalancing-Schwelle praktisch unerreichbar); Dezember-Steueroptimierung bleibt wie bei allen Strategien aktiv |
+| Jahresendrallye | Dezember/Januar Wachstumsquote auf 95% ("Santa Claus Rally"), sonst normale Verteilung |
+| Antizyklisch kaufen | Wachstumsquote auf 95%, sobald der MSCI-World-ETF (EUNL) mehr als 10% unter seinem 20-Wochen-Hoch notiert ("Buy the Dip") |
+| Verluste begrenzen | Trailing-Stop je Wachstums-Instrument: fällt eines mehr als 15% unter sein eigenes 20-Wochen-Hoch, wird nur dieses auf 0% gesetzt (Rest des Depots unverändert) |
+
+**Charttechnik**
+
+| Szenario | Regel |
+|---|---|
+| SMA-Crossover (10/40 Wochen) | Golden Cross/Death Cross auf dem MSCI-World-ETF: 10-Wochen-SMA unter 40-Wochen-SMA → defensiv (100% Sicherheit), sonst normale Verteilung |
+
+**Weitere Ansätze**
+
+| Szenario | Regel |
+|---|---|
+| Momentum: Relative-Stärke-Rotation | Innerhalb des Wachstums-Topfs (Gesamtgewicht bleibt 80%) werden nur die 2 Instrumente mit der höchsten 12-Wochen-Trailing-Rendite gleichgewichtet gehalten, die übrigen auf 0% |
+| Volatilitätsbasierte Aktienquote | Wachstumsquote skaliert linear zwischen 50% (hohe) und 90% (niedrige realisierte 12-Wochen-Volatilität des MSCI-World-ETF) – Risk-Parity-/Vol-Targeting-Prinzip |
+| Cost-Average-Einstieg (10 Wochen) | Wachstumsquote rampt über die ersten 10 Wochen linear von 0% auf die normale 80%-Verteilung hoch, statt das Startkapital sofort komplett zu investieren |
+
+Details, Parameter und Herleitung stehen als Kommentare direkt bei den
+jeweiligen `gewichte_fn`-Implementierungen in `scenarios.py`.
 
 ## Lokale Ausführung
 
@@ -345,3 +381,12 @@ pytest -q
 Rebalancing-Schwelle, Ordergebühren und Steuerlogik (26,375 %, 1.000 €
 Freibetrag, Verlustvortrag) wurden inhaltlich unverändert aus dem
 Pflichtenheft übernommen.
+
+> **Hinweis zum Pflichtenheft:** `Pflichtenheft_PortfolioProjekt_v2.md` ist
+> bewusst **nicht** in diesem Repository eingecheckt (es liegt außerhalb, z. B.
+> in Google Drive/Confluence des ursprünglichen Planungsgesprächs) und daher
+> hier nicht verlinkbar. Die obige Tabelle sowie die Modellierungsentscheidungen
+> weiter oben fassen die für die Implementierung relevanten Inhalte zusammen;
+> bei Detailfragen zum genauen Wortlaut (z. B. zum Harvest-Algorithmus, siehe
+> [#13](https://github.com/S540d/Boersenspiel/issues/13)) muss auf das externe
+> Dokument zurückgegriffen werden.
