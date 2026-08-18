@@ -3,10 +3,14 @@ Scraping - deutlich zuverlässiger für GitHub Actions als yfinance, das
 wiederholt an Yahoos Crumb/Cookie-Authentifizierung scheiterte (siehe README).
 
 Free-Tier-Limits: 25 Requests/Tag, max. 1 Request/Sekunde. Bei aktuell 17
-Tickern (7 Barbell-Basisinstrumente + 10 Einzelaktien-Satellit) einmal
-wöchentlich noch unproblematisch, lässt aber kaum noch Spielraum für
-zusätzliche manuelle Abrufe am selben Tag; zwischen den Requests wird ein
-kleiner Sleep eingehalten, um das Sekundenlimit nicht zu reißen.
+Tickern (7 Barbell-Basisinstrumente + 10 Einzelaktien-Satellit, davon 9 mit
+zusätzlichem EUR/USD-Kursabruf) sind das ca. 18 Requests pro Lauf - der
+tägliche GitHub-Actions-Cron (`daily-update.yml`) verbraucht damit fast das
+gesamte Tageslimit **jeden Tag**, es bleibt kaum noch Spielraum für
+zusätzliche manuelle Abrufe am selben Tag (z. B. den historischen Backfill,
+siehe unten - der sollte an einem Tag laufen, an dem der Cron pausiert oder
+noch nicht gelaufen ist); zwischen den Requests wird ein kleiner Sleep
+eingehalten, um das Sekundenlimit nicht zu reißen.
 
 Läuft in GitHub Actions gegen die reine REST-API (nicht über den
 Alpha-Vantage-MCP-Server, der nur innerhalb einer Claude-Session verfügbar

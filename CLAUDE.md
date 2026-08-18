@@ -6,7 +6,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie (siehe
 `Pflichtenheft_PortfolioProjekt_v2.md` für die ursprünglichen Anforderungen).
-Wöchentlicher Kursabruf via GitHub Actions, Kurshistorie als CSV im Repo,
+Täglicher Kursabruf via GitHub Actions, Kurshistorie als CSV im Repo,
 statisches Dashboard (Chart.js) auf GitHub Pages. Es gibt keinen PR-Workflow
 in diesem Repo — Änderungen gehen direkt auf den Default-Branch
 (`claude/pflichtenheft-umsetzung-planen-6kf05s`, fungiert als `main`, da das
@@ -156,12 +156,16 @@ Satelliten-Ticker-Symbole aufgebraucht) — vor dem ersten echten Lauf kurz
 gegenprüfen, dass `TIME_SERIES_WEEKLY`/`FX_WEEKLY`/`DIGITAL_CURRENCY_WEEKLY`
 im Free-Tier verfügbar sind.
 
-### GitHub Actions (`.github/workflows/weekly-update.yml`)
+### GitHub Actions (`.github/workflows/daily-update.yml`)
 
-Läuft wöchentlich (Montag 06:00 UTC) + `workflow_dispatch`: Tests →
+Läuft täglich (06:00 UTC) + `workflow_dispatch`: Tests →
 Kursabruf (Alpha Vantage) → Dashboard-Build → Commit von
 `data/price_history.csv`/`data/fetch_log.csv` zurück ins Repo →
-GitHub-Pages-Deploy. Braucht die Secrets/Settings: Repo-Secret
+GitHub-Pages-Deploy. `record_week()` bleibt über die ISO-Kalenderwoche
+idempotent (siehe `history_store.py`) - der tägliche Lauf erzeugt also
+keine tägliche Datenpunkt-Granularität, sondern aktualisiert bis Wochenende
+denselben Wochen-Datensatz mit dem jeweils aktuellsten Kurs. Braucht die
+Secrets/Settings: Repo-Secret
 `ALPHAVANTAGE_API_KEY`; Settings → Actions → Workflow permissions → "Read
 and write permissions"; Settings → Pages → Source → "GitHub Actions".
 

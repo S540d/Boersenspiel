@@ -1,9 +1,13 @@
-name: Wöchentliches Kurs-Update & Dashboard
+name: Tägliches Kurs-Update & Dashboard
 
 on:
   schedule:
-    # Montag 06:00 UTC - nach Xetra-Vorwochenschluss, vor Xetra-Handelsbeginn.
-    - cron: "0 6 * * 1"
+    # Taeglich 06:00 UTC - vor Xetra-Handelsbeginn. record_week() ist ueber
+    # die ISO-Kalenderwoche idempotent (siehe history_store.py), ein
+    # taeglicher Lauf erzeugt also KEINE taegliche Datenpunkt-Granularitaet -
+    # er aktualisiert lediglich denselben Wochen-Datensatz mit dem jeweils
+    # aktuellsten verfuegbaren Kurs, bis die Woche vorbei ist.
+    - cron: "0 6 * * *"
   workflow_dispatch: {}
 
 permissions:
@@ -43,7 +47,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/price_history.csv data/fetch_log.csv
-          git diff --cached --quiet || git commit -m "chore: wöchentliches Kurs-Update $(date -u +%F)"
+          git diff --cached --quiet || git commit -m "chore: tägliches Kurs-Update $(date -u +%F)"
           git push
 
       - name: Pages-Artefakt hochladen

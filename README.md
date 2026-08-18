@@ -5,7 +5,8 @@
 Virtuelles Portfolio nach Barbell-Strategie, auf Basis des Pflichtenhefts
 `Pflichtenheft_PortfolioProjekt_v2.md`. Technisch wurde bewusst abweichend
 umgesetzt (siehe [Abweichungen](#abweichungen-vom-pflichtenheft) unten):
-Kursabruf wöchentlich statt täglich, Persistenz als CSV im Git-Repo statt
+Kursabruf-Zeitplan täglich (Cron), aber Kurshistorie bleibt intern
+wochenweise granular (siehe unten), Persistenz als CSV im Git-Repo statt
 Google Sheet, Ausgabe als statisches Dashboard auf GitHub Pages.
 
 ## Architektur
@@ -34,7 +35,7 @@ Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
 | `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Reine Simulationsfunktion: (Kurshistorie, Strategie) → Portfolio-/Steuerzustand |
 | `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html`, inkl. strategieübergreifender Renditen-Vergleichsübersicht oben |
-| `scripts/run_fetch.py` | Automatisierter wöchentlicher Kursabruf (GitHub Actions) |
+| `scripts/run_fetch.py` | Automatisierter täglicher Kursabruf (GitHub Actions) |
 | `scripts/record_prices.py` | Manueller Andockpunkt für Kurse aus anderer Quelle (z. B. Cowork/Websuche) |
 | `scripts/backfill_history.py` | Einmaliger historischer Backfill von `price_history.csv` (echte Wochenkurse statt nur live gesammelter Wochen, siehe unten) |
 | `scripts/build_dashboard.py` | Baut `docs/index.html` neu aus der aktuellen Kurshistorie |
@@ -74,8 +75,9 @@ werden, ohne Code umzubauen.
 
 1. API-Key auf [alphavantage.co](https://www.alphavantage.co/support/#api-key)
    holen (kostenloser Plan: 25 Requests/Tag, max. 1 Request/Sekunde – bei
-   aktuell 17 Tickern einmal wöchentlich noch ausreichend, aber ohne viel
-   Spielraum für zusätzliche manuelle Abrufe am selben Tag).
+   aktuell 17 Tickern (~18 Requests/Lauf) und **täglichem** Cron praktisch
+   das gesamte Tageslimit, kaum noch Spielraum für zusätzliche manuelle
+   Abrufe am selben Tag).
 2. Als GitHub-Actions-Secret hinterlegen: Settings → Secrets and variables
    → Actions → New repository secret → Name `ALPHAVANTAGE_API_KEY`.
 3. Ticker-Symbole wurden per `SYMBOL_SEARCH` verifiziert und weichen teils
@@ -191,17 +193,25 @@ pytest -q
   Crumb/Cookie-Authentifizierung, die die gepinnte Version (0.2.43) nicht
   mehr unterstützte. Deshalb Umstieg auf Alpha Vantage als Standardquelle.
 - **Alpha Vantage Free-Tier-Limit:** 25 Requests/Tag, max. 1 Request/Sekunde.
-  Bei aktuell 17 Tickern einmal wöchentlich noch unproblematisch, aber kaum
-  noch Puffer für weitere manuelle Abrufe am selben Tag; `AlphaVantageSource`
-  hält zwischen den Requests einen Sleep ein. Schlägt ein Kurs dennoch fehl
-  (z. B. durch Rate-Limit oder eine leere Antwort), wird der letzte bekannte
-  Kurs übernommen und in `fetch_log.csv` vermerkt (nie eine Zeile mit
-  Lücke).
-- **BTC-EUR/Xetra-Zeitversatz:** Ein Montagvormittag-Lauf liefert für die
-  Xetra-ETFs den Freitagsschluss der Vorwoche, für BTC-EUR (24/7-Markt)
-  aber einen zeitlich leicht abweichenden, aktuelleren Kurs – die
-  "wöchentliche" Zeile mischt dadurch Kurse aus einem Fenster von bis zu
-  ca. 2–3 Tagen.
+  Bei aktuell 17 Tickern und **täglichem** Cron (~18 Requests/Tag) wird das
+  Limit praktisch jeden Tag ausgeschöpft, kaum noch Puffer für weitere
+  manuelle Abrufe am selben Tag; `AlphaVantageSource` hält zwischen den
+  Requests einen Sleep ein. Schlägt ein Kurs dennoch fehl (z. B. durch
+  Rate-Limit oder eine leere Antwort), wird der letzte bekannte Kurs
+  übernommen und in `fetch_log.csv` vermerkt (nie eine Zeile mit Lücke).
+- **Täglicher Cron, aber wochenweise Datengranularität:** `record_week()`
+  ist über die ISO-Kalenderwoche idempotent (siehe `history_store.py`) -
+  der tägliche Workflow-Lauf erzeugt deshalb **keine** tägliche
+  Kurshistorie, sondern aktualisiert bis zum Wochenende denselben
+  Wochen-Datensatz mit dem jeweils aktuellsten Kurs. `price_history.csv`
+  bleibt damit weiterhin eine Zeile pro Woche - der tägliche Zeitplan sorgt
+  nur dafür, dass diese Zeile öfter aktualisiert wird, bevor sie für die
+  jeweilige Woche final ist.
+- **BTC-EUR/Zeitversatz innerhalb einer Zeile:** Da BTC-EUR (24/7-Markt) und
+  die Xetra-ETFs (nur an Handelstagen) bei jedem Lauf gemeinsam abgerufen
+  werden, mischt eine Kurszeile je nach Lauftag Kurse aus leicht
+  unterschiedlichen Zeitpunkten (z. B. an einem Wochenende oder Feiertag den
+  letzten Xetra-Schlusskurs mit einem aktuelleren BTC-Kurs).
 - **Einmalige manuelle Repo-Einstellungen** (nicht per Workflow-YAML
   setzbar): Settings → Actions → General → Workflow permissions → "Read and
   write permissions"; Settings → Pages → Source → "GitHub Actions".
@@ -215,7 +225,7 @@ pytest -q
 | Pflichtenheft v2.0 | Diese Implementierung |
 |---|---|
 | Google Drive/Sheets als Kurshistorie | `data/price_history.csv` im Git-Repo |
-| Täglicher Kursabruf via Cowork Scheduled Task | Wöchentlicher Kursabruf via GitHub Actions Cron (Kursquelle austauschbar, siehe oben) |
+| Täglicher Kursabruf via Cowork Scheduled Task | Täglicher Kursabruf via GitHub Actions Cron (Kursquelle austauschbar, siehe oben) - Kurshistorie bleibt aber intern wochenweise granular (`record_week()` ist über die ISO-Kalenderwoche idempotent), der tägliche Lauf aktualisiert bis Wochenende denselben Wochen-Datensatz statt eine tägliche Zeile anzulegen |
 | Dashboard on-demand als Artefakt in einer Unterhaltung | Statische HTML-Seite (Chart.js), automatisch nach jedem Kursabruf neu gebaut, auf GitHub Pages deployed |
 | "Modell B": Kursabruf und Dashboard-Erzeugung getrennt automatisiert | Ein kombinierter Workflow (Kursabruf → Test → Dashboard-Build → Commit → Deploy) |
 | Nur die Barbell-20/80-Strategie | Mehrere austauschbare Strategien (`strategies.py`), Dashboard zeigt sie vergleichend |
