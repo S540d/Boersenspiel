@@ -137,3 +137,49 @@ def test_all_tickers_have_weekly_fetch_support():
 
     fehlend = [t for t in TICKERS if t != "BTC-EUR" and t not in ALPHAVANTAGE_SYMBOLS]
     assert fehlend == []
+
+
+def test_fx_is_fetched_before_any_ticker_to_limit_the_cost_of_a_failure():
+    """Beim ersten echten Lauf scheiterte FX_WEEKLY erst NACH 16 Ticker-
+    Requests - bei 25 Requests/Tag war damit auch der zweite Versuch fuer
+    denselben Tag verloren. Der FX-Abruf muss deshalb zuerst laufen: dann
+    kostet derselbe Fehlschlag genau einen Request."""
+    reihenfolge: list[str] = []
+
+    class _ProtokollierendeSource(_FakeSource):
+        def fetch_weekly_history(self, ticker: str, since: date) -> dict[date, float]:
+            reihenfolge.append(f"ticker:{ticker}")
+            return super().fetch_weekly_history(ticker, since)
+
+        def fetch_fx_weekly_eur_per_usd(self, since: date) -> dict[date, float]:
+            reihenfolge.append("fx")
+            return super().fetch_fx_weekly_eur_per_usd(since)
+
+        def fetch_crypto_weekly_history(self, since: date) -> dict[date, float]:
+            reihenfolge.append("crypto")
+            return super().fetch_crypto_weekly_history(since)
+
+    source = _ProtokollierendeSource(
+        weekly={"EUNL": {date(2026, 8, 14): 85.0}, "LITE": {date(2026, 8, 14): 100.0}},
+        fx={date(2026, 8, 14): 0.90},
+        crypto={date(2026, 8, 14): 58000.0},
+    )
+    bh.collect_weekly_series(source, ["EUNL", "LITE", "BTC-EUR"], since=date(2020, 1, 1))
+
+    assert reihenfolge[0] == "fx"
+    assert reihenfolge[-1] == "crypto"
+
+
+def test_a_failing_fx_fetch_costs_no_ticker_requests():
+    source = _FakeSource(
+        weekly={"LITE": {date(2026, 8, 14): 100.0}}, fx={date(2026, 8, 14): 0.90}, crypto={}
+    )
+
+    def _rate_limit(*args, **kwargs):
+        raise RuntimeError("keine Zeitreihe in der Antwort fuer USD/EUR (FX_WEEKLY)")
+
+    source.fetch_fx_weekly_eur_per_usd = _rate_limit
+    with pytest.raises(RuntimeError):
+        bh.collect_weekly_series(source, ["LITE", "BTC-EUR"], since=date(2020, 1, 1))
+
+    assert source.weekly_history_calls == []

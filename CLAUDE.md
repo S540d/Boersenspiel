@@ -151,12 +151,18 @@ werden mit dem historischen `FX_WEEKLY`-Kurs derselben Woche umgerechnet
 (`collect_weekly_series`) und CSV-Schreiben (`write_backfilled_history`)
 sind als separate, unabhängig testbare Funktionen im Skript
 implementiert - siehe `tests/test_backfill_history.py` (mockt
-`AlphaVantageSource`, kein echter Netzwerkzugriff). **Stand:** Skript ist
-implementiert und per Mock-Tests verifiziert, aber noch nicht live gegen
-die echte Alpha-Vantage-API gelaufen (Tageslimit beim Verifizieren der
-Satelliten-Ticker-Symbole aufgebraucht) — vor dem ersten echten Lauf kurz
-gegenprüfen, dass `TIME_SERIES_WEEKLY`/`FX_WEEKLY`/`DIGITAL_CURRENCY_WEEKLY`
-im Free-Tier verfügbar sind. Für den Lauf gibt es den manuell startbaren
+`AlphaVantageSource`, kein echter Netzwerkzugriff). **Stand:** Alle drei Endpunkte
+(`TIME_SERIES_WEEKLY`/`FX_WEEKLY`/`DIGITAL_CURRENCY_WEEKLY`) sind im
+Free-Tier verfügbar und alle 17 Symbol-Mappings lösen auf — belegt durch
+den Lauf vom 18.08.2026. Der Lauf brach dennoch ab, weil der
+Zeitreihen-Schlüssel für `FX_WEEKLY` falsch angenommen war; Alpha Vantage
+benennt ihn je Endpunkt unterschiedlich (`Weekly Time Series` /
+`Time Series FX (Weekly)` / `Time Series (Digital Currency Weekly)`).
+`_extract_time_series()` rät den Namen deshalb nicht mehr, sondern nimmt
+den einzigen Objekt-Wert der Antwort außer `Meta Data` — Fehler- und
+Rate-Limit-Antworten haben nur String-Werte und lösen damit automatisch
+eine aussagekräftige Exception aus. Der FX-Abruf läuft bewusst **vor** den
+Ticker-Abrufen, damit ein Fehlschlag einen statt 17 Requests kostet. Für den Lauf gibt es den manuell startbaren
 Workflow `.github/workflows/backfill.yml` (nutzt das Repo-Secret, verlangt
 `confirm=REPLACE`, schreibt eine Plausibilitätsprüfung in die Job-Summary) -
 nicht am selben Tag wie den wöchentlichen Kursabruf starten (18 + 18

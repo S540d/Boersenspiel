@@ -73,18 +73,34 @@ def collect_weekly_series(
     Netzwerkaufrufen und von ``record_week``."""
     per_ticker: dict[str, dict[date, float]] = {}
     non_crypto = [t for t in tickers if t != "BTC-EUR"]
+    usd_tickers_present = [t for t in non_crypto if t in USD_TICKERS]
 
-    for i, ticker in enumerate(non_crypto):
-        if i > 0:
+    erste_anfrage = True
+
+    def pace() -> None:
+        nonlocal erste_anfrage
+        if not erste_anfrage:
             time.sleep(_REQUEST_INTERVAL_SECONDS)
+        erste_anfrage = False
+
+    # Der FX-Abruf laeuft BEWUSST zuerst: er ist die einzige Anfrage, die alle
+    # USD-Ticker gemeinsam braucht, und ein Fehlschlag bricht den ganzen Lauf
+    # ab. Am Ende der Reihenfolge kostet dieser Abbruch die 16 bereits
+    # verbrauchten Ticker-Requests mit - bei 25 Requests/Tag ist damit auch der
+    # zweite Versuch fuer denselben Tag verloren (so geschehen beim ersten
+    # Lauf, siehe Issue #6). Vorne kostet derselbe Fehlschlag genau 1 Request.
+    fx_rates: dict[date, float] = {}
+    if usd_tickers_present:
+        pace()
+        print("  EUR/USD-Historie (FX_WEEKLY) ...", file=sys.stderr)
+        fx_rates = source.fetch_fx_weekly_eur_per_usd(since)
+
+    for ticker in non_crypto:
+        pace()
         print(f"  {ticker} ...", file=sys.stderr)
         per_ticker[ticker] = source.fetch_weekly_history(ticker, since)
 
-    usd_tickers_present = [t for t in non_crypto if t in USD_TICKERS]
     if usd_tickers_present:
-        time.sleep(_REQUEST_INTERVAL_SECONDS)
-        print("  EUR/USD-Historie (FX_WEEKLY) ...", file=sys.stderr)
-        fx_rates = source.fetch_fx_weekly_eur_per_usd(since)
         fx_dates_sorted = sorted(fx_rates)
         for ticker in usd_tickers_present:
             per_ticker[ticker] = {
@@ -94,7 +110,7 @@ def collect_weekly_series(
             }
 
     if "BTC-EUR" in tickers:
-        time.sleep(_REQUEST_INTERVAL_SECONDS)
+        pace()
         print("  BTC-EUR ...", file=sys.stderr)
         per_ticker["BTC-EUR"] = source.fetch_crypto_weekly_history(since)
 

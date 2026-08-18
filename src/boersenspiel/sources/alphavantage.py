@@ -225,11 +225,7 @@ class AlphaVantageSource:
             timeout=30,
         )
         resp.raise_for_status()
-        data = resp.json()
-        series = data.get("Weekly Time Series")
-        if not series:
-            raise RuntimeError(f"keine woechentliche Historie fuer {symbol}: {data!r}")
-        return _parse_weekly_close_series(series, since)
+        return _parse_weekly_close_series(_extract_time_series(resp.json(), symbol), since)
 
     def fetch_fx_weekly_eur_per_usd(self, since: date) -> dict[date, float]:
         """Woechentlicher EUR-Gegenwert von 1 USD ab ``since`` (fuer die
@@ -240,11 +236,7 @@ class AlphaVantageSource:
             timeout=30,
         )
         resp.raise_for_status()
-        data = resp.json()
-        series = data.get("Weekly Time Series (FX)")
-        if not series:
-            raise RuntimeError(f"keine woechentliche FX-Historie fuer USD/EUR: {data!r}")
-        return _parse_weekly_close_series(series, since)
+        return _parse_weekly_close_series(_extract_time_series(resp.json(), "USD/EUR (FX_WEEKLY)"), since)
 
     def fetch_crypto_weekly_history(self, since: date) -> dict[date, float]:
         """Woechentliche BTC-EUR-Historie ab ``since``."""
@@ -254,12 +246,7 @@ class AlphaVantageSource:
             timeout=30,
         )
         resp.raise_for_status()
-        data = resp.json()
-        series = data.get("Time Series (Digital Currency Weekly)") or data.get(
-            "Weekly Time Series (Digital Currency Weekly)"
-        )
-        if not series:
-            raise RuntimeError(f"keine woechentliche Kryptohistorie fuer BTC-EUR: {data!r}")
+        series = _extract_time_series(resp.json(), "BTC-EUR (DIGITAL_CURRENCY_WEEKLY)")
         result: dict[date, float] = {}
         for date_str, values in series.items():
             d = date.fromisoformat(date_str)
@@ -272,6 +259,44 @@ class AlphaVantageSource:
                 continue
             result[d] = float(values[close_key])
         return result
+
+
+def _extract_time_series(data: dict, kontext: str) -> dict:
+    """Zieht die Zeitreihe aus einer Alpha-Vantage-Antwort, ohne den
+    Schluesselnamen fest zu verdrahten.
+
+    Alpha Vantage benennt den Zeitreihen-Schluessel je Endpunkt anders und
+    ohne erkennbares Muster::
+
+        TIME_SERIES_WEEKLY       -> "Weekly Time Series"
+        FX_WEEKLY                -> "Time Series FX (Weekly)"
+        DIGITAL_CURRENCY_WEEKLY  -> "Time Series (Digital Currency Weekly)"
+
+    Ein fest eingetragener Name bricht deshalb still, sobald ein Endpunkt
+    dazukommt oder anders heisst als vermutet - genau daran ist der erste
+    Backfill-Lauf gescheitert (FX_WEEKLY war als "Weekly Time Series (FX)"
+    eingetragen). Statt zu raten wird der einzige Eintrag genommen, der ein
+    Objekt ist; "Meta Data" ist ausgenommen.
+
+    Fehler- und Rate-Limit-Antworten ("Note"/"Information"/"Error Message")
+    haben ausschliesslich String-Werte und liefern damit automatisch die
+    aussagekraeftige Fehlermeldung statt einer stillen Luecke.
+    """
+    kandidaten = {k: v for k, v in data.items() if k != "Meta Data" and isinstance(v, dict)}
+    if len(kandidaten) == 1:
+        return next(iter(kandidaten.values()))
+    if not kandidaten:
+        raise RuntimeError(f"keine Zeitreihe in der Antwort fuer {kontext}: {_kurz(data)}")
+    raise RuntimeError(
+        f"mehrdeutige Antwort fuer {kontext}, Zeitreihen-Kandidaten {sorted(kandidaten)}: {_kurz(data)}"
+    )
+
+
+def _kurz(data: object, grenze: int = 500) -> str:
+    """Gekuerzte Darstellung fuer Fehlermeldungen - eine vollstaendige
+    Kurshistorie im Traceback macht das Log unlesbar."""
+    text = repr(data)
+    return text if len(text) <= grenze else text[:grenze] + " ... (gekuerzt)"
 
 
 def _parse_trading_day(raw: str | None) -> date | None:
