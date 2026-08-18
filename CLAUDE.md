@@ -149,7 +149,11 @@ implementiert und per Mock-Tests verifiziert, aber noch nicht live gegen
 die echte Alpha-Vantage-API gelaufen (Tageslimit beim Verifizieren der
 Satelliten-Ticker-Symbole aufgebraucht) — vor dem ersten echten Lauf kurz
 gegenprüfen, dass `TIME_SERIES_WEEKLY`/`FX_WEEKLY`/`DIGITAL_CURRENCY_WEEKLY`
-im Free-Tier verfügbar sind.
+im Free-Tier verfügbar sind. Für den Lauf gibt es den manuell startbaren
+Workflow `.github/workflows/backfill.yml` (nutzt das Repo-Secret, verlangt
+`confirm=REPLACE`, schreibt eine Plausibilitätsprüfung in die Job-Summary) -
+nicht am selben Tag wie den wöchentlichen Kursabruf starten (18 + 18
+Requests > Tageslimit 25).
 
 ### GitHub Actions (`.github/workflows/weekly-update.yml`)
 

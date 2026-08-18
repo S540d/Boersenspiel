@@ -62,3 +62,19 @@ def test_record_week_missing_with_no_history_logs_missing(tmp_path: Path):
 
     rows = read_price_history(tmp_path)
     assert "EUNL" not in rows[0].prices
+
+
+def test_carry_forward_uses_previous_week_not_a_later_one(tmp_path: Path):
+    """Wird eine Luecke nachtraeglich gefuellt, darf der Carry-Forward nur auf
+    zurueckliegende Wochen zurueckgreifen - sonst landet der Kurs einer
+    spaeteren Woche (Blick in die Zukunft) in der Historie."""
+    record_week(date(2024, 1, 1), _quotes(EUNL=100.0), data_dir=tmp_path)
+    record_week(date(2024, 1, 15), _quotes(EUNL=200.0), data_dir=tmp_path)
+
+    missing_quote = {"EUNL": PriceQuote("EUNL", None, "missing", "test")}
+    row = record_week(date(2024, 1, 8), missing_quote, data_dir=tmp_path)
+
+    assert row.prices["EUNL"] == Decimal("100.0")
+
+    rows = read_price_history(tmp_path)
+    assert [r.prices["EUNL"] for r in rows] == [Decimal("100.0"), Decimal("100.0"), Decimal("200.0")]

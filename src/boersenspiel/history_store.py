@@ -99,11 +99,16 @@ def record_week(
         None,
     )
 
-    # Letzter bekannter Kurs je Ticker aus der Historie VOR dieser Schreiboperation
-    # (die evtl. ersetzte Zeile derselben Woche zählt dabei nicht als "bekannt").
+    # Letzter bekannter Kurs je Ticker aus den Wochen VOR der Zielwoche.
+    # Bewusst nur zurueckliegende Wochen: wird eine Luecke nachtraeglich
+    # gefuellt (z. B. record_prices.py mit einem alten --date oder ein
+    # Backfill, der Wochen nicht streng chronologisch schreibt), duerfte ein
+    # Carry-Forward sonst den Kurs einer SPAETEREN Woche uebernehmen und damit
+    # einen Blick in die Zukunft in die Historie schreiben. existing_rows ist
+    # aufsteigend sortiert, das letzte update() gewinnt also.
     last_known: dict[str, Decimal] = {}
-    for i, r in enumerate(existing_rows):
-        if i == same_week_index:
+    for r in existing_rows:
+        if _iso_week(r.date) >= target_week:
             continue
         last_known.update(r.prices)
 
