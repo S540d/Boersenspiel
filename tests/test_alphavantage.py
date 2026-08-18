@@ -210,11 +210,19 @@ def test_fetch_weekly_history_raises_when_series_missing(monkeypatch: pytest.Mon
 
 
 def test_fetch_fx_weekly_eur_per_usd(monkeypatch: pytest.MonkeyPatch):
+    # Schluesselname und Feldnamen exakt so, wie die echte API sie liefert
+    # (belegt durch den Backfill-Lauf vom 18.08.2026) - der erste Lauf
+    # scheiterte, weil hier "Weekly Time Series (FX)" angenommen wurde.
     payload = {
-        "Weekly Time Series (FX)": {
-            "2026-08-14": {"4. close": "0.9200"},
-            "2019-01-04": {"4. close": "0.8700"},
-        }
+        "Meta Data": {
+            "1. Information": "Forex Weekly Prices (open, high, low, close)",
+            "2. From Symbol": "USD",
+            "3. To Symbol": "EUR",
+        },
+        "Time Series FX (Weekly)": {
+            "2026-08-14": {"1. open": "0.9100", "4. close": "0.9200"},
+            "2019-01-04": {"1. open": "0.8600", "4. close": "0.8700"},
+        },
     }
     monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
     source = av.AlphaVantageSource(api_key="dummy")
@@ -248,3 +256,118 @@ def test_fetch_crypto_weekly_history_flat_format(monkeypatch: pytest.MonkeyPatch
     result = source.fetch_crypto_weekly_history(since=date(2020, 1, 1))
 
     assert result == {date(2026, 8, 14): 58000.0}
+
+
+def test_quote_reports_trading_day_not_request_day(monkeypatch: pytest.MonkeyPatch):
+    """Ein Montagslauf liefert den Freitagsschluss - der Handelstag aus
+    "07. latest trading day" muss durchgereicht werden, sonst landet der Kurs
+    eine Woche zu spaet in der Historie (siehe row_date_from_quotes)."""
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse(
+            {"Global Quote": {"05. price": "82.10", "07. latest trading day": "2026-08-21"}}
+        ),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))  # Montag
+
+    assert result["EUNL"].quote_date == date(2026, 8, 21)  # Freitag
+
+
+def test_quote_without_trading_day_field_stays_usable(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse({"Global Quote": {"05. price": "82.10"}}),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].status == "ok"
+    assert result["EUNL"].quote_date is None
+
+
+def test_unparsable_trading_day_does_not_break_the_quote(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse(
+            {"Global Quote": {"05. price": "82.10", "07. latest trading day": "keinDatum"}}
+        ),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].status == "ok"
+    assert result["EUNL"].price == 82.10
+    assert result["EUNL"].quote_date is None
+
+
+# --- Zeitreihen-Extraktion -----------------------------------------------------
+#
+# Alpha Vantage benennt den Zeitreihen-Schluessel je Endpunkt anders. Die
+# folgenden Payloads sind die real beobachteten Formate: TIME_SERIES_WEEKLY aus
+# dem erfolgreichen Teil des Backfill-Laufs vom 18.08.2026, FX_WEEKLY aus dessen
+# Fehlermeldung, DIGITAL_CURRENCY_WEEKLY aus einem direkten Abruf.
+
+
+def test_weekly_history_accepts_the_real_time_series_key(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "Meta Data": {"1. Information": "Weekly Prices", "2. Symbol": "EUNL.DEX"},
+        "Weekly Time Series": {
+            "2026-08-14": {"1. open": "127.0", "4. close": "128.70"},
+            "2019-01-04": {"1. open": "70.0", "4. close": "71.00"},
+        },
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    source = av.AlphaVantageSource(api_key="dummy")
+
+    assert source.fetch_weekly_history("EUNL", since=date(2024, 1, 1)) == {date(2026, 8, 14): 128.70}
+
+
+def test_crypto_weekly_accepts_the_real_time_series_key(monkeypatch: pytest.MonkeyPatch):
+    payload = {
+        "Meta Data": {"1. Information": "Weekly Prices and Volumes for Digital Currency"},
+        "Time Series (Digital Currency Weekly)": {
+            "2026-08-18": {"1. open": "54293.03", "4. close": "55555.27", "5. volume": "230.17"},
+        },
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    source = av.AlphaVantageSource(api_key="dummy")
+
+    assert source.fetch_crypto_weekly_history(since=date(2024, 1, 1)) == {date(2026, 8, 18): 55555.27}
+
+
+def test_rate_limit_response_raises_instead_of_looking_like_an_empty_series():
+    """Rate-Limit-/Fehlerantworten haben nur String-Werte - sie duerfen nicht
+    als leere Zeitreihe durchgehen, sondern muessen den Backfill abbrechen."""
+    payload = {"Information": "our standard API rate limit is 25 requests per day"}
+    with pytest.raises(RuntimeError, match="keine Zeitreihe"):
+        av._extract_time_series(payload, "TESTKONTEXT")
+
+
+def test_extraction_is_independent_of_the_series_key_name():
+    """Kern des Fixes: der Schluesselname wird nicht mehr geraten."""
+    for key in ("Weekly Time Series", "Time Series FX (Weekly)", "Time Series (Digital Currency Weekly)"):
+        payload = {"Meta Data": {"1. Information": "..."}, key: {"2026-08-14": {"4. close": "1.0"}}}
+        assert av._extract_time_series(payload, "TESTKONTEXT") == {"2026-08-14": {"4. close": "1.0"}}
+
+
+def test_ambiguous_response_raises_rather_than_guessing():
+    payload = {
+        "Meta Data": {"1. Information": "..."},
+        "Weekly Time Series": {"2026-08-14": {"4. close": "1.0"}},
+        "Monthly Time Series": {"2026-08-31": {"4. close": "2.0"}},
+    }
+    with pytest.raises(RuntimeError, match="mehrdeutig"):
+        av._extract_time_series(payload, "TESTKONTEXT")
+
+
+def test_error_message_is_truncated_for_huge_payloads():
+    """Eine komplette Kurshistorie im Traceback macht das Actions-Log unlesbar."""
+    payload = {"Information": "x" * 5000}
+    with pytest.raises(RuntimeError) as exc:
+        av._extract_time_series(payload, "TESTKONTEXT")
+    assert "gekuerzt" in str(exc.value)
+    assert len(str(exc.value)) < 1000
