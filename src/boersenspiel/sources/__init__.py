@@ -5,7 +5,10 @@ Liste der Ticker (aus ``instruments.py``) sowie ein "as_of"-Datum und liefert
 für jeden Ticker entweder einen Kurs (Status ``ok``) oder signalisiert, dass
 kein Kurs gefunden wurde (Status ``missing``) - Letzteres lässt
 ``history_store.record_week`` dann automatisch auf den letzten bekannten Kurs
-zurückfallen ("carry forward").
+zurückfallen ("carry forward"). Status ``rate_limited`` ist ein Sonderfall von
+``missing``: die Quelle hat erkennbar ein Rate-Limit erreicht statt keinen
+Kurs für dieses Instrument zu haben - ``record_week`` behandelt beide gleich
+(carry forward), vermerkt den Unterschied aber im ``fetch_log.csv``.
 
 Die konkrete Quelle ist bewusst austauschbar: der GitHub-Actions-Workflow
 nutzt standardmäßig ``yfinance_stooq.YfinanceStooqSource``, aber der Kursabruf
@@ -28,7 +31,7 @@ class PriceQuote:
 
     ticker: str
     price: float | None
-    status: str  # "ok" oder "missing"
+    status: str  # "ok" | "missing" | "rate_limited"
     source: str = ""
     # Handelstag, auf den sich ``price`` bezieht - NICHT der Tag des Abrufs.
     # Ein Montagslauf liefert vor Börsenbeginn den Freitagsschluss; ohne diese

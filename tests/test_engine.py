@@ -40,13 +40,15 @@ def _rows() -> list[PriceRow]:
         PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
         # T1 verdoppelt sich (200), T2 faellt auf 50 -> TopfX-Gewicht springt
         # auf 1000/1250=80% -> Abweichung 30pp > 10pp -> Rebalancing.
-        # Zugleich letzte Zeile des Jahres 2024 -> Dezember-Harvest greift
+        # Zugleich letzte Zeile des Jahres 2024 UND das Jahr 2024 ist in der
+        # Historie abgeschlossen (2025 folgt noch) -> Dezember-Harvest greift
         # danach zusaetzlich auf den unrealisierten Verlust von T2 (Kurs 50
         # liegt unter der durch den Rebalancing-Kauf erhoehten Kostenbasis).
         PriceRow(date(2024, 1, 8), {"T1": Decimal("200"), "T2": Decimal("50")}),
         # Neues Jahr (2025) -> Freibetrag-Reset. T1 steigt weiter auf 500,
-        # T2 bleibt bei 50 -> erneutes Rebalancing + Dezember-Harvest (da
-        # einzige Zeile in 2025).
+        # T2 bleibt bei 50 -> erneutes Rebalancing. Kein Dezember-Harvest hier:
+        # 2025 ist das laufende (nicht abgeschlossene) Jahr und die Zeile liegt
+        # nicht im Dezember, auch wenn es die einzige Zeile in 2025 ist.
         PriceRow(date(2025, 1, 6), {"T1": Decimal("500"), "T2": Decimal("50")}),
     ]
 
@@ -55,20 +57,32 @@ def test_simple_strategy_end_to_end_exact_values():
     result = simulate(_rows(), SIMPLE_STRATEGY)
 
     # Von Hand hergeleitete Endwerte (siehe Modul-Docstring-Herleitung im PR).
+    # holdings sind vom Zeitpunkt des Harvests unabhaengig - der Harvest kauft
+    # zum selben Kurs sofort zurueck.
     assert result.holdings["T1"] == Decimal("2.1875")
     assert result.holdings["T2"] == Decimal("21.875")
 
+    # Steuerherleitung:
+    # 2024-01-08 Rebalance-Verkauf T1: Gewinn 186,50 -> voll gegen den frischen
+    #   Freibetrag verrechnet (freibetrag_verbleibend 1000 -> 813,50).
+    # 2024-01-08 Harvest-Verkauf T2 (Jahr 2024 abgeschlossen, da 2025 folgt):
+    #   Verlust 252 -> verlustvortrag 0 -> 252.
+    # 2025-01-06 Freibetrag-Reset auf 1000 (neues Jahr). Rebalance-Verkauf T1:
+    #   Gewinn 374 -> zunaechst voll gegen verlustvortrag verrechnet (252),
+    #   Rest 122 gegen den (neuen) Freibetrag -> freibetrag_verbleibend 878,
+    #   verlustvortrag 0. Kein Harvest 2025 (laufendes, unvollstaendiges Jahr).
     assert result.tax_status.year == 2025
     assert result.tax_status.freibetrag_verbleibend == Decimal("878")
     assert result.tax_status.freibetrag_verbraucht == Decimal("122")
-    assert result.tax_status.verlustvortrag == Decimal("3")
+    assert result.tax_status.verlustvortrag == Decimal("0.00")
     assert result.tax_status.kumulierte_steuer == Decimal("0")
 
     assert result.last_rebalance_date == date(2025, 1, 6)
-    assert result.last_harvest_date == date(2025, 1, 6)
+    assert result.last_harvest_date == date(2024, 1, 8)
 
-    # 2 Initialkauf-Trades + je (2 Rebalance + 2 Harvest) fuer beide Jahre
-    assert len(result.trades) == 10
+    # 2 Initialkauf-Trades + 2024-01-08 (2 Rebalance + 2 Harvest) + 2025-01-06
+    # (2 Rebalance, kein Harvest im laufenden Jahr)
+    assert len(result.trades) == 8
 
 
 def test_initial_buy_deducts_fees_before_allocation():
@@ -138,3 +152,54 @@ def test_barbell_strategy_runs_and_keeps_weights_consistent():
     total_weight = sum(last_point.ticker_weights.values())
     assert abs(total_weight - Decimal("1")) < Decimal("0.0001")
     assert all(units >= 0 for units in result.holdings.values())
+
+
+# Regressionstests fuer Issue #10: Instrumente ohne Kurs verlieren nicht mehr
+# stillschweigend ihren Kapitalanteil.
+
+MISSING_PRICE_STRATEGY = Strategy(
+    name="Test-Zwei-Toepfe-Missing",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"T1": Decimal("1")}),
+        Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"T2": Decimal("1")}),
+    ],
+    ziel_topf="TopfX",
+    ziel_gewicht=Decimal("0.5"),
+    rebalancing_schwelle_pp=Decimal("100"),  # kein Rebalancing in diesen Tests
+)
+
+
+def test_missing_price_in_first_row_parks_capital_as_cash_and_invests_later():
+    # T2 hat in der ersten Zeile noch keinen Kurs (z. B. vor seinem IPO). Der
+    # dafuer vorgesehene Kapitalanteil bleibt als Cash geparkt statt zu
+    # verfallen und wird investiert, sobald T2 erstmals einen Kurs hat.
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("100"), "T2": Decimal("50")}),
+    ]
+    result = simulate(rows, MISSING_PRICE_STRATEGY)
+
+    # Startkapital 1000 - 2*1 Gebuehr = 998 investierbar, je 499 -> T1 sofort,
+    # T2 verzoegert zum Kurs 50 der zweiten Zeile.
+    assert result.holdings["T1"] == Decimal("4.99")
+    assert result.holdings["T2"] == Decimal("9.98")
+    assert result.value_history[0].total_value == Decimal("998")
+    assert result.value_history[1].total_value == Decimal("998")
+    delayed_buys = [t for t in result.trades if t.reason == "delayed_initial_buy"]
+    assert len(delayed_buys) == 1
+    assert delayed_buys[0].ticker == "T2"
+
+
+def test_missing_price_in_later_row_values_with_last_known_price():
+    # T2 fehlt in der mittleren Zeile - die Position darf nicht aus der Summe
+    # herausfallen, sondern wird mit dem letzten bekannten Kurs bewertet.
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 15), {"T1": Decimal("100"), "T2": Decimal("100")}),
+    ]
+    result = simulate(rows, MISSING_PRICE_STRATEGY)
+
+    values = [vp.total_value for vp in result.value_history]
+    assert values == [Decimal("998"), Decimal("998"), Decimal("998")]
