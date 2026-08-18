@@ -325,13 +325,24 @@ pytest -q
 - **Rebalancing** bringt bei Auslösung (>Schwelle Abweichung vom
   Ziel-Topf-Gewicht) **alle** Instrumente auf ihr Zielgewicht zurück, nicht
   nur den auslösenden Topf.
-- **Dezember-Harvest:** An der letzten Kurszeile jedes Kalenderjahres
-  werden verlustbehaftete Positionen (größter Verlust zuerst) vollständig
-  verkauft und sofort zum selben Kurs neu gekauft, bis der noch nicht
-  genutzte Sparerpauschbetrag des laufenden Jahres durch realisierte
-  Verluste gedeckt ist (oder keine Verlustpositionen mehr vorhanden sind).
-  Das Pflichtenheft spezifizierte hier keinen exakten Algorithmus – diese
-  Variante wurde im Planungsgespräch bestätigt.
+- **Dezember-Harvest:** An der letzten Kurszeile eines abgeschlossenen
+  Kalenderjahres greift genau eine von zwei sich gegenseitig ausschließenden
+  Maßnahmen, je nachdem wie das Steuerjahr bis dahin gelaufen ist (siehe
+  [#13](https://github.com/S540d/Boersenspiel/issues/13)/[#16](https://github.com/S540d/Boersenspiel/issues/16)):
+  (A) **Freibetrag-Gewinnmitnahme**, solange der Sparerpauschbetrag des
+  Jahres noch nicht ausgeschöpft ist: Gewinnpositionen (größter
+  unrealisierter Gewinn zuerst) werden **anteilig** verkauft und sofort zum
+  selben Kurs zurückgekauft, bis der realisierte Gewinn den verbleibenden
+  Freibetrag genau ausschöpft (nicht überschreitet) — der Gewinn bleibt
+  steuerfrei, die Kostenbasis wird steuerfrei angehoben. (B) **Echtes
+  Tax-Loss-Harvesting**, sobald im Jahr bereits ein steuerpflichtiger Gewinn
+  realisiert wurde (der Freibetrag also schon bei 0 steht): Verlustpositionen
+  (größter unrealisierter Verlust zuerst) werden anteilig verkauft und sofort
+  zurückgekauft, bis die realisierten Verluste den steuerpflichtigen Teil der
+  Jahresgewinne decken — das verschiebt die schon versteuerte Gewinnsumme
+  nicht rückwirkend, sondern baut einen Verlustvortrag auf, der künftige
+  Gewinne mindert. Das Pflichtenheft spezifizierte hier keinen exakten
+  Algorithmus – diese Variante wurde im Planungsgespräch bestätigt.
 - **Steuerlogik** unverändert aus dem Pflichtenheft: Verlustverrechnung vor
   Freibetrag vor Steuer (26,375 %), Sparerpauschbetrag 1.000 €/Jahr mit
   Reset zum Kalenderjahreswechsel, ein gemeinsamer Verlust-/Freibetrag-Topf,

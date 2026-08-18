@@ -18,13 +18,25 @@ Modellierungsentscheidungen (siehe README für Details):
   zurück (nicht nur den auslösenden Topf).
 - Dezember-Harvest: an der letzten Kurszeile eines ABGESCHLOSSENEN
   Kalenderjahres (ein späteres Jahr ist in der Historie bereits vertreten,
-  oder die Zeile liegt selbst im Dezember) werden verlustbehaftete Positionen
-  (größter Verlust zuerst, bei Gleichstand nach Ticker sortiert) vollständig
-  verkauft und sofort zum selben Kurs neu gekauft, bis der noch nicht
-  genutzte Sparerpauschbetrag des jeweiligen Jahres durch realisierte
-  Verluste gedeckt ist (oder keine Verlustpositionen mehr vorhanden sind).
-  Das laufende, noch unvollständige Jahr löst keinen Harvest aus, auch wenn
-  seine bislang letzte Zeile zufällig die neueste der gesamten Historie ist.
+  oder die Zeile liegt selbst im Dezember) greift genau eine von zwei sich
+  gegenseitig ausschließenden Maßnahmen, je nachdem wie das Steuerjahr bis
+  dahin gelaufen ist (siehe #13/#16):
+  (A) Freibetrag-Gewinnmitnahme, wenn der Sparerpauschbetrag des Jahres noch
+      nicht ausgeschöpft ist (`freibetrag_verbleibend > 0`): Gewinnpositionen
+      (größter unrealisierter Gewinn zuerst) werden anteilig verkauft und
+      sofort zum selben Kurs zurückgekauft, bis der realisierte Gewinn den
+      verbleibenden Freibetrag genau ausschöpft, nicht überschreitet. Der
+      Gewinn bleibt steuerfrei, die Kostenbasis wird steuerfrei angehoben.
+  (B) Echtes Tax-Loss-Harvesting, wenn im Jahr bereits ein steuerpflichtiger
+      Gewinn realisiert wurde (Freibetrag ist folglich bereits 0):
+      Verlustpositionen (größter unrealisierter Verlust zuerst) werden
+      anteilig verkauft und sofort zurückgekauft, bis die realisierten
+      Verluste den steuerpflichtigen Teil der Jahresgewinne decken. Das
+      verschiebt die bereits versteuerte Gewinnsumme nicht rückwirkend,
+      sondern baut einen Verlustvortrag auf, der künftige Gewinne mindert.
+  Bei Gleichstand wird nach Ticker sortiert. Das laufende, noch
+  unvollständige Jahr löst keinen Harvest aus, auch wenn seine bislang
+  letzte Zeile zufällig die neueste der gesamten Historie ist.
 - Fehlt einem Instrument in der ersten Kurszeile der Kurs (z. B. ein Titel,
   der erst später an die Börse ging), bleibt sein Kapitalanteil als
   unverzinste Cash-Position geparkt, statt verlorenzugehen - sobald die
@@ -53,7 +65,7 @@ class Trade:
     price: Decimal
     fee: Decimal
     realized_gain: Decimal | None
-    reason: str  # "initial_buy" | "delayed_initial_buy" | "rebalance" | "december_harvest" | "december_harvest_rebuy"
+    reason: str  # "initial_buy" | "delayed_initial_buy" | "rebalance" | "freibetrag_gewinnmitnahme" | "freibetrag_gewinnmitnahme_rebuy" | "tax_loss_harvest" | "tax_loss_harvest_rebuy"
 
 
 @dataclass
@@ -129,9 +141,13 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
     freibetrag_verbleibend = SPARERPAUSCHBETRAG_PRO_JAHR
     verlustvortrag = Decimal(0)
     kumulierte_steuer = Decimal(0)
+    # Steuerpflichtiger (bereits versteuerter) Anteil der im laufenden Jahr
+    # realisierten Gewinne - Trigger und Zielgröße für den Tax-Loss-Harvest
+    # (Maßnahme B), unabhängig von freibetrag_verbleibend.
+    steuerpflichtige_gewinne_jahr = Decimal(0)
 
     def process_realized_gain(gain: Decimal) -> None:
-        nonlocal freibetrag_verbleibend, verlustvortrag, kumulierte_steuer
+        nonlocal freibetrag_verbleibend, verlustvortrag, kumulierte_steuer, steuerpflichtige_gewinne_jahr
         if gain <= 0:
             verlustvortrag += -gain
             return
@@ -142,12 +158,14 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         freibetrag_verbleibend -= offset_freibetrag
         steuerpflichtig = rest - offset_freibetrag
         kumulierte_steuer += steuerpflichtig * STEUERSATZ
+        steuerpflichtige_gewinne_jahr += steuerpflichtig
 
     def reset_year_if_needed(year: int) -> None:
-        nonlocal current_tax_year, freibetrag_verbleibend
+        nonlocal current_tax_year, freibetrag_verbleibend, steuerpflichtige_gewinne_jahr
         if year != current_tax_year:
             current_tax_year = year
             freibetrag_verbleibend = SPARERPAUSCHBETRAG_PRO_JAHR
+            steuerpflichtige_gewinne_jahr = Decimal(0)
 
     def total_cash() -> Decimal:
         return sum(pending_cash.values(), Decimal(0))
@@ -204,7 +222,61 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                 executed = True
         return executed
 
-    def december_harvest(prices: dict[str, Decimal], trade_date: date) -> bool:
+    def december_gewinnmitnahme(prices: dict[str, Decimal], trade_date: date) -> bool:
+        """Maßnahme A: Gewinnpositionen anteilig verkaufen und sofort
+        zurückkaufen, bis der realisierte Gewinn den verbleibenden
+        Freibetrag genau ausschöpft (nicht überschreitet)."""
+        winners: list[tuple[str, Decimal]] = []
+        for t in tickers:
+            price = prices.get(t)
+            pos = positions[t]
+            if price is None or pos.units <= 0:
+                continue
+            unrealized = pos.units * price - pos.cost_total
+            if unrealized > 0:
+                winners.append((t, unrealized))
+        if not winners:
+            return False
+
+        winners.sort(key=lambda kv: (-kv[1], kv[0]))
+        executed = False
+        for t, _ in winners:
+            ziel_gewinn = freibetrag_verbleibend
+            if ziel_gewinn <= 0:
+                break
+            price = prices[t]
+            pos = positions[t]
+            avg_cost = pos.avg_cost()
+            gewinn_je_stueck = price - avg_cost
+            if gewinn_je_stueck <= 0:
+                continue
+            units_to_sell = min((ziel_gewinn + ORDERGEBUEHR) / gewinn_je_stueck, pos.units)
+            if units_to_sell <= 0:
+                continue
+            proceeds = units_to_sell * price
+            cost_removed = avg_cost * units_to_sell
+            realized_gain = proceeds - cost_removed - ORDERGEBUEHR
+            pos.units -= units_to_sell
+            pos.cost_total -= cost_removed
+            trades.append(
+                Trade(trade_date, t, "sell", units_to_sell, price, ORDERGEBUEHR, realized_gain, "freibetrag_gewinnmitnahme")
+            )
+            process_realized_gain(realized_gain)
+            executed = True
+
+            # sofortiger Rückkauf zum selben Kurs, um die Marktexponierung zu
+            # erhalten - hebt die Kostenbasis steuerfrei an.
+            pos.units += units_to_sell
+            pos.cost_total += proceeds + ORDERGEBUEHR
+            trades.append(
+                Trade(trade_date, t, "buy", units_to_sell, price, ORDERGEBUEHR, None, "freibetrag_gewinnmitnahme_rebuy")
+            )
+        return executed
+
+    def december_tax_loss_harvest(prices: dict[str, Decimal], trade_date: date) -> bool:
+        """Maßnahme B: Verlustpositionen anteilig verkaufen und sofort
+        zurückkaufen, bis die realisierten Verluste den bereits
+        steuerpflichtig gewordenen Teil der Jahresgewinne decken."""
         losers: list[tuple[str, Decimal]] = []
         for t in tickers:
             price = prices.get(t)
@@ -219,31 +291,42 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
 
         losers.sort(key=lambda kv: (-kv[1], kv[0]))
         harvested = Decimal(0)
-        target_harvest = freibetrag_verbleibend
+        ziel_verlust = steuerpflichtige_gewinne_jahr
         executed = False
-        for t, loss in losers:
-            if harvested >= target_harvest:
+        for t, _ in losers:
+            restziel = ziel_verlust - harvested
+            if restziel <= 0:
                 break
             price = prices[t]
             pos = positions[t]
-            units_to_sell = pos.units
+            avg_cost = pos.avg_cost()
+            verlust_je_stueck = avg_cost - price
+            if verlust_je_stueck <= 0:
+                continue
+            units_needed = max(restziel - ORDERGEBUEHR, Decimal(0)) / verlust_je_stueck
+            if units_needed <= 0:
+                # Restziel liegt unter der Gebühr allein - jeder Verkauf
+                # würde das Ziel überschießen, also hier abbrechen statt
+                # überzuharvesten.
+                break
+            units_to_sell = min(units_needed, pos.units)
             proceeds = units_to_sell * price
-            cost_removed = pos.cost_total
+            cost_removed = avg_cost * units_to_sell
             realized_gain = proceeds - cost_removed - ORDERGEBUEHR
-            pos.units = Decimal(0)
-            pos.cost_total = Decimal(0)
+            pos.units -= units_to_sell
+            pos.cost_total -= cost_removed
             trades.append(
-                Trade(trade_date, t, "sell", units_to_sell, price, ORDERGEBUEHR, realized_gain, "december_harvest")
+                Trade(trade_date, t, "sell", units_to_sell, price, ORDERGEBUEHR, realized_gain, "tax_loss_harvest")
             )
             process_realized_gain(realized_gain)
-            harvested += loss
+            harvested += -realized_gain
             executed = True
 
             # sofortiger Rückkauf zum selben Kurs, um die Marktexponierung zu erhalten
-            pos.units = units_to_sell
-            pos.cost_total = proceeds + ORDERGEBUEHR
+            pos.units += units_to_sell
+            pos.cost_total += proceeds + ORDERGEBUEHR
             trades.append(
-                Trade(trade_date, t, "buy", units_to_sell, price, ORDERGEBUEHR, None, "december_harvest_rebuy")
+                Trade(trade_date, t, "buy", units_to_sell, price, ORDERGEBUEHR, None, "tax_loss_harvest_rebuy")
             )
         return executed
 
@@ -323,8 +406,12 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                         last_rebalance_date = row.date
 
         if row.date in harvest_dates:
-            if december_harvest(prices, row.date):
-                last_harvest_date = row.date
+            if freibetrag_verbleibend > 0:
+                if december_gewinnmitnahme(prices, row.date):
+                    last_harvest_date = row.date
+            elif steuerpflichtige_gewinne_jahr > 0:
+                if december_tax_loss_harvest(prices, row.date):
+                    last_harvest_date = row.date
 
         values = current_values(prices)
         total_value = sum(values.values(), Decimal(0)) + total_cash()

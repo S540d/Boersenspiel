@@ -166,7 +166,13 @@ def test_buy_and_hold_never_rebalances():
     result = simulate(_sample_rows(), BUY_AND_HOLD)
     assert result.last_rebalance_date is None
     reasons = {t.reason for t in result.trades}
-    assert reasons <= {"initial_buy", "december_harvest", "december_harvest_rebuy"}
+    assert reasons <= {
+        "initial_buy",
+        "freibetrag_gewinnmitnahme",
+        "freibetrag_gewinnmitnahme_rebuy",
+        "tax_loss_harvest",
+        "tax_loss_harvest_rebuy",
+    }
 
 
 def test_chart_sma_crossover_defaults_to_normal_weights_without_enough_history():

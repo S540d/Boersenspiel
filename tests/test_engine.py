@@ -42,8 +42,11 @@ def _rows() -> list[PriceRow]:
         # auf 1000/1250=80% -> Abweichung 30pp > 10pp -> Rebalancing.
         # Zugleich letzte Zeile des Jahres 2024 UND das Jahr 2024 ist in der
         # Historie abgeschlossen (2025 folgt noch) -> Dezember-Harvest greift
-        # danach zusaetzlich auf den unrealisierten Verlust von T2 (Kurs 50
-        # liegt unter der durch den Rebalancing-Kauf erhoehten Kostenbasis).
+        # danach zusaetzlich: Freibetrag ist nach dem Rebalancing-Gewinn noch
+        # nicht ausgeschoepft (Massnahme A) -> die verbliebene T1-Position
+        # (einziger Gewinnwert, T2 liegt im Verlust) wird vollstaendig
+        # verkauft und sofort zurueckgekauft, um den Freibetrag weiter zu
+        # fuellen.
         PriceRow(date(2024, 1, 8), {"T1": Decimal("200"), "T2": Decimal("50")}),
         # Neues Jahr (2025) -> Freibetrag-Reset. T1 steigt weiter auf 500,
         # T2 bleibt bei 50 -> erneutes Rebalancing. Kein Dezember-Harvest hier:
@@ -63,18 +66,26 @@ def test_simple_strategy_end_to_end_exact_values():
     assert result.holdings["T2"] == Decimal("21.875")
 
     # Steuerherleitung:
-    # 2024-01-08 Rebalance-Verkauf T1: Gewinn 186,50 -> voll gegen den frischen
-    #   Freibetrag verrechnet (freibetrag_verbleibend 1000 -> 813,50).
-    # 2024-01-08 Harvest-Verkauf T2 (Jahr 2024 abgeschlossen, da 2025 folgt):
-    #   Verlust 252 -> verlustvortrag 0 -> 252.
-    # 2025-01-06 Freibetrag-Reset auf 1000 (neues Jahr). Rebalance-Verkauf T1:
-    #   Gewinn 374 -> zunaechst voll gegen verlustvortrag verrechnet (252),
-    #   Rest 122 gegen den (neuen) Freibetrag -> freibetrag_verbleibend 878,
-    #   verlustvortrag 0. Kein Harvest 2025 (laufendes, unvollstaendiges Jahr).
+    # 2024-01-08 Rebalance-Verkauf T1 (1,875 Stueck zu 200, Kostenbasis 100/Stk):
+    #   Gewinn 375-187,50-1=186,50 -> voll gegen den frischen Freibetrag
+    #   verrechnet (freibetrag_verbleibend 1000 -> 813,50).
+    # 2024-01-08 Harvest (Jahr 2024 abgeschlossen, da 2025 folgt): Freibetrag
+    #   ist noch nicht ausgeschoepft (813,50 > 0) -> Massnahme A
+    #   (Gewinnmitnahme). Einziger Gewinnwert ist die verbliebene T1-Position
+    #   (3,125 Stueck zu 200, Kostenbasis 100/Stk, unrealisiert +312,50); die
+    #   Zielgroesse (813,50 + 1 Gebuehr)/100=8,135 Stueck uebersteigt den
+    #   Bestand -> komplette Position verkauft: Gewinn 625-312,50-1=311,50 ->
+    #   voll gegen den Freibetrag verrechnet -> freibetrag_verbleibend 502.
+    #   T2 liegt im Verlust und wird bei Massnahme A nicht angefasst.
+    # 2025-01-06 Freibetrag-Reset auf 1000 (neues Jahr). Rebalance-Verkauf T1
+    #   (0,9375 Stueck zu 500, Kostenbasis 200,32/Stk): Gewinn
+    #   468,75-187,80-1=279,95 -> voll gegen den (neuen) Freibetrag verrechnet
+    #   -> freibetrag_verbleibend 720,05. Kein Harvest 2025 (laufendes,
+    #   unvollstaendiges Jahr).
     assert result.tax_status.year == 2025
-    assert result.tax_status.freibetrag_verbleibend == Decimal("878")
-    assert result.tax_status.freibetrag_verbraucht == Decimal("122")
-    assert result.tax_status.verlustvortrag == Decimal("0.00")
+    assert result.tax_status.freibetrag_verbleibend == Decimal("720.05")
+    assert result.tax_status.freibetrag_verbraucht == Decimal("279.95")
+    assert result.tax_status.verlustvortrag == Decimal("0")
     assert result.tax_status.kumulierte_steuer == Decimal("0")
 
     assert result.last_rebalance_date == date(2025, 1, 6)
