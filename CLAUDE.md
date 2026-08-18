@@ -5,7 +5,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ## Project
 
 Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie (siehe
-`Pflichtenheft_PortfolioProjekt_v2.md` für die ursprünglichen Anforderungen).
+`Pflichtenheft_PortfolioProjekt_v2.md` für die ursprünglichen Anforderungen —
+die Datei liegt bewusst außerhalb dieses Repos, siehe Hinweis in der README).
 Wöchentlicher Kursabruf via GitHub Actions, Kurshistorie als CSV im Repo,
 statisches Dashboard (Chart.js) auf GitHub Pages. Es gibt keinen PR-Workflow
 in diesem Repo — Änderungen gehen direkt auf den Default-Branch
