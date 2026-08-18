@@ -115,15 +115,6 @@ Frage „wie viel hat eigentlich die Steueroptimierung beigetragen?". Ein Vorsch
 sie einzeln zuschaltbar zu machen und damit ihren Beitrag als Differenz messbar zu
 machen, liegt als [#17](https://github.com/S540d/Boersenspiel/issues/17) vor.
 
-> **Hinweis zum Stand:** An zwei Stellen weicht das tatsächliche Verhalten von der
-> hier beschriebenen Absicht ab — die Jahresend-Steueroptimierung feuert auch im
-> laufenden, unvollständigen Jahr ([#9](https://github.com/S540d/Boersenspiel/issues/9)),
-> und ihre Auslösebedingung ist steuerlich nicht sinnvoll gewählt
-> ([#13](https://github.com/S540d/Boersenspiel/issues/13),
-> [#16](https://github.com/S540d/Boersenspiel/issues/16)). Instrumente ohne Kurs in
-> der ersten Zeile verlieren zudem still ihren Kapitalanteil
-> ([#10](https://github.com/S540d/Boersenspiel/issues/10)).
-
 **Leitprinzip (aus dem Pflichtenheft übernommen):** Nur Rohdaten (Kurse)
 werden dauerhaft gespeichert. Alles Abgeleitete (Positionswerte,
 Rebalancing, Steuer, Freibetrag, Verlustvortrag) wird bei jeder
