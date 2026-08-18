@@ -50,6 +50,21 @@ def main() -> int:
     if missing:
         print(f"WARNUNG: Kein aktueller Kurs gefunden fuer: {', '.join(missing)}", file=sys.stderr)
 
+    # Ein von Alpha Vantage erreichtes Tageslimit liefert HTTP 200 mit
+    # "Note"/"Information" statt Kursdaten und sieht damit fuer jeden Ticker
+    # wie eine ganz normale Kurslücke aus (siehe AlphaVantageSource, Status
+    # "rate_limited"). Schlaegt der Abruf fuer ALLE Ticker fehl, ist das kein
+    # plausibler gleichzeitiger Ausfall aller Instrumente, sondern fast immer
+    # genau dieser Fall - abbrechen, BEVOR record_week() eine Carry-Forward-
+    # Zeile schreibt, die wie ein echtes Update aussaehe.
+    if missing and len(missing) == len(quotes):
+        print(
+            "FEHLER: Kursabruf fuer ALLE Ticker fehlgeschlagen (vermutlich Rate-Limit "
+            "der Quelle) - breche ab, ohne die Kurshistorie zu veraendern.",
+            file=sys.stderr,
+        )
+        return 1
+
     # Ein Montagslauf vor Boersenbeginn liefert den Freitagsschluss der
     # Vorwoche - unter dem Montag abgelegt landete der Kurs in der falschen
     # ISO-Woche und damit eine Woche versetzt gegenueber dem Backfill.

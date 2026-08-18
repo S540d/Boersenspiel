@@ -126,7 +126,11 @@ class AlphaVantageSource:
             data = resp.json()
             rate_str = data.get("Realtime Currency Exchange Rate", {}).get("5. Exchange Rate")
             if not rate_str:
-                print(f"alphavantage: kein EUR/USD-Kurs erhalten: {data!r}", file=sys.stderr)
+                note = _rate_limit_note(data)
+                if note:
+                    print(f"alphavantage: Rate-Limit erkannt fuer EUR/USD-Kurs: {note}", file=sys.stderr)
+                else:
+                    print(f"alphavantage: kein EUR/USD-Kurs erhalten: {data!r}", file=sys.stderr)
                 return None
             return float(rate_str)
         except Exception as exc:
@@ -155,6 +159,10 @@ class AlphaVantageSource:
             quote = data.get("Global Quote", {})
             price_str = quote.get("05. price")
             if not price_str:
+                note = _rate_limit_note(data)
+                if note:
+                    print(f"alphavantage: Rate-Limit erkannt fuer {symbol}: {note}", file=sys.stderr)
+                    return PriceQuote(ticker, None, "rate_limited", "alphavantage")
                 print(f"alphavantage: keine Kursdaten fuer {symbol}: {data!r}", file=sys.stderr)
                 return PriceQuote(ticker, None, "missing", "alphavantage")
             price = float(price_str)
@@ -181,6 +189,10 @@ class AlphaVantageSource:
             data = resp.json()
             series = data.get("Time Series (Digital Currency Daily)")
             if not series:
+                note = _rate_limit_note(data)
+                if note:
+                    print(f"alphavantage: Rate-Limit erkannt fuer BTC-EUR: {note}", file=sys.stderr)
+                    return PriceQuote(ticker, None, "rate_limited", "alphavantage")
                 print(f"alphavantage: keine Kryptodaten fuer BTC-EUR: {data!r}", file=sys.stderr)
                 return PriceQuote(ticker, None, "missing", "alphavantage")
             latest_date = max(series.keys())
@@ -297,6 +309,19 @@ def _kurz(data: object, grenze: int = 500) -> str:
     Kurshistorie im Traceback macht das Log unlesbar."""
     text = repr(data)
     return text if len(text) <= grenze else text[:grenze] + " ... (gekuerzt)"
+
+
+def _rate_limit_note(data: dict) -> str | None:
+    """Erkennt Alpha Vantages Rate-Limit-/Fehlerantworten, die bei erreichtem
+    Tageslimit statt der erwarteten Kursdaten mit HTTP 200 zurueckkommen (kein
+    "Global Quote" o.ae., stattdessen "Note"/"Information"/"Error Message").
+    Ohne diese Erkennung ist ein erschoepftes Tageslimit von einer echten
+    Kurslücke nicht unterscheidbar - beide liefern denselben Status "missing"."""
+    for key in ("Note", "Information", "Error Message"):
+        value = data.get(key)
+        if isinstance(value, str) and value:
+            return value
+    return None
 
 
 def _parse_trading_day(raw: str | None) -> date | None:

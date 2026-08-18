@@ -16,12 +16,22 @@ Modellierungsentscheidungen (siehe README für Details):
   (kein FIFO/LIFO mit einzelnen Lots).
 - Rebalancing bringt bei Auslösung ALLE Instrumente auf ihr Zielgewicht
   zurück (nicht nur den auslösenden Topf).
-- Dezember-Harvest: an der letzten Kurszeile jedes Kalenderjahres werden
-  verlustbehaftete Positionen (größter Verlust zuerst, bei Gleichstand nach
-  Ticker sortiert) vollständig verkauft und sofort zum selben Kurs neu
-  gekauft, bis der noch nicht genutzte Sparerpauschbetrag des laufenden
-  Jahres durch realisierte Verluste gedeckt ist (oder keine Verlustpositionen
-  mehr vorhanden sind).
+- Dezember-Harvest: an der letzten Kurszeile eines ABGESCHLOSSENEN
+  Kalenderjahres (ein späteres Jahr ist in der Historie bereits vertreten,
+  oder die Zeile liegt selbst im Dezember) werden verlustbehaftete Positionen
+  (größter Verlust zuerst, bei Gleichstand nach Ticker sortiert) vollständig
+  verkauft und sofort zum selben Kurs neu gekauft, bis der noch nicht
+  genutzte Sparerpauschbetrag des jeweiligen Jahres durch realisierte
+  Verluste gedeckt ist (oder keine Verlustpositionen mehr vorhanden sind).
+  Das laufende, noch unvollständige Jahr löst keinen Harvest aus, auch wenn
+  seine bislang letzte Zeile zufällig die neueste der gesamten Historie ist.
+- Fehlt einem Instrument in der ersten Kurszeile der Kurs (z. B. ein Titel,
+  der erst später an die Börse ging), bleibt sein Kapitalanteil als
+  unverzinste Cash-Position geparkt, statt verlorenzugehen - sobald die
+  erste Kurszeile mit diesem Instrument erscheint, wird die Cash-Position
+  vollständig investiert. Fehlt der Kurs in einer SPÄTEREN Zeile für ein
+  bereits gehaltenes Instrument, wird die Position mit dem letzten bekannten
+  Kurs bewertet statt aus der Summe zu fallen.
 """
 
 from __future__ import annotations
@@ -43,7 +53,7 @@ class Trade:
     price: Decimal
     fee: Decimal
     realized_gain: Decimal | None
-    reason: str  # "initial_buy" | "rebalance" | "december_harvest" | "december_harvest_rebuy"
+    reason: str  # "initial_buy" | "delayed_initial_buy" | "rebalance" | "december_harvest" | "december_harvest_rebuy"
 
 
 @dataclass
@@ -104,6 +114,12 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         return base_weights
 
     positions: dict[str, _Position] = {t: _Position() for t in tickers}
+    # Kapitalanteil eines Instruments ohne Kurs in der ersten Zeile (z. B. vor
+    # dessen Börsengang) - wird investiert, sobald erstmals ein Kurs vorliegt.
+    pending_cash: dict[str, Decimal] = {t: Decimal(0) for t in tickers}
+    # Letzter bekannter Kurs je Instrument - haelt eine Position bewertbar,
+    # wenn eine spaetere Zeile fuer dieses Instrument keinen Kurs liefert.
+    last_price: dict[str, Decimal] = {}
     trades: list[Trade] = []
     last_rebalance_date: date | None = None
     last_harvest_date: date | None = None
@@ -133,14 +149,23 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             current_tax_year = year
             freibetrag_verbleibend = SPARERPAUSCHBETRAG_PRO_JAHR
 
+    def total_cash() -> Decimal:
+        return sum(pending_cash.values(), Decimal(0))
+
     def current_values(prices: dict[str, Decimal]) -> dict[str, Decimal]:
-        return {t: positions[t].units * prices[t] for t in tickers if t in prices}
+        values: dict[str, Decimal] = {}
+        for t in tickers:
+            price = prices.get(t, last_price.get(t))
+            if price is None:
+                continue
+            values[t] = positions[t].units * price
+        return values
 
     def rebalance_to_targets(
         prices: dict[str, Decimal], trade_date: date, reason: str, weights: dict[str, Decimal]
     ) -> bool:
         values = current_values(prices)
-        total_value = sum(values.values(), Decimal(0))
+        total_value = sum(values.values(), Decimal(0)) + total_cash()
         if total_value <= 0:
             return False
         diffs = {
@@ -223,10 +248,17 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         return executed
 
     def year_last_row_dates(all_rows: list[PriceRow]) -> set[date]:
+        """Harvest-Zeitpunkte: die letzte Kurszeile eines ABGESCHLOSSENEN
+        Kalenderjahres - also eines Jahres, dem in der Historie ein späteres
+        Jahr folgt, oder dessen letzte Zeile selbst im Dezember liegt. Ohne
+        diese Einschränkung wäre die jeweils neueste Zeile der Historie immer
+        eine Harvest-Zeile, egal welcher Monat gerade ist, weil sie zwangsläufig
+        die letzte ihres (noch laufenden) Jahres ist."""
         last_by_year: dict[int, date] = {}
         for r in all_rows:
             last_by_year[r.date.year] = r.date
-        return set(last_by_year.values())
+        max_year = max(last_by_year)
+        return {d for y, d in last_by_year.items() if y < max_year or d.month == 12}
 
     harvest_dates = year_last_row_dates(rows)
 
@@ -235,6 +267,9 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
     for i, row in enumerate(rows):
         prices = row.prices
         reset_year_if_needed(row.date.year)
+        for t in tickers:
+            if t in prices:
+                last_price[t] = prices[t]
 
         if i == 0:
             initial_weights = weights_at(0)
@@ -243,16 +278,31 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             investable = strategy.startkapital - total_fees
             for t in tickers:
                 price = prices.get(t)
-                if price is None:
-                    continue
                 buy_value = investable * initial_weights.get(t, Decimal(0))
+                if price is None:
+                    # Instrument noch ohne Kurs (z. B. vor seinem Börsengang) -
+                    # Kapitalanteil bleibt als Cash geparkt, statt zu verfallen.
+                    pending_cash[t] = buy_value
+                    continue
                 units = buy_value / price
                 positions[t].units = units
                 positions[t].cost_total = buy_value
                 trades.append(Trade(row.date, t, "buy", units, price, ORDERGEBUEHR, None, "initial_buy"))
         else:
+            for t in tickers:
+                if pending_cash[t] > 0 and t in prices:
+                    price = prices[t]
+                    buy_value = pending_cash[t]
+                    units = buy_value / price
+                    positions[t].units += units
+                    positions[t].cost_total += buy_value
+                    trades.append(
+                        Trade(row.date, t, "buy", units, price, Decimal(0), None, "delayed_initial_buy")
+                    )
+                    pending_cash[t] = Decimal(0)
+
             values = current_values(prices)
-            total_value = sum(values.values(), Decimal(0))
+            total_value = sum(values.values(), Decimal(0)) + total_cash()
             if total_value > 0:
                 ziel_topf = next(t for t in strategy.toepfe if t.name == strategy.ziel_topf)
                 if strategy.gewichte_fn is not None:
@@ -277,7 +327,7 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                 last_harvest_date = row.date
 
         values = current_values(prices)
-        total_value = sum(values.values(), Decimal(0))
+        total_value = sum(values.values(), Decimal(0)) + total_cash()
         ticker_weights = {
             t: (values.get(t, Decimal(0)) / total_value if total_value > 0 else Decimal(0)) for t in tickers
         }

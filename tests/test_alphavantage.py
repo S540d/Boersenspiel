@@ -42,6 +42,21 @@ def test_quote_missing_data_yields_missing_status(monkeypatch: pytest.MonkeyPatc
     monkeypatch.setattr(
         av.requests,
         "get",
+        lambda url, params, timeout: _FakeResponse({"Global Quote": {}}),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].status == "missing"
+    assert result["EUNL"].price is None
+
+
+def test_quote_rate_limit_response_yields_rate_limited_status(monkeypatch: pytest.MonkeyPatch):
+    """Ein erreichtes Tageslimit liefert HTTP 200 mit "Information" statt
+    Kursdaten - das darf nicht wie eine echte Kurslücke aussehen (Issue #11)."""
+    monkeypatch.setattr(
+        av.requests,
+        "get",
         lambda url, params, timeout: _FakeResponse(
             {"Information": "Please consider optimizing your API request frequency."}
         ),
@@ -49,8 +64,20 @@ def test_quote_missing_data_yields_missing_status(monkeypatch: pytest.MonkeyPatc
     source = av.AlphaVantageSource(api_key="dummy")
     result = source.fetch(["EUNL"], date(2026, 8, 24))
 
-    assert result["EUNL"].status == "missing"
+    assert result["EUNL"].status == "rate_limited"
     assert result["EUNL"].price is None
+
+
+def test_quote_note_response_yields_rate_limited_status(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse({"Note": "our standard API rate limit is 25 requests per day"}),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["EUNL"], date(2026, 8, 24))
+
+    assert result["EUNL"].status == "rate_limited"
 
 
 def test_unmapped_ticker_yields_missing_without_request(monkeypatch: pytest.MonkeyPatch):
@@ -97,6 +124,18 @@ def test_crypto_flat_format(monkeypatch: pytest.MonkeyPatch):
 
     assert result["BTC-EUR"].status == "ok"
     assert result["BTC-EUR"].price == 58000.0
+
+
+def test_crypto_rate_limit_response_yields_rate_limited_status(monkeypatch: pytest.MonkeyPatch):
+    monkeypatch.setattr(
+        av.requests,
+        "get",
+        lambda url, params, timeout: _FakeResponse({"Note": "our standard API rate limit is 25 requests per day"}),
+    )
+    source = av.AlphaVantageSource(api_key="dummy")
+    result = source.fetch(["BTC-EUR"], date(2026, 8, 24))
+
+    assert result["BTC-EUR"].status == "rate_limited"
 
 
 def test_request_exception_yields_missing(monkeypatch: pytest.MonkeyPatch):

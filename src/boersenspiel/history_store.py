@@ -150,27 +150,22 @@ def record_week(
             continue
 
         source = quote.source if quote else ""
+        rate_limited = quote is not None and quote.status == "rate_limited"
         if ticker in last_known:
             new_prices[ticker] = last_known[ticker]
-            log_entries.append(
-                [
-                    as_of.isoformat(),
-                    ticker,
-                    "carried_forward",
-                    source,
-                    "Kein aktueller Kurs verfuegbar, letzter bekannter Kurs uebernommen",
-                ]
+            note = (
+                "Rate-Limit der Quelle erreicht, letzter bekannter Kurs uebernommen"
+                if rate_limited
+                else "Kein aktueller Kurs verfuegbar, letzter bekannter Kurs uebernommen"
             )
+            log_entries.append([as_of.isoformat(), ticker, "carried_forward", source, note])
         else:
-            log_entries.append(
-                [
-                    as_of.isoformat(),
-                    ticker,
-                    "missing",
-                    source,
-                    "Kein aktueller und kein historischer Kurs verfuegbar",
-                ]
+            note = (
+                "Rate-Limit der Quelle erreicht, kein historischer Kurs verfuegbar"
+                if rate_limited
+                else "Kein aktueller und kein historischer Kurs verfuegbar"
             )
+            log_entries.append([as_of.isoformat(), ticker, "missing", source, note])
 
     if same_week_index is not None:
         existing_rows[same_week_index] = PriceRow(date=as_of, prices=new_prices)
