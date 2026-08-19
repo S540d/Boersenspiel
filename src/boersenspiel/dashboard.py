@@ -18,6 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .engine import SimulationResult, simulate
 from .history_store import PriceRow
+from .learnings import derive_learnings
 from .strategies import STRATEGIES, Strategy
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -108,6 +109,10 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         "topf_targets": topf_targets,
         "topf_series_last": {name: series[-1] if series else 0.0 for name, series in topf_series.items()},
         "rebalancing_schwelle_pp": f"{strategy.rebalancing_schwelle_pp}",
+        # Numerische Zweitfassungen fuer die Learnings-Ableitung (die uebrigen
+        # Felder sind bereits fuer die Anzeige formatierte Strings).
+        "startkapital_num": _f(strategy.startkapital),
+        "steuer_num": _f(result.tax_status.kumulierte_steuer),
         "holdings_table": holdings_table,
         "total_value": f"{last.total_value:.2f}",
         "startkapital": f"{strategy.startkapital:.2f}",
@@ -137,6 +142,7 @@ def build_dashboard(
 
     views = [_build_strategy_view(s, simulate(rows, s), rows) for s in strategies]
     summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
+    learnings = derive_learnings(views)
 
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -146,6 +152,7 @@ def build_dashboard(
     html = template.render(
         strategies=views,
         summary=summary,
+        learnings=learnings,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         row_count=len(price_history),
         last_date=price_history[-1].date.isoformat(),

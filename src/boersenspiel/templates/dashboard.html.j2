@@ -95,6 +95,35 @@
   .overflow-x { overflow-x: auto; }
   footer { max-width: 1100px; margin: 24px auto 0; color: var(--text-muted); font-size: 0.8rem; }
   .summary-chart-box { position: relative; height: 340px; margin-bottom: 20px; }
+  .hint { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 16px; max-width: 68ch; }
+  ol.learnings { list-style: none; counter-reset: learning; margin: 0; padding: 0; display: grid; gap: 14px; }
+  ol.learnings li {
+    counter-increment: learning;
+    position: relative;
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px 14px 52px;
+  }
+  ol.learnings li::before {
+    content: counter(learning);
+    position: absolute;
+    left: 16px;
+    top: 14px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--series-1);
+    color: #fff;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  ol.learnings h3 { font-size: 0.98rem; margin: 0 0 4px; }
+  ol.learnings .kernaussage { margin: 0 0 6px; font-size: 0.95rem; }
+  ol.learnings .detail { margin: 0; color: var(--text-secondary); font-size: 0.85rem; max-width: 78ch; }
   .beitraege { margin-bottom: 20px; }
   .beitraege h3 { font-size: 1rem; margin: 0 0 4px; }
   .beitraege .hint { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 12px; max-width: 68ch; }
@@ -110,6 +139,24 @@
   <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
 </header>
 <main>
+{% if learnings %}
+  <section class="strategy" id="key-learnings">
+    <h2>Key Learnings</h2>
+    <p class="hint">
+      Bei jedem Build neu aus den Simulationsergebnissen abgeleitet – nicht
+      hinterlegter Text. Ändert sich die Kurshistorie, ändern sich diese Aussagen mit.
+    </p>
+    <ol class="learnings">
+    {% for l in learnings %}
+      <li>
+        <h3>{{ l.titel }}</h3>
+        <p class="kernaussage">{{ l.kernaussage }}</p>
+        <p class="detail">{{ l.detail }}</p>
+      </li>
+    {% endfor %}
+    </ol>
+  </section>
+{% endif %}
   <section class="strategy" id="uebersicht">
     <h2>Übersicht: Rendite im Vergleich</h2>
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>

@@ -153,6 +153,18 @@ inkrementell fortgeschrieben).
   Leave-one-out-Differenz in Prozentpunkten. Dafür simuliert die
   Darstellungsschicht die `ohne`-Varianten zusätzlich — auch das bleibt reine
   Anwendung von `engine.simulate()`, keine eigene Berechnungslogik.
+- `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
+  bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
+  Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
+  `(views) -> Learning | None`), alle Zahlen *und* Superlative ("größter
+  Bremsklotz", "einziger Rückhalt") kommen aus den aktuellen Ergebnissen.
+  Liefert eine Regel `None`, ist ihre Frage aus den Daten nicht beantwortbar
+  (z. B. Vergleichsaussagen bei nur einer Strategie) — das Learning fällt dann
+  still weg, statt eine Aussage zu erfinden; bei leerer Liste rendert das
+  Template die Sektion gar nicht. Beim Ergänzen einer Regel: nichts in den
+  Fließtext schreiben, was nicht aus `views` belegt ist, und die
+  Deutsch-Formatierung über `_zahl()/_pp()/_pct()/_eur()` laufen lassen (ein
+  `.replace(".", ",")` auf dem ganzen Satz erwischt sonst den Satzpunkt).
 
 ### Kursquelle wechseln
 
@@ -218,7 +230,10 @@ kombinierte Börsenweisheiten-Szenario sind die gemittelten Quoten handgerechnet
 (Mai → 40%, Dezember → 87,5%) sowie geprüft, dass die Gewichte in jeder Woche zu
 1 summieren und jede Leave-one-out-Variante genau eine Weisheit weglässt.
 `tests/test_dashboard.py` prüft zusätzlich, dass der Beitrags-Abschnitt nur bei
-gesetztem `beitraege` gerendert wird.
+gesetztem `beitraege` gerendert wird. `tests/test_learnings.py` fährt jede
+Learning-Regel gegen konstruierte Views mit bekannten Zahlen und prüft, dass die
+Aussagen den Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter
+Rangfolge) sowie dass nicht beantwortbare Regeln still wegfallen.
 `tests/test_satellit_strategy.py` prüft den Einzelaktien-Satellit
 (`BARBELL_20_60_20_SATELLIT`): Symbol-Mapping-Vollständigkeit, Ziel-Gewichte
 summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
