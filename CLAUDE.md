@@ -74,7 +74,15 @@ inkrementell fortgeschrieben).
   hoch-volatile Wachstums-/Themenwerte (Lumentum, BYD, SolarEdge, SMA Solar,
   Tesla, Palantir, Strategy/vorm. MicroStrategy, Rivian) mit zwei defensiven
   Blue Chips (Coca-Cola, Roche) als Gegenbeispiel — erster Ansatz, keine
-  Optimierung/Backtesting der Auswahl oder Gewichtung.
+  Optimierung/Backtesting der Auswahl oder Gewichtung. Optionales Feld
+  `Strategy.beschreibung` liefert die Kurzbeschreibung, die das Dashboard je
+  Strategie/Szenario anzeigt (leer = keine Beschreibung). Optionales Feld
+  `Strategy.optimierungen` (Instanz von `Optimierungen`, vier Bool-Schalter
+  `steueroptimierung`/`rebalancing`/`ordergebuehren`/`besteuerung`, alle
+  standardmäßig `True`) bestimmt, welche der vier strategieübergreifenden
+  Simulationsmechanismen `engine.simulate()` für diese Strategie anwendet —
+  `BUY_AND_HOLD` nutzt z. B. `Optimierungen(rebalancing=False)` statt einer
+  künstlich unerreichbaren Rebalancing-Schwelle.
 - `scenarios.py` — Auswertungs-Szenarien als gewöhnliche `Strategy`-Instanzen
   mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten —
   "Sell in May and Go Away" (saisonal defensiv Mai–September), "Buy & Hold"
@@ -139,20 +147,51 @@ inkrementell fortgeschrieben).
   auslösenden Topf; alle Geld-/Stückzahl-Arithmetik nutzt `Decimal`, nie
   `float`. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
   verbleibende Sparerpauschbetrag des Jahres gedeckt ist, mit sofortigem
-  Rückkauf zum selben Kurs.
-- `dashboard.py` + `templates/dashboard.html.j2` — reine Darstellungsschicht,
-  rendert `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
-  Strategie(n) aus `STRATEGIES` nach `docs/index.html`. Chart.js per CDN.
-  Ganz oben steht eine strategieübergreifende Vergleichsübersicht
-  ("Übersicht: Rendite im Vergleich" - Balkendiagramm + nach Rendite
-  sortierte Tabelle mit Sprunglinks zu den Detailabschnitten), Rendite und
-  URL-Slug je Strategie werden rein aus den vorhandenen
-  `engine.simulate()`-Ergebnissen abgeleitet. Strategien mit gesetztem
-  `beitraege` bekommen zusätzlich einen Abschnitt "Effekt der einzelnen
-  Börsenweisheiten" (Balkendiagramm + Tabelle): je Teilregel die
-  Leave-one-out-Differenz in Prozentpunkten. Dafür simuliert die
-  Darstellungsschicht die `ohne`-Varianten zusätzlich — auch das bleibt reine
-  Anwendung von `engine.simulate()`, keine eigene Berechnungslogik.
+  Rückkauf zum selben Kurs. `simulate(price_history, strategy,
+  optimierungen=None)` nimmt optional eine `Optimierungen`-Instanz entgegen
+  (Default: `strategy.optimierungen`) und schaltet damit die vier
+  strategieübergreifenden Mechanismen einzeln ab: `ordergebuehren=False`
+  macht alle Trades gebührenfrei (lokale `gebuehr`-Variable statt der
+  Konstante `ORDERGEBUEHR`), `besteuerung=False` lässt `process_realized_gain`
+  früh zurückkehren (Freibetrag/Verlustvortrag/kumulierte Steuer bleiben
+  unverändert — der simulierte Portfoliowert selbst wird nirgends um Steuer
+  gemindert, das ist reines Tracking), `rebalancing=False` überspringt die
+  periodische Rückführung auf die Zielgewichte, `steueroptimierung=False`
+  überspringt den kompletten Dezember-Harvest-Block. Diese Schalter dienen
+  dazu, den isolierten Renditebeitrag jedes Mechanismus messbar zu machen
+  (#17) — siehe `dashboard._optimierungs_effekte()`.
+- `dashboard.py` + `templates/` — reine Darstellungsschicht, rendert
+  `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
+  Strategie(n) aus `STRATEGIES`. Seit #31 zwei Seitentypen statt einer
+  einzigen `index.html`: `templates/base.html.j2` definiert Kopf/Fuß/Styles
+  einmal per Jinja-Vererbung (`{% extends %}` + Blocks `title`/
+  `header_extra`/`content`/`scripts`); `templates/dashboard.html.j2` (die
+  Startseite `docs/index.html`) zeigt die strategieübergreifende
+  Vergleichsübersicht ("Übersicht: Rendite im Vergleich" - Balkendiagramm +
+  nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite) sowie
+  je Strategie nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit
+  gemeinsamer Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
+  `templates/strategy_detail.html.j2` rendert für **jede** Strategie/jedes
+  Szenario eine eigene `docs/<slug>.html` mit allem anderen (Kennzahl-
+  Kacheln, Steuer-Stats, Topf-Gewichtung Ist/Ziel, Instrumententabelle) plus
+  einem zusätzlichen Chart: Wertverlauf mit 10-/40-Wochen gleitendem
+  Durchschnitt als Wochen-Näherung der klassischen 50-/200-Tage-Linien
+  (`dashboard._moving_average()`, 5 Handelstage/Woche — derselbe Ansatz wie
+  `scenarios.CHART_SMA_CROSSOVER`, hier aber rein zur Anzeige, keine
+  Handelsregel). `build_dashboard()` gibt weiterhin nur den Pfad zu
+  `index.html` zurück, schreibt die `<slug>.html`-Dateien aber als
+  Seiteneffekt daneben. Rendite und URL-Slug je Strategie werden rein aus
+  den vorhandenen `engine.simulate()`-Ergebnissen abgeleitet. Strategien mit
+  gesetztem `beitraege` bekommen auf ihrer Detailseite zusätzlich einen
+  Abschnitt "Effekt der einzelnen Börsenweisheiten" (Balkendiagramm +
+  Tabelle): je Teilregel die Leave-one-out-Differenz in Prozentpunkten.
+  Jede Detailseite bekommt außerdem unbedingt den Abschnitt "Effekt der
+  Optimierungs-Schalter" (`dashboard._optimierungs_effekte()`): je einer der
+  vier `Optimierungen`-Mechanismen (#17) als Leave-one-out-Differenz zur
+  Rendite mit genau diesem Mechanismus aus. Für beide Abschnitte simuliert
+  die Darstellungsschicht die Vergleichsvarianten zusätzlich — auch das
+  bleibt reine Anwendung von `engine.simulate()`, keine eigene
+  Berechnungslogik.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -220,6 +259,12 @@ and write permissions"; Settings → Pages → Source → "GitHub Actions".
 `tests/test_engine.py` verifiziert die Simulation gegen von Hand
 vorgerechnete Werte (nicht nur Smoke-Tests) für zwei unterschiedliche
 Strategien plus Determinismus (zweifacher Lauf → identisches Ergebnis).
+Eigener Abschnitt für die `Optimierungen`-Schalter (#17): je Schalter ein
+Test, dass sein Ausschalten den erwarteten Effekt hat (keine Gebühren in den
+Trades, keine `rebalance`-Trades, keine Dezember-Harvest-Trades, Steuerstatus
+bleibt bei den Defaultwerten), plus ein Test, dass ein explizit übergebenes
+`Optimierungen()` (alle Defaults) exakt dasselbe Ergebnis liefert wie gar
+keine Übergabe, und dass `Strategy.optimierungen` ohne Override greift.
 `tests/test_history_store.py` prüft Wochen-Idempotenz und Carry-Forward.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
 Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
@@ -229,10 +274,15 @@ in der Engine anhand handgerechneter Werte sowie die konkreten Szenarien
 kombinierte Börsenweisheiten-Szenario sind die gemittelten Quoten handgerechnet
 (Mai → 40%, Dezember → 87,5%) sowie geprüft, dass die Gewichte in jeder Woche zu
 1 summieren und jede Leave-one-out-Variante genau eine Weisheit weglässt.
-`tests/test_dashboard.py` prüft zusätzlich, dass der Beitrags-Abschnitt nur bei
-gesetztem `beitraege` gerendert wird. `tests/test_learnings.py` fährt jede
-Learning-Regel gegen konstruierte Views mit bekannten Zahlen und prüft, dass die
-Aussagen den Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter
+`tests/test_dashboard.py` prüft seit #31 explizit die Trennung zwischen
+Startseite und Detailseite: Wertverlauf-Chart und Übersichtstabelle (mit
+Links auf `<slug>.html`) bleiben auf der Startseite, Kennzahl-Kacheln,
+Topf-Gewichtung, Instrumententabelle sowie die Beitrags-/Optimierungs-
+Effekte-Abschnitte erscheinen nur auf der jeweiligen `<slug>.html`; der
+Beitrags-Abschnitt wird dort weiterhin nur bei gesetztem `beitraege`
+gerendert. `tests/test_learnings.py` fährt jede Learning-Regel gegen
+konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
+Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter
 Rangfolge) sowie dass nicht beantwortbare Regeln still wegfallen.
 `tests/test_satellit_strategy.py` prüft den Einzelaktien-Satellit
 (`BARBELL_20_60_20_SATELLIT`): Symbol-Mapping-Vollständigkeit, Ziel-Gewichte
