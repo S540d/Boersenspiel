@@ -33,6 +33,27 @@ _OPTIMIERUNGS_LABELS: dict[str, str] = {
     "besteuerung": "Besteuerung",
 }
 
+# Wochen-Naeherung der klassischen 50-/200-Tage-Durchschnitte (5 Handelstage/Woche),
+# fuer die wochenweise gefuehrte Kurshistorie - derselbe Ansatz wie beim Szenario
+# "Charttechnik: SMA-Crossover" (scenarios.SMA_KURZ_WOCHEN/SMA_LANG_WOCHEN), hier aber
+# rein fuer die Anzeige auf dem Wertverlauf der jeweiligen Strategie statt als
+# Handelsregel (#31).
+_SMA_KURZ_WOCHEN = 10
+_SMA_LANG_WOCHEN = 40
+
+
+def _moving_average(values: list[float], fenster: int) -> list[float | None]:
+    """Gleitender Durchschnitt der letzten ``fenster`` Werte (inkl. aktuellem);
+    ``None`` solange noch nicht genug Werte vorliegen."""
+    ergebnis: list[float | None] = []
+    summe = 0.0
+    for i, wert in enumerate(values):
+        summe += wert
+        if i >= fenster:
+            summe -= values[i - fenster]
+        ergebnis.append(summe / fenster if i >= fenster - 1 else None)
+    return ergebnis
+
 
 def _f(value: Decimal) -> float:
     return float(value)
@@ -136,6 +157,8 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         "labels_json": json.dumps(labels),
         "total_values": total_values,
         "total_values_json": json.dumps(total_values),
+        "sma_kurz_json": json.dumps(_moving_average(total_values, _SMA_KURZ_WOCHEN)),
+        "sma_lang_json": json.dumps(_moving_average(total_values, _SMA_LANG_WOCHEN)),
         "topf_series_json": json.dumps(topf_series),
         "topf_targets": topf_targets,
         "topf_series_last": {name: series[-1] if series else 0.0 for name, series in topf_series.items()},
@@ -167,6 +190,9 @@ def build_dashboard(
     strategies: list[Strategy] | None = None,
     output_path: Path = DEFAULT_OUTPUT,
 ) -> Path:
+    """Baut die Startseite (nur Wertverlauf je Strategie/Szenario) sowie je eine
+    Detailseite pro Strategie/Szenario (alles andere, inkl. 50-/200-Tage-Näherung) -
+    siehe #31. Die Detailseiten landen als ``<slug>.html`` neben ``output_path``."""
     if not price_history:
         raise ValueError("Kurshistorie ist leer - kein Dashboard erzeugbar")
     strategies = strategies if strategies is not None else STRATEGIES
@@ -182,21 +208,32 @@ def build_dashboard(
     alle_werte = [wert for view in views for wert in view["total_values"]]
     wert_chart_max = max(alle_werte) if alle_werte else 0.0
 
+    common_context = dict(
+        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
+        row_count=len(price_history),
+        last_date=price_history[-1].date.isoformat(),
+    )
+
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=select_autoescape(["html"]),
     )
-    template = env.get_template("dashboard.html.j2")
-    html = template.render(
+
+    index_template = env.get_template("dashboard.html.j2")
+    index_html = index_template.render(
         strategies=views,
         summary=summary,
         learnings=learnings,
-        generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
-        row_count=len(price_history),
-        last_date=price_history[-1].date.isoformat(),
         wert_chart_max=wert_chart_max,
+        **common_context,
     )
-
     output_path.parent.mkdir(parents=True, exist_ok=True)
-    output_path.write_text(html, encoding="utf-8")
+    output_path.write_text(index_html, encoding="utf-8")
+
+    detail_template = env.get_template("strategy_detail.html.j2")
+    for view in views:
+        detail_html = detail_template.render(s=view, **common_context)
+        detail_path = output_path.parent / f"{view['id']}.html"
+        detail_path.write_text(detail_html, encoding="utf-8")
+
     return output_path
