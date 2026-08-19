@@ -34,11 +34,13 @@ flowchart TB
         direction TB
         sim["engine.simulate(rows, strategy)<br/><b>reine Funktion</b> — kein I/O, kein now()"]
         sim --> dash["dashboard.py + Jinja-Template"]
+        dash --> learn["learnings.py<br/><i>Key Learnings aus den Ergebnissen</i>"]
+        learn --> dash
     end
 
     csv ==> sim
     strat["strategies.py<br/>3 Strategien<br/><i>konstante Gewichte</i>"] --> sim
-    scen["scenarios.py<br/>9 Szenarien<br/><i>gewichte_fn(rows, i)</i>"] --> sim
+    scen["scenarios.py<br/>10 Szenarien<br/><i>gewichte_fn(rows, i)</i>"] --> sim
     dash ==> html[("docs/index.html<br/>GitHub Pages")]
 ```
 
@@ -74,6 +76,19 @@ Ergebnis.
 Weil die Simulation nichts kostet außer Rechenzeit, kann `build_dashboard.py`
 sie beliebig oft laufen lassen — einmal pro Strategie und Szenario, alle gegen
 dieselbe Kurshistorie, und stellt die Ergebnisse nebeneinander.
+
+**③ Key Learnings.** Ganz oben im Dashboard steht eine Sektion, die die
+auffälligsten Befunde aus dem Vergleich in Worte fasst. Auch sie ist
+**abgeleitet, nicht hinterlegt**: `learnings.py` enthält je Learning nur die
+*Fragestellung* als reine Funktion `(views) -> Learning | None` — wie groß ist
+die Spannweite zwischen bester und schlechtester Regel, wo landet die
+handelsintensivste Regel im Ranking, was kosten Gebühren und Steuer, wie viele
+Teilregeln einer zusammengesetzten Strategie liefern einen negativen Beitrag.
+Alle Zahlen *und* alle Superlative („größter Bremsklotz", „einziger Rückhalt")
+kommen aus den aktuellen Ergebnissen. Ändert sich die Kurshistorie, ändern sich
+die Aussagen mit; lässt sich eine Frage aus den vorliegenden Daten nicht
+beantworten (z. B. weil nur eine Strategie gerendert wird), liefert die Regel
+`None` und das Learning fällt still weg, statt eine Aussage zu erfinden.
 
 ### Strategien, Szenarien und was quer dazu liegt
 
@@ -132,7 +147,8 @@ Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
 | `src/boersenspiel/history_store.py` | Einziger Schreibzugriff auf `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Reine Simulationsfunktion: (Kurshistorie, Strategie) → Portfolio-/Steuerzustand |
-| `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html`, inkl. strategieübergreifender Renditen-Vergleichsübersicht oben |
+| `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html`, inkl. Key Learnings und strategieübergreifender Renditen-Vergleichsübersicht oben |
+| `src/boersenspiel/learnings.py` | Leitet die Key-Learnings-Texte bei jedem Build neu aus den Simulationsergebnissen ab (keine hinterlegten Erkenntnisse) |
 | `scripts/run_fetch.py` | Automatisierter wöchentlicher Kursabruf (GitHub Actions) |
 | `scripts/record_prices.py` | Manueller Andockpunkt für Kurse aus anderer Quelle (z. B. Cowork/Websuche) |
 | `scripts/backfill_history.py` | Einmaliger historischer Backfill von `price_history.csv` (echte Wochenkurse statt nur live gesammelter Wochen, siehe unten) |
@@ -266,6 +282,31 @@ Parameter sind nicht optimiert oder gebacktestet. Startkapital jeweils
 | Jahresendrallye | Dezember/Januar Wachstumsquote auf 95% ("Santa Claus Rally"), sonst normale Verteilung |
 | Antizyklisch kaufen | Wachstumsquote auf 95%, sobald der MSCI-World-ETF (EUNL) mehr als 10% unter seinem 20-Wochen-Hoch notiert ("Buy the Dip") |
 | Verluste begrenzen | Trailing-Stop je Wachstums-Instrument: fällt eines mehr als 15% unter sein eigenes 20-Wochen-Hoch, wird nur dieses auf 0% gesetzt (Rest des Depots unverändert) |
+| Börsenweisheiten (alle fünf kombiniert) | Fasst die fünf Weisheiten oben zu **einer** Strategie zusammen (siehe unten) und weist den Einzeleffekt jedes Spruchs per Leave-one-out aus |
+
+**Wie die fünf Weisheiten kombiniert werden.** Die Regeln widersprechen sich
+teilweise — im Mai will „Sell in May" raus, ein gleichzeitiger Kurseinbruch will
+laut „antizyklisch kaufen" rein. Statt sie hart nacheinander anzuwenden, laufen
+sie deshalb in zwei Phasen:
+
+1. **Quoten-Votum.** Jede Weisheit schlägt eine Wachstumsquote vor oder *enthält
+   sich*, wenn ihre Bedingung diese Woche nicht greift. Ziel ist das
+   **arithmetische Mittel der abgegebenen Voten** — widersprüchliche Signale
+   heben sich damit teilweise auf, statt dass eine Regel die anderen
+   überstimmt. „Buy & Hold" (= „nichts umschichten") votiert als einzige immer
+   für die normale 80%-Quote und wirkt so als dämpfender Anker; damit gibt es
+   stets mindestens ein Votum.
+2. **Instrument-Overlay.** „Verluste begrenzen" wirkt nicht auf die Gesamtquote,
+   sondern je Instrument, und wird deshalb anschließend auf das Ergebnis aus
+   Phase 1 angewendet.
+
+**Effekt je Spruch.** Im Detailabschnitt der Strategie steht ein Balkendiagramm
+„Effekt der einzelnen Börsenweisheiten": je Spruch die **Leave-one-out**-Differenz
+in Prozentpunkten, also Rendite der vollen Strategie minus Rendite derselben
+Strategie *ohne* genau diesen Spruch. Positiv heißt: der Spruch hat Rendite
+gebracht. Weil sich die Regeln gegenseitig beeinflussen, summieren sich die
+Einzelbeiträge nicht exakt zur Gesamtrendite — es ist eine marginale, keine
+additive Zerlegung.
 
 **Charttechnik**
 

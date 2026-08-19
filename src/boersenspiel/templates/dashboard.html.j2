@@ -95,6 +95,39 @@
   .overflow-x { overflow-x: auto; }
   footer { max-width: 1100px; margin: 24px auto 0; color: var(--text-muted); font-size: 0.8rem; }
   .summary-chart-box { position: relative; height: 340px; margin-bottom: 20px; }
+  .hint { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 16px; max-width: 68ch; }
+  ol.learnings { list-style: none; counter-reset: learning; margin: 0; padding: 0; display: grid; gap: 14px; }
+  ol.learnings li {
+    counter-increment: learning;
+    position: relative;
+    background: var(--page);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 14px 18px 14px 52px;
+  }
+  ol.learnings li::before {
+    content: counter(learning);
+    position: absolute;
+    left: 16px;
+    top: 14px;
+    width: 24px;
+    height: 24px;
+    border-radius: 50%;
+    background: var(--series-1);
+    color: #fff;
+    font-size: 0.8rem;
+    font-variant-numeric: tabular-nums;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  ol.learnings h3 { font-size: 0.98rem; margin: 0 0 4px; }
+  ol.learnings .kernaussage { margin: 0 0 6px; font-size: 0.95rem; }
+  ol.learnings .detail { margin: 0; color: var(--text-secondary); font-size: 0.85rem; max-width: 78ch; }
+  .beitraege { margin-bottom: 20px; }
+  .beitraege h3 { font-size: 1rem; margin: 0 0 4px; }
+  .beitraege .hint { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 12px; max-width: 68ch; }
+  .beitraege .chart-box { height: 220px; margin-bottom: 12px; }
   table.summary-table a { color: inherit; text-decoration: underline; text-decoration-color: var(--border); }
   .positive { color: var(--good); }
   .negative { color: var(--series-2); }
@@ -106,6 +139,24 @@
   <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
 </header>
 <main>
+{% if learnings %}
+  <section class="strategy" id="key-learnings">
+    <h2>Key Learnings</h2>
+    <p class="hint">
+      Bei jedem Build neu aus den Simulationsergebnissen abgeleitet – nicht
+      hinterlegter Text. Ändert sich die Kurshistorie, ändern sich diese Aussagen mit.
+    </p>
+    <ol class="learnings">
+    {% for l in learnings %}
+      <li>
+        <h3>{{ l.titel }}</h3>
+        <p class="kernaussage">{{ l.kernaussage }}</p>
+        <p class="detail">{{ l.detail }}</p>
+      </li>
+    {% endfor %}
+    </ol>
+  </section>
+{% endif %}
   <section class="strategy" id="uebersicht">
     <h2>Übersicht: Rendite im Vergleich</h2>
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
@@ -145,6 +196,32 @@
       <div class="chart-box"><canvas id="value-chart-{{ loop.index }}"></canvas></div>
       <div class="chart-box"><canvas id="topf-chart-{{ loop.index }}"></canvas></div>
     </div>
+    {% if s.beitraege %}
+    <div class="beitraege">
+      <h3>Effekt der einzelnen Börsenweisheiten</h3>
+      <p class="hint">
+        Leave-one-out: Rendite dieser Strategie minus Rendite derselben Strategie
+        <em>ohne</em> den jeweiligen Spruch. Positiv = der Spruch hat Rendite gebracht,
+        negativ = er hat gekostet. Die Regeln beeinflussen sich gegenseitig, die
+        Einzelbeiträge summieren sich deshalb nicht exakt zur Gesamtrendite.
+      </p>
+      <div class="chart-box"><canvas id="beitrag-chart-{{ loop.index }}"></canvas></div>
+      <div class="overflow-x">
+        <table>
+          <thead><tr><th>Börsenweisheit</th><th>Effekt (Prozentpunkte)</th><th>Rendite ohne diesen Spruch %</th></tr></thead>
+          <tbody>
+          {% for b in s.beitraege %}
+            <tr>
+              <td>{{ b.name }}</td>
+              <td class="{{ 'positive' if b.delta_pp >= 0 else 'negative' }}">{{ b.delta_label }}</td>
+              <td>{{ b.ohne_rendite_label }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
     <div class="overflow-x">
       <table>
         <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th></tr></thead>
@@ -229,6 +306,29 @@
       scales: commonScales,
     },
   });
+
+  {% if s.beitraege %}
+  new Chart(document.getElementById('beitrag-chart-{{ loop.index }}'), {
+    type: 'bar',
+    data: {
+      labels: {{ s.beitraege | map(attribute='name') | list | tojson }},
+      datasets: [{
+        label: 'Effekt (Prozentpunkte)',
+        data: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }},
+        backgroundColor: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, title: { display: true, text: 'Renditebeitrag je Börsenweisheit (Prozentpunkte)', color: colors.text } },
+      scales: {
+        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+      },
+    },
+  });
+  {% endif %}
 
   new Chart(document.getElementById('topf-chart-{{ loop.index }}'), {
     type: 'line',

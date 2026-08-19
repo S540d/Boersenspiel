@@ -18,6 +18,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .engine import SimulationResult, simulate
 from .history_store import PriceRow
+from .learnings import derive_learnings
 from .strategies import STRATEGIES, Strategy
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
@@ -34,6 +35,13 @@ _UMLAUT_TRANSLIT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"
 def _slug(name: str) -> str:
     normalisiert = name.lower().translate(_UMLAUT_TRANSLIT)
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", normalisiert)).strip("-")
+
+
+def _rendite_pct(result: SimulationResult, strategy: Strategy) -> Decimal:
+    if strategy.startkapital <= 0:
+        return Decimal(0)
+    endwert = result.value_history[-1].total_value
+    return ((endwert - strategy.startkapital) / strategy.startkapital) * 100
 
 
 def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
@@ -73,7 +81,21 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         )
 
     gewinn = last.total_value - strategy.startkapital
-    rendite_pct = (gewinn / strategy.startkapital) * 100 if strategy.startkapital > 0 else Decimal(0)
+    rendite_pct = _rendite_pct(result, strategy)
+
+    # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
+    beitraege = []
+    for beitrag in strategy.beitraege:
+        ohne_rendite_pct = _rendite_pct(simulate(rows, beitrag.ohne), beitrag.ohne)
+        delta_pp = rendite_pct - ohne_rendite_pct
+        beitraege.append(
+            {
+                "name": beitrag.name,
+                "delta_pp": _f(delta_pp),
+                "delta_label": f"{delta_pp:+.2f}",
+                "ohne_rendite_label": f"{ohne_rendite_pct:+.2f}",
+            }
+        )
 
     return {
         "name": result.strategy_name,
@@ -87,6 +109,10 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         "topf_targets": topf_targets,
         "topf_series_last": {name: series[-1] if series else 0.0 for name, series in topf_series.items()},
         "rebalancing_schwelle_pp": f"{strategy.rebalancing_schwelle_pp}",
+        # Numerische Zweitfassungen fuer die Learnings-Ableitung (die uebrigen
+        # Felder sind bereits fuer die Anzeige formatierte Strings).
+        "startkapital_num": _f(strategy.startkapital),
+        "steuer_num": _f(result.tax_status.kumulierte_steuer),
         "holdings_table": holdings_table,
         "total_value": f"{last.total_value:.2f}",
         "startkapital": f"{strategy.startkapital:.2f}",
@@ -100,6 +126,7 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         },
         "last_rebalance_date": result.last_rebalance_date.isoformat() if result.last_rebalance_date else "-",
         "last_harvest_date": result.last_harvest_date.isoformat() if result.last_harvest_date else "-",
+        "beitraege": beitraege,
     }
 
 
@@ -115,6 +142,7 @@ def build_dashboard(
 
     views = [_build_strategy_view(s, simulate(rows, s), rows) for s in strategies]
     summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
+    learnings = derive_learnings(views)
 
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
@@ -124,6 +152,7 @@ def build_dashboard(
     html = template.render(
         strategies=views,
         summary=summary,
+        learnings=learnings,
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         row_count=len(price_history),
         last_date=price_history[-1].date.isoformat(),
