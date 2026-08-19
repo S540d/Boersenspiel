@@ -18,7 +18,7 @@ from decimal import Decimal
 
 from boersenspiel.engine import simulate
 from boersenspiel.history_store import PriceRow
-from boersenspiel.strategies import BARBELL_20_80, Strategy, Topf
+from boersenspiel.strategies import BARBELL_20_80, Optimierungen, Strategy, Topf
 
 SIMPLE_STRATEGY = Strategy(
     name="Test-Zwei-Toepfe",
@@ -179,6 +179,63 @@ MISSING_PRICE_STRATEGY = Strategy(
     ziel_gewicht=Decimal("0.5"),
     rebalancing_schwelle_pp=Decimal("100"),  # kein Rebalancing in diesen Tests
 )
+
+
+# --- Optimierungs-Schalter (Optimierungen, #17) -----------------------------------------
+
+
+def test_optimierungen_defaults_reproduce_baseline_result():
+    # Ein explizit übergebenes Optimierungen() mit Default-Werten muss exakt dasselbe
+    # Ergebnis liefern wie gar keine Übergabe (strategy.optimierungen greift dann).
+    ohne_override = simulate(_rows(), SIMPLE_STRATEGY)
+    mit_default = simulate(_rows(), SIMPLE_STRATEGY, Optimierungen())
+    assert ohne_override.value_history[-1].total_value == mit_default.value_history[-1].total_value
+    assert ohne_override.tax_status == mit_default.tax_status
+
+
+def test_ordergebuehren_false_entfernt_alle_gebuehren():
+    result = simulate(_rows(), SIMPLE_STRATEGY, Optimierungen(ordergebuehren=False))
+    assert all(t.fee == Decimal(0) for t in result.trades)
+    # Ohne Gebuehren wird das volle Startkapital investiert statt 1002 - 2*1 = 1000.
+    assert result.value_history[0].total_value == Decimal("1002")
+
+
+def test_rebalancing_false_unterlaesst_periodisches_rebalancing():
+    result = simulate(_rows(), SIMPLE_STRATEGY, Optimierungen(rebalancing=False))
+    assert all(t.reason != "rebalance" for t in result.trades)
+
+
+def test_steueroptimierung_false_unterlaesst_dezember_harvest():
+    result = simulate(_rows(), SIMPLE_STRATEGY, Optimierungen(steueroptimierung=False))
+    harvest_reasons = {
+        "freibetrag_gewinnmitnahme",
+        "freibetrag_gewinnmitnahme_rebuy",
+        "tax_loss_harvest",
+        "tax_loss_harvest_rebuy",
+    }
+    assert not any(t.reason in harvest_reasons for t in result.trades)
+    assert result.last_harvest_date is None
+
+
+def test_besteuerung_false_laesst_steuerstatus_unveraendert():
+    result = simulate(_rows(), SIMPLE_STRATEGY, Optimierungen(besteuerung=False))
+    assert result.tax_status.kumulierte_steuer == Decimal(0)
+    assert result.tax_status.verlustvortrag == Decimal(0)
+    assert result.tax_status.freibetrag_verbraucht == Decimal(0)
+
+
+def test_strategy_eigene_optimierungen_werden_ohne_override_verwendet():
+    strategy_ohne_rebalancing = Strategy(
+        name="Test-ohne-Rebalancing",
+        startkapital=Decimal("1002"),
+        toepfe=SIMPLE_STRATEGY.toepfe,
+        ziel_topf=SIMPLE_STRATEGY.ziel_topf,
+        ziel_gewicht=SIMPLE_STRATEGY.ziel_gewicht,
+        rebalancing_schwelle_pp=Decimal("10"),
+        optimierungen=Optimierungen(rebalancing=False),
+    )
+    result = simulate(_rows(), strategy_ohne_rebalancing)
+    assert all(t.reason != "rebalance" for t in result.trades)
 
 
 def test_missing_price_in_first_row_parks_capital_as_cash_and_invests_later():

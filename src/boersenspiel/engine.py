@@ -53,7 +53,7 @@ from datetime import date
 from decimal import Decimal
 
 from .history_store import PriceRow
-from .strategies import ORDERGEBUEHR, SPARERPAUSCHBETRAG_PRO_JAHR, STEUERSATZ, Strategy
+from .strategies import ORDERGEBUEHR, SPARERPAUSCHBETRAG_PRO_JAHR, STEUERSATZ, Optimierungen, Strategy
 
 
 @dataclass
@@ -109,9 +109,16 @@ class _Position:
         return self.cost_total / self.units
 
 
-def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationResult:
+def simulate(
+    price_history: list[PriceRow],
+    strategy: Strategy,
+    optimierungen: Optimierungen | None = None,
+) -> SimulationResult:
     if not price_history:
         raise ValueError("Kurshistorie ist leer - Simulation benötigt mindestens eine Zeile")
+
+    opt = optimierungen if optimierungen is not None else strategy.optimierungen
+    gebuehr = ORDERGEBUEHR if opt.ordergebuehren else Decimal(0)
 
     rows = sorted(price_history, key=lambda r: r.date)
     base_weights = strategy.alle_ticker_gewichte()
@@ -148,6 +155,8 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
 
     def process_realized_gain(gain: Decimal) -> None:
         nonlocal freibetrag_verbleibend, verlustvortrag, kumulierte_steuer, steuerpflichtige_gewinne_jahr
+        if not opt.besteuerung:
+            return
         if gain <= 0:
             verlustvortrag += -gain
             return
@@ -203,11 +212,11 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                     continue
                 proceeds = units_to_sell * price
                 cost_removed = pos.avg_cost() * units_to_sell
-                realized_gain = proceeds - cost_removed - ORDERGEBUEHR
+                realized_gain = proceeds - cost_removed - gebuehr
                 pos.units -= units_to_sell
                 pos.cost_total -= cost_removed
                 trades.append(
-                    Trade(trade_date, t, "sell", units_to_sell, price, ORDERGEBUEHR, realized_gain, reason)
+                    Trade(trade_date, t, "sell", units_to_sell, price, gebuehr, realized_gain, reason)
                 )
                 process_realized_gain(realized_gain)
                 executed = True
@@ -215,9 +224,9 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                 buy_value = diff
                 units_to_buy = buy_value / price
                 pos.units += units_to_buy
-                pos.cost_total += buy_value + ORDERGEBUEHR
+                pos.cost_total += buy_value + gebuehr
                 trades.append(
-                    Trade(trade_date, t, "buy", units_to_buy, price, ORDERGEBUEHR, None, reason)
+                    Trade(trade_date, t, "buy", units_to_buy, price, gebuehr, None, reason)
                 )
                 executed = True
         return executed
@@ -250,16 +259,16 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             gewinn_je_stueck = price - avg_cost
             if gewinn_je_stueck <= 0:
                 continue
-            units_to_sell = min((ziel_gewinn + ORDERGEBUEHR) / gewinn_je_stueck, pos.units)
+            units_to_sell = min((ziel_gewinn + gebuehr) / gewinn_je_stueck, pos.units)
             if units_to_sell <= 0:
                 continue
             proceeds = units_to_sell * price
             cost_removed = avg_cost * units_to_sell
-            realized_gain = proceeds - cost_removed - ORDERGEBUEHR
+            realized_gain = proceeds - cost_removed - gebuehr
             pos.units -= units_to_sell
             pos.cost_total -= cost_removed
             trades.append(
-                Trade(trade_date, t, "sell", units_to_sell, price, ORDERGEBUEHR, realized_gain, "freibetrag_gewinnmitnahme")
+                Trade(trade_date, t, "sell", units_to_sell, price, gebuehr, realized_gain, "freibetrag_gewinnmitnahme")
             )
             process_realized_gain(realized_gain)
             executed = True
@@ -267,9 +276,9 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             # sofortiger Rückkauf zum selben Kurs, um die Marktexponierung zu
             # erhalten - hebt die Kostenbasis steuerfrei an.
             pos.units += units_to_sell
-            pos.cost_total += proceeds + ORDERGEBUEHR
+            pos.cost_total += proceeds + gebuehr
             trades.append(
-                Trade(trade_date, t, "buy", units_to_sell, price, ORDERGEBUEHR, None, "freibetrag_gewinnmitnahme_rebuy")
+                Trade(trade_date, t, "buy", units_to_sell, price, gebuehr, None, "freibetrag_gewinnmitnahme_rebuy")
             )
         return executed
 
@@ -303,7 +312,7 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             verlust_je_stueck = avg_cost - price
             if verlust_je_stueck <= 0:
                 continue
-            units_needed = max(restziel - ORDERGEBUEHR, Decimal(0)) / verlust_je_stueck
+            units_needed = max(restziel - gebuehr, Decimal(0)) / verlust_je_stueck
             if units_needed <= 0:
                 # Restziel liegt unter der Gebühr allein - jeder Verkauf
                 # würde das Ziel überschießen, also hier abbrechen statt
@@ -312,11 +321,11 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
             units_to_sell = min(units_needed, pos.units)
             proceeds = units_to_sell * price
             cost_removed = avg_cost * units_to_sell
-            realized_gain = proceeds - cost_removed - ORDERGEBUEHR
+            realized_gain = proceeds - cost_removed - gebuehr
             pos.units -= units_to_sell
             pos.cost_total -= cost_removed
             trades.append(
-                Trade(trade_date, t, "sell", units_to_sell, price, ORDERGEBUEHR, realized_gain, "tax_loss_harvest")
+                Trade(trade_date, t, "sell", units_to_sell, price, gebuehr, realized_gain, "tax_loss_harvest")
             )
             process_realized_gain(realized_gain)
             harvested += -realized_gain
@@ -324,9 +333,9 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
 
             # sofortiger Rückkauf zum selben Kurs, um die Marktexponierung zu erhalten
             pos.units += units_to_sell
-            pos.cost_total += proceeds + ORDERGEBUEHR
+            pos.cost_total += proceeds + gebuehr
             trades.append(
-                Trade(trade_date, t, "buy", units_to_sell, price, ORDERGEBUEHR, None, "tax_loss_harvest_rebuy")
+                Trade(trade_date, t, "buy", units_to_sell, price, gebuehr, None, "tax_loss_harvest_rebuy")
             )
         return executed
 
@@ -357,7 +366,7 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
         if i == 0:
             initial_weights = weights_at(0)
             num_instruments = len(tickers)
-            total_fees = ORDERGEBUEHR * num_instruments
+            total_fees = gebuehr * num_instruments
             investable = strategy.startkapital - total_fees
             for t in tickers:
                 price = prices.get(t)
@@ -370,7 +379,7 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                 units = buy_value / price
                 positions[t].units = units
                 positions[t].cost_total = buy_value
-                trades.append(Trade(row.date, t, "buy", units, price, ORDERGEBUEHR, None, "initial_buy"))
+                trades.append(Trade(row.date, t, "buy", units, price, gebuehr, None, "initial_buy"))
         else:
             for t in tickers:
                 if pending_cash[t] > 0 and t in prices:
@@ -401,11 +410,11 @@ def simulate(price_history: list[PriceRow], strategy: Strategy) -> SimulationRes
                 )
                 ist_gewicht = ziel_topf_value / total_value
                 abweichung_pp = abs(ist_gewicht - ziel_gewicht_effektiv) * 100
-                if abweichung_pp > strategy.rebalancing_schwelle_pp:
+                if opt.rebalancing and abweichung_pp > strategy.rebalancing_schwelle_pp:
                     if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
                         last_rebalance_date = row.date
 
-        if row.date in harvest_dates:
+        if opt.steueroptimierung and row.date in harvest_dates:
             if freibetrag_verbleibend > 0:
                 if december_gewinnmitnahme(prices, row.date):
                     last_harvest_date = row.date

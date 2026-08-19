@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
 from pathlib import Path
@@ -23,6 +24,14 @@ from .strategies import STRATEGIES, Strategy
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[2] / "docs" / "index.html"
+
+# Anzeigenamen der vier Optimierungs-Schalter (siehe strategies.Optimierungen / #17).
+_OPTIMIERUNGS_LABELS: dict[str, str] = {
+    "steueroptimierung": "Steueroptimierung (Dezember-Harvest)",
+    "rebalancing": "Rebalancing",
+    "ordergebuehren": "Ordergebühren",
+    "besteuerung": "Besteuerung",
+}
 
 
 def _f(value: Decimal) -> float:
@@ -42,6 +51,26 @@ def _rendite_pct(result: SimulationResult, strategy: Strategy) -> Decimal:
         return Decimal(0)
     endwert = result.value_history[-1].total_value
     return ((endwert - strategy.startkapital) / strategy.startkapital) * 100
+
+
+def _optimierungs_effekte(strategy: Strategy, rows: list[PriceRow], basis_rendite_pct: Decimal) -> list[dict]:
+    """Effekt jedes der vier Optimierungs-Schalter (#17) als Leave-one-out-Differenz:
+    Rendite mit allen Schaltern wie konfiguriert minus Rendite mit genau diesem einen
+    Schalter aus."""
+    effekte = []
+    for feld, label in _OPTIMIERUNGS_LABELS.items():
+        variante = replace(strategy.optimierungen, **{feld: False})
+        ohne_rendite_pct = _rendite_pct(simulate(rows, strategy, variante), strategy)
+        delta_pp = basis_rendite_pct - ohne_rendite_pct
+        effekte.append(
+            {
+                "name": label,
+                "delta_pp": _f(delta_pp),
+                "delta_label": f"{delta_pp:+.2f}",
+                "ohne_rendite_label": f"{ohne_rendite_pct:+.2f}",
+            }
+        )
+    return effekte
 
 
 def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
@@ -100,10 +129,12 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
     return {
         "name": result.strategy_name,
         "id": _slug(result.strategy_name),
+        "beschreibung": strategy.beschreibung,
         "rendite_pct": _f(rendite_pct),
         "rendite_pct_label": f"{rendite_pct:+.2f}",
         "gewinn_label": f"{gewinn:+.2f}",
         "labels_json": json.dumps(labels),
+        "total_values": total_values,
         "total_values_json": json.dumps(total_values),
         "topf_series_json": json.dumps(topf_series),
         "topf_targets": topf_targets,
@@ -127,6 +158,7 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         "last_rebalance_date": result.last_rebalance_date.isoformat() if result.last_rebalance_date else "-",
         "last_harvest_date": result.last_harvest_date.isoformat() if result.last_harvest_date else "-",
         "beitraege": beitraege,
+        "optimierungs_effekte": _optimierungs_effekte(strategy, rows, rendite_pct),
     }
 
 
@@ -144,6 +176,12 @@ def build_dashboard(
     summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
     learnings = derive_learnings(views)
 
+    # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
+    # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
+    # vergleichbar sind.
+    alle_werte = [wert for view in views for wert in view["total_values"]]
+    wert_chart_max = max(alle_werte) if alle_werte else 0.0
+
     env = Environment(
         loader=FileSystemLoader(str(TEMPLATE_DIR)),
         autoescape=select_autoescape(["html"]),
@@ -156,6 +194,7 @@ def build_dashboard(
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         row_count=len(price_history),
         last_date=price_history[-1].date.isoformat(),
+        wert_chart_max=wert_chart_max,
     )
 
     output_path.parent.mkdir(parents=True, exist_ok=True)
