@@ -1,144 +1,5 @@
-<!doctype html>
-<html lang="de">
-<head>
-<meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Barbell-Portfolio Dashboard</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
-<style>
-  :root {
-    color-scheme: light;
-    --surface-1: #fcfcfb;
-    --page: #f9f9f7;
-    --text-primary: #0b0b0b;
-    --text-secondary: #52514e;
-    --text-muted: #898781;
-    --grid: #e1e0d9;
-    --axis: #c3c2b7;
-    --border: rgba(11,11,11,0.10);
-    --series-1: #2a78d6;
-    --series-2: #eb6834;
-    --series-3: #1baf7a;
-    --series-4: #eda100;
-    --good: #006300;
-  }
-  @media (prefers-color-scheme: dark) {
-    :root:not([data-theme="light"]) {
-      color-scheme: dark;
-      --surface-1: #1a1a19;
-      --page: #0d0d0d;
-      --text-primary: #ffffff;
-      --text-secondary: #c3c2b7;
-      --text-muted: #898781;
-      --grid: #2c2c2a;
-      --axis: #383835;
-      --border: rgba(255,255,255,0.10);
-      --series-1: #3987e5;
-      --series-2: #d95926;
-      --series-3: #199e70;
-      --series-4: #c98500;
-      --good: #0ca30c;
-    }
-  }
-  :root[data-theme="dark"] {
-    color-scheme: dark;
-    --surface-1: #1a1a19;
-    --page: #0d0d0d;
-    --text-primary: #ffffff;
-    --text-secondary: #c3c2b7;
-    --text-muted: #898781;
-    --grid: #2c2c2a;
-    --axis: #383835;
-    --border: rgba(255,255,255,0.10);
-    --series-1: #3987e5;
-    --series-2: #d95926;
-    --series-3: #199e70;
-    --series-4: #c98500;
-    --good: #0ca30c;
-  }
-  * { box-sizing: border-box; }
-  body {
-    margin: 0;
-    background: var(--page);
-    color: var(--text-primary);
-    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
-    padding: 24px;
-  }
-  header { max-width: 1100px; margin: 0 auto 24px; }
-  h1 { font-size: 1.5rem; margin: 0 0 4px; }
-  .meta { color: var(--text-secondary); font-size: 0.9rem; }
-  main { max-width: 1100px; margin: 0 auto; display: flex; flex-direction: column; gap: 32px; }
-  section.strategy {
-    background: var(--surface-1);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 20px 24px;
-  }
-  h2 { margin: 0 0 12px; font-size: 1.2rem; }
-  .stat-row { display: flex; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; }
-  .stat-tile {
-    flex: 1 1 140px;
-    background: var(--page);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 10px 14px;
-  }
-  .stat-tile .label { color: var(--text-muted); font-size: 0.75rem; text-transform: uppercase; letter-spacing: 0.03em; }
-  .stat-tile .value { font-size: 1.1rem; font-variant-numeric: tabular-nums; margin-top: 2px; }
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 20px; }
-  @media (max-width: 760px) { .charts { grid-template-columns: 1fr; } }
-  .chart-box { position: relative; height: 260px; }
-  table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
-  th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
-  th:first-child, td:first-child { text-align: left; }
-  th { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
-  .overflow-x { overflow-x: auto; }
-  footer { max-width: 1100px; margin: 24px auto 0; color: var(--text-muted); font-size: 0.8rem; }
-  .summary-chart-box { position: relative; height: 340px; margin-bottom: 20px; }
-  .hint { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 16px; max-width: 68ch; }
-  ol.learnings { list-style: none; counter-reset: learning; margin: 0; padding: 0; display: grid; gap: 14px; }
-  ol.learnings li {
-    counter-increment: learning;
-    position: relative;
-    background: var(--page);
-    border: 1px solid var(--border);
-    border-radius: 8px;
-    padding: 14px 18px 14px 52px;
-  }
-  ol.learnings li::before {
-    content: counter(learning);
-    position: absolute;
-    left: 16px;
-    top: 14px;
-    width: 24px;
-    height: 24px;
-    border-radius: 50%;
-    background: var(--series-1);
-    color: #fff;
-    font-size: 0.8rem;
-    font-variant-numeric: tabular-nums;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  ol.learnings h3 { font-size: 0.98rem; margin: 0 0 4px; }
-  ol.learnings .kernaussage { margin: 0 0 6px; font-size: 0.95rem; }
-  ol.learnings .detail { margin: 0; color: var(--text-secondary); font-size: 0.85rem; max-width: 78ch; }
-  .beitraege { margin-bottom: 20px; }
-  .beitraege h3 { font-size: 1rem; margin: 0 0 4px; }
-  .beitraege .hint { color: var(--text-secondary); font-size: 0.82rem; margin: 0 0 12px; max-width: 68ch; }
-  .beitraege .chart-box { height: 220px; margin-bottom: 12px; }
-  table.summary-table a { color: inherit; text-decoration: underline; text-decoration-color: var(--border); }
-  .positive { color: var(--good); }
-  .negative { color: var(--series-2); }
-</style>
-</head>
-<body>
-<header>
-  <h1>Barbell-Portfolio Dashboard</h1>
-  <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
-</header>
-<main>
+{% extends "base.html.j2" %}
+{% block content %}
 {% if learnings %}
   <section class="strategy" id="key-learnings">
     <h2>Key Learnings</h2>
@@ -166,7 +27,7 @@
         <tbody>
         {% for s in summary %}
           <tr>
-            <td><a href="#{{ s.id }}">{{ s.name }}</a></td>
+            <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
             <td>{{ s.total_value }}</td>
@@ -180,97 +41,12 @@
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
     {% if s.beschreibung %}<p class="hint">{{ s.beschreibung }}</p>{% endif %}
-    <div class="stat-row">
-      <div class="stat-tile"><div class="label">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Startkapital</div><div class="value">{{ s.startkapital }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Trades gesamt</div><div class="value">{{ s.trade_count }}</div></div>
-      <div class="stat-tile"><div class="label">Letztes Rebalancing</div><div class="value">{{ s.last_rebalance_date }}</div></div>
-      <div class="stat-tile"><div class="label">Letzter Dez.-Harvest</div><div class="value">{{ s.last_harvest_date }}</div></div>
-    </div>
-    <div class="stat-row">
-      <div class="stat-tile"><div class="label">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value">{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Freibetrag verbleibend</div><div class="value">{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Kumulierte Steuer</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
-    </div>
-    <div class="charts">
-      <div class="chart-box"><canvas id="value-chart-{{ loop.index }}"></canvas></div>
-      <div class="chart-box"><canvas id="topf-chart-{{ loop.index }}"></canvas></div>
-    </div>
-    {% if s.beitraege %}
-    <div class="beitraege">
-      <h3>Effekt der einzelnen Börsenweisheiten</h3>
-      <p class="hint">
-        Leave-one-out: Rendite dieser Strategie minus Rendite derselben Strategie
-        <em>ohne</em> den jeweiligen Spruch. Positiv = der Spruch hat Rendite gebracht,
-        negativ = er hat gekostet. Die Regeln beeinflussen sich gegenseitig, die
-        Einzelbeiträge summieren sich deshalb nicht exakt zur Gesamtrendite.
-      </p>
-      <div class="chart-box"><canvas id="beitrag-chart-{{ loop.index }}"></canvas></div>
-      <div class="overflow-x">
-        <table>
-          <thead><tr><th>Börsenweisheit</th><th>Effekt (Prozentpunkte)</th><th>Rendite ohne diesen Spruch %</th></tr></thead>
-          <tbody>
-          {% for b in s.beitraege %}
-            <tr>
-              <td>{{ b.name }}</td>
-              <td class="{{ 'positive' if b.delta_pp >= 0 else 'negative' }}">{{ b.delta_label }}</td>
-              <td>{{ b.ohne_rendite_label }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    {% endif %}
-    <div class="beitraege">
-      <h3>Effekt der Optimierungs-Schalter</h3>
-      <p class="hint">
-        Leave-one-out je Mechanismus: Rendite dieser Strategie minus Rendite derselben
-        Strategie mit genau diesem einen Mechanismus ausgeschaltet (Dezember-Harvest,
-        Rebalancing, Ordergebühren, Besteuerung). Positiv = der Mechanismus hat Rendite
-        gebracht, negativ = er hat gekostet.
-      </p>
-      <div class="chart-box"><canvas id="opt-chart-{{ loop.index }}"></canvas></div>
-      <div class="overflow-x">
-        <table>
-          <thead><tr><th>Mechanismus</th><th>Effekt (Prozentpunkte)</th><th>Rendite ohne diesen Mechanismus %</th></tr></thead>
-          <tbody>
-          {% for o in s.optimierungs_effekte %}
-            <tr>
-              <td>{{ o.name }}</td>
-              <td class="{{ 'positive' if o.delta_pp >= 0 else 'negative' }}">{{ o.delta_label }}</td>
-              <td>{{ o.ohne_rendite_label }}</td>
-            </tr>
-          {% endfor %}
-          </tbody>
-        </table>
-      </div>
-    </div>
-    <div class="overflow-x">
-      <table>
-        <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th></tr></thead>
-        <tbody>
-        {% for row in s.holdings_table %}
-          <tr>
-            <td>{{ row.ticker }}</td>
-            <td>{{ row.units }}</td>
-            <td>{{ row.price }}</td>
-            <td>{{ row.value }}</td>
-            <td>{{ row.ist_gewicht }}</td>
-            <td>{{ row.ziel_gewicht }}</td>
-          </tr>
-        {% endfor %}
-        </tbody>
-      </table>
-    </div>
+    <div class="chart-box-large"><canvas id="value-chart-{{ loop.index }}"></canvas></div>
+    <p class="detail-link"><a href="{{ s.id }}.html">Details ansehen (Kennzahlen, Topf-Gewichtung, Instrumente) &rarr;</a></p>
   </section>
 {% endfor %}
-</main>
-<footer>
-  Barbell-Portfolio-Dashboard &middot; statisch erzeugt, keine Live-Daten &middot;
-  Kurshistorie und Simulation deterministisch aus <code>data/price_history.csv</code>.
-</footer>
+{% endblock %}
+{% block scripts %}
 <script>
   const style = getComputedStyle(document.documentElement);
   const cssVar = (name) => style.getPropertyValue(name).trim();
@@ -287,7 +63,6 @@
     x: { grid: { color: colors.grid }, ticks: { color: colors.text, maxTicksLimit: 8 } },
     y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
   };
-  const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
   // Gemeinsames Maximum ueber alle Wertverlauf-Charts (#24), damit unterschiedliche
   // Strategien optisch vergleichbar bleiben statt jeweils unabhaengig zu skalieren.
   const wertChartMax = {{ wert_chart_max | tojson }};
@@ -338,84 +113,6 @@
       scales: wertChartScales,
     },
   });
-
-  {% if s.beitraege %}
-  new Chart(document.getElementById('beitrag-chart-{{ loop.index }}'), {
-    type: 'bar',
-    data: {
-      labels: {{ s.beitraege | map(attribute='name') | list | tojson }},
-      datasets: [{
-        label: 'Effekt (Prozentpunkte)',
-        data: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }},
-        backgroundColor: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
-      }],
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Renditebeitrag je Börsenweisheit (Prozentpunkte)', color: colors.text } },
-      scales: {
-        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-      },
-    },
-  });
-  {% endif %}
-
-  new Chart(document.getElementById('opt-chart-{{ loop.index }}'), {
-    type: 'bar',
-    data: {
-      labels: {{ s.optimierungs_effekte | map(attribute='name') | list | tojson }},
-      datasets: [{
-        label: 'Effekt (Prozentpunkte)',
-        data: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }},
-        backgroundColor: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
-      }],
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Renditebeitrag je Optimierungs-Schalter (Prozentpunkte)', color: colors.text } },
-      scales: {
-        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-      },
-    },
-  });
-
-  new Chart(document.getElementById('topf-chart-{{ loop.index }}'), {
-    type: 'line',
-    data: {
-      labels: {{ s.labels_json | safe }},
-      datasets: [
-        {% for topf_name, target in s.topf_targets.items() %}
-        {
-          label: {{ topf_name | tojson }} + ' Ist %',
-          data: {{ s.topf_series_json | safe }}[{{ topf_name | tojson }}],
-          borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
-          backgroundColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-        {
-          label: {{ topf_name | tojson }} + ' Ziel %',
-          data: {{ s.labels_json | safe }}.map(() => {{ target }}),
-          borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
-          borderDash: [6, 4],
-          borderWidth: 1.5,
-          pointRadius: 0,
-        },
-        {% endfor %}
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Topf-Gewichtung Ist vs. Ziel (%)', color: colors.text } },
-      scales: commonScales,
-    },
-  });
   {% endfor %}
 </script>
-</body>
-</html>
+{% endblock %}
