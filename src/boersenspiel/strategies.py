@@ -51,6 +51,21 @@ class Beitrag:
 
 
 @dataclass(frozen=True)
+class Optimierungen:
+    """Vier strategieübergreifende Simulationsmechanismen, die ``engine.simulate()``
+    unabhängig von der jeweiligen Gewichtungsregel anwendet. Einzeln ein-/ausschaltbar,
+    damit ihr isolierter Renditebeitrag messbar wird (siehe #17), statt nur geglaubt zu
+    werden. Defaults erhalten das bisherige Verhalten exakt - eine Strategie ohne
+    explizit gesetztes ``optimierungen``-Feld verhält sich wie vor Einführung dieser
+    Schalter."""
+
+    steueroptimierung: bool = True  # Dezember-Harvest (Freibetrag-Gewinnmitnahme / Tax-Loss-Harvest)
+    rebalancing: bool = True  # periodische Rückführung auf die Zielgewichte
+    ordergebuehren: bool = True  # False -> gebührenfreie Referenzrechnung
+    besteuerung: bool = True  # False -> realisierte Gewinne fließen nicht in Freibetrag/Steuer-Tracking
+
+
+@dataclass(frozen=True)
 class Strategy:
     name: str
     startkapital: Decimal
@@ -72,6 +87,13 @@ class Strategy:
     # Varianten haben ihrerseits keine ``beitraege`` - sonst würde die Auswertung
     # rekursiv.
     beitraege: tuple[Beitrag, ...] = ()
+    # Optional: Kurzbeschreibung der Strategie/des Szenarios fürs Dashboard (#26).
+    # Leer bedeutet: keine Beschreibung wird angezeigt.
+    beschreibung: str = ""
+    # Welche der vier Mechanismen aus ``Optimierungen`` für diese Strategie standardmäßig
+    # greifen. ``engine.simulate()`` übernimmt diese, sofern ihr nicht explizit eine
+    # andere ``Optimierungen``-Instanz übergeben wird (siehe #17).
+    optimierungen: Optimierungen = field(default_factory=Optimierungen)
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""
@@ -117,6 +139,11 @@ BARBELL_20_80 = Strategy(
     ziel_topf="Topf A - Sicherheit",
     ziel_gewicht=Decimal("0.20"),
     rebalancing_schwelle_pp=Decimal("10"),
+    beschreibung=(
+        "20% Sicherheit (breite Anleihen/Gold-ETFs), 80% Wachstum (breite Aktien-ETFs "
+        "plus Bitcoin). Rebalancing auf die Zielgewichte, sobald der Sicherheits-Topf "
+        "um mehr als 10 Prozentpunkte abweicht."
+    ),
 )
 
 # --- Strategie 2: Barbell 30/70 (Beispiel für eine alternative Gewichtung) -
@@ -148,6 +175,11 @@ BARBELL_30_70 = Strategy(
     ziel_topf="Topf A - Sicherheit",
     ziel_gewicht=Decimal("0.30"),
     rebalancing_schwelle_pp=Decimal("15"),
+    beschreibung=(
+        "Defensivere Variante des Barbell-Ansatzes: 30% Sicherheit statt 20%, dafür "
+        "70% Wachstum. Größere Rebalancing-Schwelle (15 statt 10 Prozentpunkte), weil "
+        "der breitere Sicherheits-Topf natürlicherweise stärker schwankt."
+    ),
 )
 
 # --- Strategie 3: Barbell 20/60/20 + Einzelaktien-Satellit -----------------
@@ -207,6 +239,11 @@ BARBELL_20_60_20_SATELLIT = Strategy(
     ziel_topf="Topf A - Sicherheit",
     ziel_gewicht=Decimal("0.20"),
     rebalancing_schwelle_pp=Decimal("10"),
+    beschreibung=(
+        "Wie Barbell 20/80, aber der Wachstums-Topf sinkt von 80% auf 60% zugunsten "
+        "eines dritten, gleichgewichteten Topfs aus 10 Einzelaktien (20%) - das "
+        "80/20-Risikoprofil bleibt erhalten, nur granularer gestreut."
+    ),
 )
 
 STRATEGIES: list[Strategy] = [BARBELL_20_80, BARBELL_30_70, BARBELL_20_60_20_SATELLIT]

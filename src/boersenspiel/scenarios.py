@@ -32,7 +32,7 @@ from decimal import Decimal
 from typing import Callable
 
 from .history_store import PriceRow
-from .strategies import BARBELL_20_80, Beitrag, Strategy, Topf
+from .strategies import BARBELL_20_80, Beitrag, Optimierungen, Strategy, Topf
 
 TOPF_SICHERHEIT: Topf = BARBELL_20_80.toepfe[0]
 TOPF_WACHSTUM: Topf = BARBELL_20_80.toepfe[1]
@@ -119,6 +119,10 @@ SELL_IN_MAY = Strategy(
     # Regimewechsel (Mai <-> Oktober) zuverlässig eine Umschichtung auslöst.
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=sell_in_may_gewichte,
+    beschreibung=(
+        "Von Mai bis September (inklusive) 100% defensiv (Topf A), sonst normale "
+        "Barbell-Verteilung. Testet die Börsenweisheit 'Sell in May and go away'."
+    ),
 )
 
 
@@ -146,8 +150,17 @@ BUY_AND_HOLD = Strategy(
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
-    rebalancing_schwelle_pp=Decimal("1000"),
+    rebalancing_schwelle_pp=Decimal("10"),
     gewichte_fn=None,
+    # Rebalancing bewusst über den Optimierungs-Schalter (#17) statt einer künstlich
+    # unerreichbaren Schwelle abgeschaltet - "gar nicht rebalancieren" ist damit ehrlich
+    # benannt statt implizit über einen Zahlenwert erzwungen.
+    optimierungen=Optimierungen(rebalancing=False),
+    beschreibung=(
+        "Anfangsallokation wird nie aktiv rebalanciert ('Hin und her macht Taschen "
+        "leer'). Der Dezember-Steuermechanismus bleibt wie bei den anderen Strategien "
+        "aktiv."
+    ),
 )
 
 
@@ -180,6 +193,10 @@ SANTA_CLAUS_RALLY = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=santa_claus_rally_gewichte,
+    beschreibung=(
+        "In Dezember und Januar Wachstumsquote auf 95% hochgefahren ('Santa-Claus-"
+        "Rally'), sonst normale Barbell-Verteilung."
+    ),
 )
 
 
@@ -222,6 +239,11 @@ BUY_THE_DIP = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=buy_the_dip_gewichte,
+    beschreibung=(
+        "Liegt der MSCI-World-ETF mehr als 10% unter seinem 20-Wochen-Hoch, "
+        "Wachstumsquote auf 95% hochfahren ('kaufe, wenn die Kanonen donnern'), "
+        "sonst normale Verteilung."
+    ),
 )
 
 
@@ -277,6 +299,11 @@ CUT_LOSSES = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=cut_losses_gewichte,
+    beschreibung=(
+        "Trailing-Stop je Wachstums-Instrument: fällt eines mehr als 15% unter sein "
+        "eigenes 20-Wochen-Hoch, wird nur dieses auf 0% gesetzt ('cut your losses "
+        "short'), andere Wachstums-Instrumente bleiben unangetastet."
+    ),
 )
 
 
@@ -366,6 +393,12 @@ def _weisheiten_strategy(name: str, weisheiten: tuple[Weisheit, ...], **kwargs) 
 BOERSENWEISHEITEN = _weisheiten_strategy(
     "Börsenweisheiten (alle fünf kombiniert)",
     WEISHEITEN,
+    beschreibung=(
+        "Fasst die fünf Börsenweisheiten oben zu einer Strategie zusammen: jede votiert "
+        "für eine Wachstumsquote (oder enthält sich), die Ziel-Quote ist das "
+        "arithmetische Mittel der abgegebenen Voten. 'Verluste begrenzen' wirkt danach "
+        "zusätzlich als Instrument-Overlay."
+    ),
     beitraege=tuple(
         Beitrag(
             name=weisheit.spruch,
@@ -412,6 +445,11 @@ CHART_SMA_CROSSOVER = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=chart_sma_crossover_gewichte,
+    beschreibung=(
+        "Charttechnischer Trendindikator auf dem MSCI-World-ETF: liegt der 10-Wochen- "
+        "unter dem 40-Wochen-Durchschnitt ('Death Cross'), 100% defensiv, sonst "
+        "('Golden Cross'/normal) reguläre Barbell-Gewichte."
+    ),
 )
 
 
@@ -470,6 +508,11 @@ MOMENTUM_ROTATION = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=momentum_rotation_gewichte,
+    beschreibung=(
+        "Innerhalb des Wachstums-Topfs (80%) werden nur die 2 Instrumente mit der "
+        "höchsten 12-Wochen-Trailing-Rendite gleichgewichtet gehalten, die übrigen auf "
+        "0% gesetzt. Der Sicherheits-Topf bleibt unverändert."
+    ),
 )
 
 
@@ -532,6 +575,11 @@ VOLATILITY_TARGET = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=volatility_target_gewichte,
+    beschreibung=(
+        "Die Wachstumsquote wird abhängig von der realisierten 12-Wochen-Volatilität "
+        "des MSCI-World-ETF linear zwischen 50% (hohe Volatilität) und 90% (niedrige "
+        "Volatilität) skaliert - Risk-Parity-/Vol-Targeting-Prinzip."
+    ),
 )
 
 
@@ -565,6 +613,11 @@ COST_AVERAGE_ENTRY = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("3"),
     gewichte_fn=cost_average_gewichte,
+    beschreibung=(
+        "Statt das Startkapital sofort komplett zu investieren, wird die "
+        "Wachstumsquote über die ersten 10 Wochen linear von 0% auf die normale "
+        "Barbell-Verteilung hochgefahren - Annäherung an ratierliches Investieren."
+    ),
 )
 
 

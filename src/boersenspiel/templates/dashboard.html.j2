@@ -179,6 +179,7 @@
 {% for s in strategies %}
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
+    {% if s.beschreibung %}<p class="hint">{{ s.beschreibung }}</p>{% endif %}
     <div class="stat-row">
       <div class="stat-tile"><div class="label">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
       <div class="stat-tile"><div class="label">Startkapital</div><div class="value">{{ s.startkapital }} &euro;</div></div>
@@ -222,6 +223,30 @@
       </div>
     </div>
     {% endif %}
+    <div class="beitraege">
+      <h3>Effekt der Optimierungs-Schalter</h3>
+      <p class="hint">
+        Leave-one-out je Mechanismus: Rendite dieser Strategie minus Rendite derselben
+        Strategie mit genau diesem einen Mechanismus ausgeschaltet (Dezember-Harvest,
+        Rebalancing, Ordergebühren, Besteuerung). Positiv = der Mechanismus hat Rendite
+        gebracht, negativ = er hat gekostet.
+      </p>
+      <div class="chart-box"><canvas id="opt-chart-{{ loop.index }}"></canvas></div>
+      <div class="overflow-x">
+        <table>
+          <thead><tr><th>Mechanismus</th><th>Effekt (Prozentpunkte)</th><th>Rendite ohne diesen Mechanismus %</th></tr></thead>
+          <tbody>
+          {% for o in s.optimierungs_effekte %}
+            <tr>
+              <td>{{ o.name }}</td>
+              <td class="{{ 'positive' if o.delta_pp >= 0 else 'negative' }}">{{ o.delta_label }}</td>
+              <td>{{ o.ohne_rendite_label }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
     <div class="overflow-x">
       <table>
         <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th></tr></thead>
@@ -263,6 +288,13 @@
     y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
   };
   const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
+  // Gemeinsames Maximum ueber alle Wertverlauf-Charts (#24), damit unterschiedliche
+  // Strategien optisch vergleichbar bleiben statt jeweils unabhaengig zu skalieren.
+  const wertChartMax = {{ wert_chart_max | tojson }};
+  const wertChartScales = {
+    x: commonScales.x,
+    y: { ...commonScales.y, min: 0, suggestedMax: wertChartMax * 1.05 },
+  };
 
   new Chart(document.getElementById('summary-chart'), {
     type: 'bar',
@@ -303,7 +335,7 @@
     options: {
       responsive: true, maintainAspectRatio: false,
       plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf', color: colors.text } },
-      scales: commonScales,
+      scales: wertChartScales,
     },
   });
 
@@ -329,6 +361,27 @@
     },
   });
   {% endif %}
+
+  new Chart(document.getElementById('opt-chart-{{ loop.index }}'), {
+    type: 'bar',
+    data: {
+      labels: {{ s.optimierungs_effekte | map(attribute='name') | list | tojson }},
+      datasets: [{
+        label: 'Effekt (Prozentpunkte)',
+        data: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }},
+        backgroundColor: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+      }],
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, title: { display: true, text: 'Renditebeitrag je Optimierungs-Schalter (Prozentpunkte)', color: colors.text } },
+      scales: {
+        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+      },
+    },
+  });
 
   new Chart(document.getElementById('topf-chart-{{ loop.index }}'), {
     type: 'line',

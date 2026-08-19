@@ -60,8 +60,12 @@ def test_build_dashboard_renders_comparison_overview_with_correct_ranking(tmp_pa
     # Beide Strategien kaufen dasselbe Instrument T1 zum selben Startkapital
     # (kein Rebalancing, Schwelle ist unerreichbar hoch) -> identisches Ergebnis:
     # 999 investierbar (1000 - 1 Gebuehr) / 100 = 9.99 Einheiten, Endwert bei
-    # Kurs 150 = 1498.50, Rendite (1498.50-1000)/1000 = +49.85%.
-    assert html.count("+49.85") == 2
+    # Kurs 150 = 1498.50, Rendite (1498.50-1000)/1000 = +49.85%. Beschraenkt auf die
+    # Uebersichtstabelle, weil die Optimierungs-Effekte-Sektion (#17) je Strategie
+    # weitere "ohne <Mechanismus>"-Renditen anzeigt, die bei dieser einfachen
+    # Zwei-Zeilen-Historie zufaellig ebenfalls +49.85% betragen koennen.
+    uebersicht = html.split('id="uebersicht"', 1)[1].split("</section>", 1)[0]
+    assert uebersicht.count("+49.85") == 2
 
 
 def test_build_dashboard_summary_matches_detail_total_value(tmp_path: Path):
