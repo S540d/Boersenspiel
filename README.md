@@ -347,6 +347,20 @@ pytest -q
 
 ## Modellierungsentscheidungen der Engine
 
+- **Keine separate Cash-Position:** Wenn ein Szenario "defensiv" schaltet
+  (z. B. "Sell in May", SMA-Death-Cross, Trailing-Stop "Verluste begrenzen"),
+  wandert das Kapital vollständig in Topf A (Sicherheit: EUNL/EUNA/4GLD —
+  breite Anleihen- und Gold-ETFs), **nicht** in eine unverzinste oder fest
+  verzinste Cash-Haltung. Topf A **ist** in diesem Modell die Cash-Rolle:
+  liquide, breit gestreut, deutlich schwankungsärmer als Topf B, aber nicht
+  garantiert wertstabil. Ein zusätzlicher, echter Cash-Posten hätte zwei
+  Nachteile: (1) er bräuchte eine frei erfundene Verzinsung (siehe
+  [#35](https://github.com/S540d/Boersenspiel/issues/35)) statt eines aus der
+  Kurshistorie ableitbaren Werts, und würde damit von dem Grundsatz
+  abweichen, dass alles Abgeleitete ausschließlich aus echten Marktdaten
+  entsteht; (2) er würde Topf A implizit duplizieren, ohne einen anderen
+  Zweck zu erfüllen. Diskutiert und entschieden in
+  [#35](https://github.com/S540d/Boersenspiel/issues/35).
 - **Initialkauf:** Ordergebühren (1 €/Trade) werden **vom Startkapital vor
   der Aufteilung** abgezogen.
 - **Spätere Trades** (Rebalancing, Dezember-Harvest): Gebühren mindern beim
