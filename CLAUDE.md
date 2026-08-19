@@ -61,6 +61,11 @@ inkrementell fortgeschrieben).
   Optionales Feld `Strategy.gewichte_fn` macht die Ziel-Gewichte zeitabhängig
   statt konstant (Signatur `(rows, i) -> dict[ticker, Decimal]`, darf nur auf
   `rows[:i+1]` zugreifen, kein Lookahead-Bias) — Basis für `scenarios.py`.
+  Optionales Feld `Strategy.beitraege` (Liste von `Beitrag(name, ohne)`)
+  markiert eine Strategie als *zusammengesetzt*: `ohne` ist dieselbe Strategie
+  ohne genau diese eine Teilregel, das Dashboard weist deren Einzeleffekt per
+  Leave-one-out aus (Rendite voll − Rendite ohne). Die `ohne`-Varianten haben
+  selbst keine `beitraege`, sonst würde die Auswertung rekursiv.
   `BARBELL_20_60_20_SATELLIT` erweitert Barbell 20/80 um einen dritten Topf
   "Einzelaktien-Satellit" (10 gleichgewichtete Einzelaktien statt breiter
   ETFs): Topf A (Sicherheit) bleibt bei 20%, Topf B (breite ETFs/BTC) sinkt
@@ -77,7 +82,17 @@ inkrementell fortgeschrieben).
   95%), "Antizyklisch kaufen" (Wachstumsquote auf 95% nach >10% Rückgang vom
   Rolling-Hoch) und "Verluste begrenzen" (Trailing-Stop je Wachstums-
   Instrument, >15% Rückgang vom eigenen Rolling-Hoch schaltet nur dieses
-  Instrument auf 0%); (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
+  Instrument auf 0%) sowie "Börsenweisheiten (alle fünf kombiniert)", das die
+  fünf zu einer Strategie zusammenfasst: jede Weisheit ist ein `Weisheit`-
+  Baustein, der in Phase 1 eine Wachstumsquote votiert (oder sich enthält,
+  wenn seine Bedingung diese Woche nicht greift) und/oder in Phase 2 als
+  Instrument-Overlay wirkt. Ziel-Quote ist das **arithmetische Mittel der
+  abgegebenen Voten** — widersprüchliche Signale (Mai-Ausstieg vs. Dip-Kauf)
+  heben sich damit teilweise auf, statt dass eine Regel die anderen
+  überstimmt; "Buy & Hold" votiert als einzige immer (für die normale Quote)
+  und wirkt so als dämpfender Anker. "Verluste begrenzen" ist die einzige
+  Overlay-Regel und läuft nach Phase 1. Der Einzeleffekt jedes Spruchs kommt
+  über `Strategy.beitraege` (Leave-one-out) ins Dashboard; (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
   10/40 Wochen) auf dem MSCI-World-ETF; (3) weitere Ansätze — Momentum-/
   Relative-Stärke-Rotation (Top-2 der Wachstums-Instrumente nach
   12-Wochen-Trailing-Rendite), volatilitätsbasierte Aktienquote (50–90%
@@ -132,7 +147,12 @@ inkrementell fortgeschrieben).
   ("Übersicht: Rendite im Vergleich" - Balkendiagramm + nach Rendite
   sortierte Tabelle mit Sprunglinks zu den Detailabschnitten), Rendite und
   URL-Slug je Strategie werden rein aus den vorhandenen
-  `engine.simulate()`-Ergebnissen abgeleitet.
+  `engine.simulate()`-Ergebnissen abgeleitet. Strategien mit gesetztem
+  `beitraege` bekommen zusätzlich einen Abschnitt "Effekt der einzelnen
+  Börsenweisheiten" (Balkendiagramm + Tabelle): je Teilregel die
+  Leave-one-out-Differenz in Prozentpunkten. Dafür simuliert die
+  Darstellungsschicht die `ohne`-Varianten zusätzlich — auch das bleibt reine
+  Anwendung von `engine.simulate()`, keine eigene Berechnungslogik.
 
 ### Kursquelle wechseln
 
@@ -193,7 +213,12 @@ Strategien plus Determinismus (zweifacher Lauf → identisches Ergebnis).
 Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
 `tests/test_scenarios.py` verifiziert die generische `gewichte_fn`-Mechanik
 in der Engine anhand handgerechneter Werte sowie die konkreten Szenarien
-(Sell in May, Buy & Hold, SMA-Crossover) als End-to-End-Smoke-Tests.
+(Sell in May, Buy & Hold, SMA-Crossover) als End-to-End-Smoke-Tests. Für das
+kombinierte Börsenweisheiten-Szenario sind die gemittelten Quoten handgerechnet
+(Mai → 40%, Dezember → 87,5%) sowie geprüft, dass die Gewichte in jeder Woche zu
+1 summieren und jede Leave-one-out-Variante genau eine Weisheit weglässt.
+`tests/test_dashboard.py` prüft zusätzlich, dass der Beitrags-Abschnitt nur bei
+gesetztem `beitraege` gerendert wird.
 `tests/test_satellit_strategy.py` prüft den Einzelaktien-Satellit
 (`BARBELL_20_60_20_SATELLIT`): Symbol-Mapping-Vollständigkeit, Ziel-Gewichte
 summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test

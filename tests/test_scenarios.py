@@ -18,20 +18,26 @@ from decimal import Decimal
 from boersenspiel.engine import simulate
 from boersenspiel.history_store import PriceRow
 from boersenspiel.scenarios import (
+    BOERSENWEISHEITEN,
     BUY_AND_HOLD,
     BUY_THE_DIP,
     CHART_SMA_CROSSOVER,
     COST_AVERAGE_ENTRY,
     CUT_LOSSES,
+    CUT_LOSSES_FENSTER_WOCHEN,
     MOMENTUM_ROTATION,
     SANTA_CLAUS_RALLY,
     SELL_IN_MAY,
+    TOPF_WACHSTUM,
     VOLATILITY_TARGET,
+    WEISHEITEN,
     buy_the_dip_gewichte,
     chart_sma_crossover_gewichte,
     cost_average_gewichte,
     cut_losses_gewichte,
+    gewichte_fuer_wachstumsquote,
     momentum_rotation_gewichte,
+    overlay_verluste_begrenzen,
     santa_claus_rally_gewichte,
     sell_in_may_gewichte,
     volatility_target_gewichte,
@@ -414,3 +420,98 @@ def test_cost_average_entry_scenario_runs_end_to_end():
     result = simulate(_sample_rows(), COST_AVERAGE_ENTRY)
     last_point = result.value_history[-1]
     assert abs(sum(last_point.ticker_weights.values()) - Decimal("1")) < Decimal("0.0001")
+
+
+# --- Börsenweisheiten (alle fünf kombiniert) ------------------------------------------
+
+
+def test_kombinierte_weisheiten_mitteln_widerspruechliche_voten():
+    """Mai + "Buy & Hold": Voten 0% und 80% -> Mittel 40% Wachstumsquote.
+
+    Die uebrigen drei Weisheiten enthalten sich hier: Jahresendrallye (nicht
+    Dez/Jan), antizyklisch kaufen und Verluste begrenzen (beide brauchen 20
+    Wochen Historie, die es an dieser Stelle noch nicht gibt).
+    """
+    rows = _sample_rows()
+    i = next(idx for idx, r in enumerate(rows) if r.date.month == 5)
+    assert i < CUT_LOSSES_FENSTER_WOCHEN  # sonst greifen die Rolling-Window-Regeln mit
+
+    gewichte = BOERSENWEISHEITEN.gewichte_fn(rows, i)
+
+    # Sicherheitsquote 60%, aufgeteilt nach den Sub-Gewichten von Topf A
+    assert gewichte["EUNL"] == Decimal("0.50") * Decimal("0.60")
+    assert gewichte["EUNA"] == Decimal("0.35") * Decimal("0.60")
+    assert gewichte["4GLD"] == Decimal("0.15") * Decimal("0.60")
+    # Wachstumsquote 40%, aufgeteilt nach den Sub-Gewichten von Topf B
+    assert gewichte["LYMS"] == Decimal("0.40") * Decimal("0.40")
+    assert gewichte["BTC-EUR"] == Decimal("0.10") * Decimal("0.40")
+    assert sum(gewichte.values()) == Decimal("1")
+
+
+def test_kombinierte_weisheiten_mitteln_jahresendrallye_mit_buy_and_hold():
+    """Dezember: Voten 80% (Buy & Hold) und 95% (Jahresendrallye) -> Mittel 87,5%."""
+    rows = _sample_rows()
+    i = next(idx for idx, r in enumerate(rows) if r.date.month == 12)
+
+    gewichte = BOERSENWEISHEITEN.gewichte_fn(rows, i)
+    wachstumsquote = sum(gewichte[t] for t in TOPF_WACHSTUM.sub_gewichte)
+    assert wachstumsquote == Decimal("0.875")
+
+
+def test_kombinierte_weisheiten_gewichte_summieren_immer_zu_eins():
+    rows = _sample_rows()
+    for i in range(len(rows)):
+        gewichte = BOERSENWEISHEITEN.gewichte_fn(rows, i)
+        assert abs(sum(gewichte.values()) - Decimal("1")) < Decimal("0.0000001")
+
+
+def test_ohne_buy_and_hold_enthalten_sich_alle_und_es_bleibt_normal():
+    """Fallback-Pfad: ohne das Dauervotum von "Buy & Hold" gibt es in einer
+    ruhigen Woche gar kein Votum -> unveraenderte Barbell-Verteilung."""
+    ohne_buy_and_hold = next(
+        b.ohne for b in BOERSENWEISHEITEN.beitraege if b.name == "Hin und her macht Taschen leer"
+    )
+    rows = _sample_rows()
+    # Februar, zu wenig Historie fuer die beiden Rolling-Window-Regeln
+    i = next(idx for idx, r in enumerate(rows) if r.date.month == 2)
+
+    gewichte = ohne_buy_and_hold.gewichte_fn(rows, i)
+    assert gewichte == BARBELL_20_80.alle_ticker_gewichte()
+
+
+def test_beitraege_lassen_je_genau_eine_weisheit_weg():
+    assert len(BOERSENWEISHEITEN.beitraege) == len(WEISHEITEN) == 5
+    assert [b.name for b in BOERSENWEISHEITEN.beitraege] == [w.spruch for w in WEISHEITEN]
+    # Die Leave-one-out-Varianten haben selbst keine beitraege - sonst wuerde die
+    # Auswertung im Dashboard rekursiv.
+    assert all(b.ohne.beitraege == () for b in BOERSENWEISHEITEN.beitraege)
+
+    rows = _sample_rows()
+    i = next(idx for idx, r in enumerate(rows) if r.date.month == 5)
+    ohne_sell_in_may = next(
+        b.ohne for b in BOERSENWEISHEITEN.beitraege if b.name == "Sell in May and go away"
+    )
+    # Ohne "Sell in May" faellt im Mai das 0%-Votum weg -> nur noch Buy & Hold -> 80%.
+    wachstumsquote = sum(ohne_sell_in_may.gewichte_fn(rows, i)[t] for t in TOPF_WACHSTUM.sub_gewichte)
+    assert wachstumsquote == Decimal("0.80")
+
+
+def test_boersenweisheiten_scenario_runs_end_to_end():
+    result = simulate(_sample_rows(), BOERSENWEISHEITEN)
+    last_point = result.value_history[-1]
+    assert abs(sum(last_point.ticker_weights.values()) - Decimal("1")) < Decimal("0.0001")
+
+
+def test_verluste_begrenzen_overlay_wirkt_auf_beliebige_ausgangsgewichte():
+    """Das Overlay muss auch auf einer bereits reduzierten Wachstumsquote sauber
+    umschichten (Gewichtssumme bleibt 1), nicht nur auf der Normalverteilung."""
+    rows = _rows_with_single_loser()
+    i = 20
+    ausgangs_gewichte = gewichte_fuer_wachstumsquote(Decimal("0.40"))
+
+    gewichte = overlay_verluste_begrenzen(rows, i, ausgangs_gewichte)
+
+    assert gewichte["LYMS"] == Decimal("0")  # abgestuerztes Instrument komplett raus
+    assert gewichte["EUNL"] > ausgangs_gewichte["EUNL"]  # Gewicht in den Sicherheits-Topf
+    assert abs(sum(gewichte.values()) - Decimal("1")) < Decimal("0.0000001")
+    assert ausgangs_gewichte["LYMS"] == Decimal("0.40") * Decimal("0.40")  # Eingabe unveraendert

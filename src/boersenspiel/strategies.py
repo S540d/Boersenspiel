@@ -33,6 +33,24 @@ class Topf:
 
 
 @dataclass(frozen=True)
+class Beitrag:
+    """Eine Teilregel einer zusammengesetzten Strategie, deren Effekt einzeln
+    ausgewiesen werden soll.
+
+    ``ohne`` ist dieselbe Strategie mit genau dieser einen Teilregel entfernt.
+    Die Darstellungsschicht misst den Effekt der Teilregel per
+    "Leave-one-out": Rendite(voll) - Rendite(ohne diese Teilregel), also der
+    Renditebeitrag in Prozentpunkten, den das Weglassen dieser Regel kosten
+    (positiv) oder sparen (negativ) würde. Das ist bewusst nur eine
+    *marginale* Betrachtung - die Beiträge summieren sich bei sich gegenseitig
+    beeinflussenden Regeln nicht exakt zur Gesamtrendite auf.
+    """
+
+    name: str  # Anzeigename der Teilregel (z. B. die Börsenweisheit selbst)
+    ohne: "Strategy"
+
+
+@dataclass(frozen=True)
 class Strategy:
     name: str
     startkapital: Decimal
@@ -48,6 +66,12 @@ class Strategy:
     # einzubauen. None bedeutet: konstante Gewichte aus den toepfe/sub_gewichte (Barbell-
     # Rebalancing-Verhalten, wie bisher).
     gewichte_fn: Callable[[list["PriceRow"], int], dict[str, Decimal]] | None = None
+    # Optional: Teilregeln einer zusammengesetzten Strategie, deren Einzeleffekt das
+    # Dashboard per Leave-one-out ausweist (siehe ``Beitrag``). Leer bedeutet: die
+    # Strategie wird nur als Ganzes betrachtet. Die in ``Beitrag.ohne`` hinterlegten
+    # Varianten haben ihrerseits keine ``beitraege`` - sonst würde die Auswertung
+    # rekursiv.
+    beitraege: tuple[Beitrag, ...] = ()
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""

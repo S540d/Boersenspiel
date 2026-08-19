@@ -36,6 +36,13 @@ def _slug(name: str) -> str:
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", normalisiert)).strip("-")
 
 
+def _rendite_pct(result: SimulationResult, strategy: Strategy) -> Decimal:
+    if strategy.startkapital <= 0:
+        return Decimal(0)
+    endwert = result.value_history[-1].total_value
+    return ((endwert - strategy.startkapital) / strategy.startkapital) * 100
+
+
 def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
     points = result.value_history
     labels = [vp.date.isoformat() for vp in points]
@@ -73,7 +80,21 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         )
 
     gewinn = last.total_value - strategy.startkapital
-    rendite_pct = (gewinn / strategy.startkapital) * 100 if strategy.startkapital > 0 else Decimal(0)
+    rendite_pct = _rendite_pct(result, strategy)
+
+    # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
+    beitraege = []
+    for beitrag in strategy.beitraege:
+        ohne_rendite_pct = _rendite_pct(simulate(rows, beitrag.ohne), beitrag.ohne)
+        delta_pp = rendite_pct - ohne_rendite_pct
+        beitraege.append(
+            {
+                "name": beitrag.name,
+                "delta_pp": _f(delta_pp),
+                "delta_label": f"{delta_pp:+.2f}",
+                "ohne_rendite_label": f"{ohne_rendite_pct:+.2f}",
+            }
+        )
 
     return {
         "name": result.strategy_name,
@@ -100,6 +121,7 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         },
         "last_rebalance_date": result.last_rebalance_date.isoformat() if result.last_rebalance_date else "-",
         "last_harvest_date": result.last_harvest_date.isoformat() if result.last_harvest_date else "-",
+        "beitraege": beitraege,
     }
 
 

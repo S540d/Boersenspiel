@@ -14,7 +14,10 @@ Parameter) für drei Kategorien:
 
 1. Börsenweisheiten: "Sell in May and Go Away", "Buy & Hold" (Gegenbeispiel: gar keine
    taktische Umschichtung), "Jahresendrallye" (Santa-Claus-Rally), "Antizyklisch kaufen"
-   (Buy the Dip) und "Verluste begrenzen" (Trailing-Stop je Wachstums-Instrument).
+   (Buy the Dip) und "Verluste begrenzen" (Trailing-Stop je Wachstums-Instrument) -
+   jeweils einzeln, plus "Börsenweisheiten (alle fünf kombiniert)", das die fünf in
+   einer Strategie zusammenführt und den Einzeleffekt jedes Spruchs per Leave-one-out
+   ausweist.
 2. Charttechnik: gleitender-Durchschnitt-Crossover (Golden Cross / Death Cross) auf dem
    MSCI-World-ETF als Trendindikator fürs Gesamtdepot.
 3. Weitere Ansätze: Momentum-/Relative-Stärke-Rotation zwischen den Wachstums-
@@ -24,33 +27,43 @@ Parameter) für drei Kategorien:
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
+from typing import Callable
 
 from .history_store import PriceRow
-from .strategies import BARBELL_20_80, Strategy, Topf
+from .strategies import BARBELL_20_80, Beitrag, Strategy, Topf
 
 TOPF_SICHERHEIT: Topf = BARBELL_20_80.toepfe[0]
 TOPF_WACHSTUM: Topf = BARBELL_20_80.toepfe[1]
 GROWTH_TICKER: list[str] = list(TOPF_WACHSTUM.sub_gewichte.keys())
 TREND_TICKER = "EUNL"  # MSCI-World-ETF als Proxy fuer den breiten Markttrend
 
-_NORMAL_GEWICHTE: dict[str, Decimal] = BARBELL_20_80.alle_ticker_gewichte()
+# Wachstumsquote der unveraenderten Barbell-Verteilung (Topf B am Gesamtdepot).
+NORMALE_WACHSTUMSQUOTE: Decimal = TOPF_WACHSTUM.gewicht_gesamt
+
+
+def gewichte_fuer_wachstumsquote(quote: Decimal) -> dict[str, Decimal]:
+    """Ziel-Gewichte am Gesamtdepot fuer eine gegebene Wachstumsquote (Anteil
+    Topf B). Der Rest geht in Topf A; die Sub-Gewichte innerhalb beider Töpfe
+    bleiben unveraendert. Quote 0 = voll defensiv, 1 = voll investiert."""
+    sicherheitsquote = Decimal(1) - quote
+    gewichte = {t: sub * sicherheitsquote for t, sub in TOPF_SICHERHEIT.sub_gewichte.items()}
+    gewichte.update({t: sub * quote for t, sub in TOPF_WACHSTUM.sub_gewichte.items()})
+    return gewichte
+
+
+_NORMAL_GEWICHTE: dict[str, Decimal] = gewichte_fuer_wachstumsquote(NORMALE_WACHSTUMSQUOTE)
 
 # Ziel-Gewichte, wenn eine Regel "defensiv" auslöst: 100% Topf A (Sicherheit),
 # Topf B (Wachstum) komplett auf 0 - keine neuen Töpfe/Instrumente, nur eine
 # andere Verteilung der bestehenden.
-_DEFENSIV_GEWICHTE: dict[str, Decimal] = {
-    **TOPF_SICHERHEIT.sub_gewichte,
-    **{t: Decimal(0) for t in TOPF_WACHSTUM.sub_gewichte},
-}
+_DEFENSIV_GEWICHTE: dict[str, Decimal] = gewichte_fuer_wachstumsquote(Decimal(0))
 
 # Ziel-Gewichte, wenn eine Regel "aggressiv" auslöst: Wachstum auf 95% hochgefahren,
 # Sicherheit auf 5% reduziert (Sub-Gewichte innerhalb der Töpfe bleiben unverändert).
 _AGGRESSIVE_WACHSTUMSQUOTE = Decimal("0.95")
-_AGGRESSIV_GEWICHTE: dict[str, Decimal] = {
-    **{t: g * (Decimal(1) - _AGGRESSIVE_WACHSTUMSQUOTE) for t, g in TOPF_SICHERHEIT.sub_gewichte.items()},
-    **{t: g * _AGGRESSIVE_WACHSTUMSQUOTE for t, g in TOPF_WACHSTUM.sub_gewichte.items()},
-}
+_AGGRESSIV_GEWICHTE: dict[str, Decimal] = gewichte_fuer_wachstumsquote(_AGGRESSIVE_WACHSTUMSQUOTE)
 
 
 def _rolling_prices(rows: list[PriceRow], i: int, ticker: str, fenster_wochen: int) -> list[Decimal] | None:
@@ -85,11 +98,15 @@ def _sma(rows: list[PriceRow], i: int, ticker: str, fenster_wochen: int) -> Deci
 _SELL_IN_MAY_MONATE = {5, 6, 7, 8, 9}
 
 
+def votum_sell_in_may(rows: list[PriceRow], i: int) -> Decimal | None:
+    if rows[i].date.month in _SELL_IN_MAY_MONATE:
+        return Decimal(0)  # voll defensiv
+    return None  # ausserhalb des Sommerhalbjahrs hat diese Weisheit nichts zu sagen
+
+
 def sell_in_may_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
-    monat = rows[i].date.month
-    if monat in _SELL_IN_MAY_MONATE:
-        return _DEFENSIV_GEWICHTE
-    return _NORMAL_GEWICHTE
+    quote = votum_sell_in_may(rows, i)
+    return _NORMAL_GEWICHTE if quote is None else gewichte_fuer_wachstumsquote(quote)
 
 
 SELL_IN_MAY = Strategy(
@@ -113,6 +130,16 @@ SELL_IN_MAY = Strategy(
 # Dezember-Verlustverrechnungs-Mechanismus (steuerliche Optimierung, keine
 # Umschichtung der Zielgewichte) bleibt wie bei den anderen Strategien aktiv.
 
+def votum_buy_and_hold(rows: list[PriceRow], i: int) -> Decimal | None:
+    """"Hin und her macht Taschen leer": stimmt immer fuer die unveraenderte
+    Ausgangsverteilung. Als Einzelszenario heisst das "gar nicht rebalancieren"
+    (siehe ``BUY_AND_HOLD``); im Verbund mit anderen Weisheiten ist die
+    entsprechende Aussage "nichts umschichten", also ein Dauervotum fuer die
+    normale Wachstumsquote - das die Ausschlaege der uebrigen Weisheiten
+    daempft, statt sie zu unterdruecken."""
+    return NORMALE_WACHSTUMSQUOTE
+
+
 BUY_AND_HOLD = Strategy(
     name="Börsenweisheit: Buy & Hold",
     startkapital=Decimal("10000"),
@@ -134,11 +161,15 @@ BUY_AND_HOLD = Strategy(
 _JAHRESENDRALLYE_MONATE = {12, 1}
 
 
+def votum_jahresendrallye(rows: list[PriceRow], i: int) -> Decimal | None:
+    if rows[i].date.month in _JAHRESENDRALLYE_MONATE:
+        return _AGGRESSIVE_WACHSTUMSQUOTE
+    return None  # ausserhalb des Jahreswechsels kein Votum
+
+
 def santa_claus_rally_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
-    monat = rows[i].date.month
-    if monat in _JAHRESENDRALLYE_MONATE:
-        return _AGGRESSIV_GEWICHTE
-    return _NORMAL_GEWICHTE
+    quote = votum_jahresendrallye(rows, i)
+    return _NORMAL_GEWICHTE if quote is None else gewichte_fuer_wachstumsquote(quote)
 
 
 SANTA_CLAUS_RALLY = Strategy(
@@ -164,18 +195,23 @@ BUY_THE_DIP_FENSTER_WOCHEN = 20
 BUY_THE_DIP_SCHWELLE = Decimal("0.10")  # 10% Rückgang vom Rolling-Hoch
 
 
-def buy_the_dip_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+def votum_antizyklisch_kaufen(rows: list[PriceRow], i: int) -> Decimal | None:
     kurse = _rolling_prices(rows, i, TREND_TICKER, BUY_THE_DIP_FENSTER_WOCHEN)
     if kurse is None:
-        return _NORMAL_GEWICHTE
+        return None
     rolling_hoch = max(kurse)
     aktueller_kurs = kurse[-1]
     if rolling_hoch <= 0:
-        return _NORMAL_GEWICHTE
+        return None
     ruckgang = (rolling_hoch - aktueller_kurs) / rolling_hoch
     if ruckgang > BUY_THE_DIP_SCHWELLE:
-        return _AGGRESSIV_GEWICHTE
-    return _NORMAL_GEWICHTE
+        return _AGGRESSIVE_WACHSTUMSQUOTE
+    return None  # ohne nennenswerten Rueckgang kein Votum
+
+
+def buy_the_dip_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+    quote = votum_antizyklisch_kaufen(rows, i)
+    return _NORMAL_GEWICHTE if quote is None else gewichte_fuer_wachstumsquote(quote)
 
 
 BUY_THE_DIP = Strategy(
@@ -202,8 +238,14 @@ CUT_LOSSES_FENSTER_WOCHEN = 20
 CUT_LOSSES_SCHWELLE = Decimal("0.15")  # 15% Rückgang vom eigenen Rolling-Hoch
 
 
-def cut_losses_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
-    gewichte = dict(_NORMAL_GEWICHTE)
+def overlay_verluste_begrenzen(
+    rows: list[PriceRow], i: int, gewichte: dict[str, Decimal]
+) -> dict[str, Decimal]:
+    """Setzt jedes Wachstums-Instrument mit zu grossem Rueckgang auf 0% und
+    verteilt dessen Gewicht in den Sicherheits-Topf um. Arbeitet auf beliebigen
+    Ausgangsgewichten (nicht nur der Normalverteilung), damit die Regel sich mit
+    anderen Weisheiten kombinieren laesst."""
+    gewichte = dict(gewichte)
     freigewordenes_gewicht = Decimal(0)
     for ticker in GROWTH_TICKER:
         kurse = _rolling_prices(rows, i, ticker, CUT_LOSSES_FENSTER_WOCHEN)
@@ -223,6 +265,10 @@ def cut_losses_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
     return gewichte
 
 
+def cut_losses_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+    return overlay_verluste_begrenzen(rows, i, _NORMAL_GEWICHTE)
+
+
 CUT_LOSSES = Strategy(
     name="Börsenweisheit: Verluste begrenzen",
     startkapital=Decimal("10000"),
@@ -231,6 +277,105 @@ CUT_LOSSES = Strategy(
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=cut_losses_gewichte,
+)
+
+
+# --- 1f: "Börsenweisheiten" (alle fünf kombiniert) --------------------------------------
+#
+# Fasst die fünf Weisheiten oben zu EINER Strategie zusammen, statt sie nur
+# nebeneinander zu stellen. Die Regeln widersprechen sich teilweise (im Mai will
+# "Sell in May" raus, ein gleichzeitiger Kurseinbruch will laut "antizyklisch
+# kaufen" rein), deshalb werden sie nicht hart nacheinander angewendet, sondern
+# in zwei Phasen zusammengeführt:
+#
+#   Phase 1 - Quoten-Votum: jede Weisheit darf eine Wachstumsquote vorschlagen
+#     oder sich enthalten (``None``), wenn ihre Bedingung diese Woche nicht
+#     zutrifft. Die Ziel-Wachstumsquote ist das arithmetische Mittel der
+#     abgegebenen Voten - widersprüchliche Signale heben sich damit teilweise
+#     auf, statt dass eine Regel die anderen überstimmt. "Buy & Hold" votiert
+#     als einzige immer (für die normale Quote) und wirkt so als dämpfender
+#     Anker; damit gibt es auch stets mindestens ein Votum.
+#   Phase 2 - Instrument-Overlay: "Verluste begrenzen" wirkt nicht auf die
+#     Gesamtquote, sondern je Instrument, und wird deshalb anschließend auf das
+#     Ergebnis aus Phase 1 angewendet.
+#
+# Der Einzeleffekt jeder Weisheit wird über ``Strategy.beitraege`` per
+# Leave-one-out ausgewiesen (siehe ``strategies.Beitrag``): dieselbe Strategie
+# noch einmal, nur ohne genau diese eine Weisheit.
+
+
+@dataclass(frozen=True)
+class Weisheit:
+    """Eine Börsenweisheit als kombinierbarer Baustein.
+
+    Implementiert mindestens eine der beiden Phasen: ``quote_fn`` votiert für
+    eine Wachstumsquote (oder ``None`` = Enthaltung), ``overlay_fn`` passt die
+    fertigen Ziel-Gewichte je Instrument an.
+    """
+
+    spruch: str
+    quote_fn: Callable[[list[PriceRow], int], Decimal | None] | None = None
+    overlay_fn: Callable[[list[PriceRow], int, dict[str, Decimal]], dict[str, Decimal]] | None = None
+
+
+WEISHEITEN: tuple[Weisheit, ...] = (
+    Weisheit(spruch="Sell in May and go away", quote_fn=votum_sell_in_may),
+    Weisheit(spruch="Hin und her macht Taschen leer", quote_fn=votum_buy_and_hold),
+    Weisheit(spruch="Jahresendrallye (Santa-Claus-Rally)", quote_fn=votum_jahresendrallye),
+    Weisheit(spruch="Kaufen, wenn die Kanonen donnern", quote_fn=votum_antizyklisch_kaufen),
+    Weisheit(spruch="Verluste begrenzen, Gewinne laufen lassen", overlay_fn=overlay_verluste_begrenzen),
+)
+
+
+def kombinierte_weisheiten_gewichte(
+    weisheiten: tuple[Weisheit, ...],
+) -> Callable[[list[PriceRow], int], dict[str, Decimal]]:
+    """Baut ein ``gewichte_fn`` aus den übergebenen Weisheiten (zwei Phasen, s. o.)."""
+
+    def gewichte_fn(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+        voten = [w.quote_fn(rows, i) for w in weisheiten if w.quote_fn is not None]
+        abgegeben = [q for q in voten if q is not None]
+        if abgegeben:
+            quote = sum(abgegeben, Decimal(0)) / Decimal(len(abgegeben))
+            gewichte = gewichte_fuer_wachstumsquote(quote)
+        else:
+            # Enthalten sich alle (moeglich, sobald "Buy & Hold" weggelassen wird),
+            # bleibt es bei der unveraenderten Barbell-Verteilung.
+            gewichte = dict(_NORMAL_GEWICHTE)
+        for weisheit in weisheiten:
+            if weisheit.overlay_fn is not None:
+                gewichte = weisheit.overlay_fn(rows, i, gewichte)
+        return gewichte
+
+    return gewichte_fn
+
+
+def _weisheiten_strategy(name: str, weisheiten: tuple[Weisheit, ...], **kwargs) -> Strategy:
+    return Strategy(
+        name=name,
+        startkapital=Decimal("10000"),
+        toepfe=BARBELL_20_80.toepfe,
+        ziel_topf=BARBELL_20_80.ziel_topf,
+        ziel_gewicht=BARBELL_20_80.ziel_gewicht,
+        rebalancing_schwelle_pp=Decimal("5"),
+        gewichte_fn=kombinierte_weisheiten_gewichte(weisheiten),
+        **kwargs,
+    )
+
+
+BOERSENWEISHEITEN = _weisheiten_strategy(
+    "Börsenweisheiten (alle fünf kombiniert)",
+    WEISHEITEN,
+    beitraege=tuple(
+        Beitrag(
+            name=weisheit.spruch,
+            ohne=_weisheiten_strategy(
+                f"ohne „{weisheit.spruch}“",
+                tuple(w for w in WEISHEITEN if w is not weisheit),
+            ),
+        )
+        for weisheit in WEISHEITEN
+    ),
 )
 
 
@@ -429,6 +574,7 @@ SCENARIOS: list[Strategy] = [
     SANTA_CLAUS_RALLY,
     BUY_THE_DIP,
     CUT_LOSSES,
+    BOERSENWEISHEITEN,
     CHART_SMA_CROSSOVER,
     MOMENTUM_ROTATION,
     VOLATILITY_TARGET,
