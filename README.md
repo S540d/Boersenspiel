@@ -1,435 +1,432 @@
-# Börsenspiel – Barbell-Portfolio-Dashboard
+# Börsenspiel – Barbell Portfolio Dashboard
 
 **📊 Dashboard:** [s540d.github.io/Boersenspiel](https://s540d.github.io/Boersenspiel/)
 
-Virtuelles Portfolio nach Barbell-Strategie, auf Basis des Pflichtenhefts
-`Pflichtenheft_PortfolioProjekt_v2.md` (liegt **nicht** in diesem Repo, siehe
-Hinweis unten). Technisch wurde bewusst abweichend umgesetzt (siehe
-[Abweichungen](#abweichungen-vom-pflichtenheft) unten):
-Kursabruf wöchentlich statt täglich, Persistenz als CSV im Git-Repo statt
-Google Sheet, Ausgabe als statisches Dashboard auf GitHub Pages.
+Virtual portfolio following a barbell strategy, based on the requirements
+document `Pflichtenheft_PortfolioProjekt_v2.md` (deliberately **not** part of
+this repository, see note below). The technical implementation intentionally
+deviates from that document in a few places (see
+[Deviations from the requirements](#deviations-from-the-requirements) below):
+weekly instead of daily price fetching, CSV persistence in the Git repo
+instead of a Google Sheet, output as a static dashboard on GitHub Pages.
 
-## Architektur
+## Architecture
 
-Das Projekt zerfällt in zwei Hälften, die sich ausschließlich über eine CSV-Datei
-berühren: eine **schreibende** Hälfte, die Kurse beschafft, und eine **lesende**
-Hälfte, die daraus Auswertungen rechnet.
+The project splits into two halves that only touch each other through a CSV
+file: a **writing** half that fetches prices, and a **reading** half that
+computes analytics from them.
 
 ```mermaid
 flowchart TB
-    subgraph beschaffung["① Datenbeschaffung — wöchentlich, schreibend"]
+    subgraph beschaffung["① Data acquisition — weekly, writing"]
         direction TB
-        cron["GitHub Actions<br/>Mo 06:00 UTC"] --> fetch["run_fetch.py"]
-        fetch --> av["AlphaVantageSource<br/>Symbol-Mapping · USD→EUR"]
+        cron["GitHub Actions<br/>Mon 06:00 UTC"] --> fetch["run_fetch.py"]
+        fetch --> av["AlphaVantageSource<br/>symbol mapping · USD→EUR"]
         av --> store
-        manual["record_prices.py<br/>manuell / Cowork"] --> store
-        back["backfill_history.py<br/>einmalig, Jahre rückwirkend"] --> store
-        store["history_store.record_week()<br/><b>einziger Schreibzugriff</b><br/>Wochen-Idempotenz · Carry-Forward"]
+        manual["record_prices.py<br/>manual / Cowork"] --> store
+        back["backfill_history.py<br/>one-off, years back"] --> store
+        store["history_store.record_week()<br/><b>only write path</b><br/>weekly idempotency · carry-forward"]
     end
 
-    store ==> csv[("<b>data/price_history.csv</b><br/>Datum × 17 Ticker<br/><i>nur Rohkurse, nichts Abgeleitetes</i>")]
-    store -.Protokoll.-> log[("data/fetch_log.csv")]
+    store ==> csv[("<b>data/price_history.csv</b><br/>date × 17 tickers<br/><i>raw prices only, nothing derived</i>")]
+    store -.log.-> log[("data/fetch_log.csv")]
 
-    subgraph auswertung["② Auswertung — bei jedem Build neu, lesend"]
+    subgraph auswertung["② Analytics — fresh on every build, reading"]
         direction TB
-        sim["engine.simulate(rows, strategy)<br/><b>reine Funktion</b> — kein I/O, kein now()"]
-        sim --> dash["dashboard.py + Jinja-Template"]
-        dash --> learn["learnings.py<br/><i>Key Learnings aus den Ergebnissen</i>"]
+        sim["engine.simulate(rows, strategy)<br/><b>pure function</b> — no I/O, no now()"]
+        sim --> dash["dashboard.py + Jinja template"]
+        dash --> learn["learnings.py<br/><i>key learnings from the results</i>"]
         learn --> dash
     end
 
     csv ==> sim
-    strat["strategies.py<br/>3 Strategien<br/><i>konstante Gewichte</i>"] --> sim
-    scen["scenarios.py<br/>10 Szenarien<br/><i>gewichte_fn(rows, i)</i>"] --> sim
+    strat["strategies.py<br/>3 strategies<br/><i>constant weights</i>"] --> sim
+    scen["scenarios.py<br/>10 scenarios<br/><i>gewichte_fn(rows, i)</i>"] --> sim
     dash ==> html[("docs/index.html<br/>GitHub Pages")]
 ```
 
-### Prozess im Überblick
+### Process overview
 
-**① Datenbeschaffung.** Einmal pro Woche holt der Workflow für jeden der 17 Ticker
-einen Kurs. Alles, was quellenspezifisch ist — Alpha-Vantage-Symbole, die
-USD→EUR-Umrechnung der Satelliten-Aktien, der eigene Krypto-Endpunkt — bleibt in
-`sources/`. Am Ende steht immer dasselbe: ein `PriceQuote` je Ticker. Wer die
-Kurse geliefert hat, ist ab da nicht mehr erkennbar und auch nicht mehr relevant.
+**① Data acquisition.** Once a week, the workflow fetches a price for each of
+the 17 tickers. Everything source-specific — Alpha Vantage symbols, the
+USD→EUR conversion of the satellite stocks, the dedicated crypto endpoint —
+stays inside `sources/`. The result is always the same: one `PriceQuote` per
+ticker. Which provider delivered the price is no longer visible, or relevant,
+after that point.
 
-`history_store.record_week()` ist der einzige Weg in die CSV. Es schlüsselt über
-die **ISO-Kalenderwoche**, nicht über das Kalenderdatum: ein zweiter Lauf in
-derselben Woche aktualisiert die bestehende Zeile, statt eine Dublette anzuhängen.
-Fehlt ein Kurs, wird der letzte bekannte übernommen (Carry-Forward) und in
-`fetch_log.csv` vermerkt — die Zeile bleibt lückenlos. Eingeordnet wird die Zeile
-über den **Handelstag**, den die Quelle meldet, nicht über den Tag des Abrufs:
-ein Montagslauf vor Börsenbeginn liefert den Freitagsschluss der Vorwoche, und der
-gehört in die Freitags-Woche.
+`history_store.record_week()` is the only way into the CSV. It keys off the
+**ISO calendar week**, not the calendar date: a second run in the same week
+updates the existing row instead of appending a duplicate. If a price is
+missing, the last known price is carried forward (carry-forward) and noted in
+`fetch_log.csv` — the row is never left with a gap. Which row a price belongs
+to is decided by the **trading day** reported by the source, not the day of
+the fetch: a Monday-morning run before the market opens returns Friday's
+closing price from the previous week, and that belongs in Friday's week.
 
-**Gespeichert wird ausschließlich der Rohkurs.** Keine Positionswerte, keine
-Stückzahlen, kein Steuerstand. Das ist die zentrale Entscheidung des Projekts:
-alles Abgeleitete entsteht bei jeder Auswertung neu.
+**Only the raw price is persisted.** No position values, no share counts, no
+tax state. That is the project's central design decision: everything derived
+is recomputed on every evaluation.
 
-**② Auswertung.** `engine.simulate(price_history, strategy)` bekommt die komplette
-Kurshistorie und eine Strategie und rechnet die gesamte Depotentwicklung von der
-ersten Woche an durch — Initialkauf, Rebalancing, Gebühren, Verlustverrechnung,
-Freibetrag, Steuer. Kein I/O, kein `datetime.now()`, kein Zustand über den Aufruf
-hinaus. Nichts wird fortgeschrieben, alles wird neu gerechnet. Daraus folgt der
-Determinismus: gleiche Kurshistorie + gleiche Strategie ⇒ garantiert gleiches
-Ergebnis.
+**② Analytics.** `engine.simulate(price_history, strategy)` receives the
+complete price history and a strategy, and computes the entire portfolio
+development from week one onward — initial purchase, rebalancing, fees, loss
+offsetting, tax allowance, tax. No I/O, no `datetime.now()`, no state beyond
+the call. Nothing is carried forward incrementally, everything is recomputed.
+That is what guarantees determinism: identical price history + identical
+strategy ⇒ guaranteed identical result.
 
-Weil die Simulation nichts kostet außer Rechenzeit, kann `build_dashboard.py`
-sie beliebig oft laufen lassen — einmal pro Strategie und Szenario, alle gegen
-dieselbe Kurshistorie, und stellt die Ergebnisse nebeneinander.
+Because the simulation costs nothing but compute time, `build_dashboard.py`
+can run it as often as it likes — once per strategy and scenario, all against
+the same price history, placing the results side by side.
 
-**③ Key Learnings.** Ganz oben im Dashboard steht eine Sektion, die die
-auffälligsten Befunde aus dem Vergleich in Worte fasst. Auch sie ist
-**abgeleitet, nicht hinterlegt**: `learnings.py` enthält je Learning nur die
-*Fragestellung* als reine Funktion `(views) -> Learning | None` — wie groß ist
-die Spannweite zwischen bester und schlechtester Regel, wo landet die
-handelsintensivste Regel im Ranking, was kosten Gebühren und Steuer, wie viele
-Teilregeln einer zusammengesetzten Strategie liefern einen negativen Beitrag.
-Alle Zahlen *und* alle Superlative („größter Bremsklotz", „einziger Rückhalt")
-kommen aus den aktuellen Ergebnissen. Ändert sich die Kurshistorie, ändern sich
-die Aussagen mit; lässt sich eine Frage aus den vorliegenden Daten nicht
-beantworten (z. B. weil nur eine Strategie gerendert wird), liefert die Regel
-`None` und das Learning fällt still weg, statt eine Aussage zu erfinden.
+**③ Key learnings.** At the very top of the dashboard sits a section that
+puts the most notable findings from the comparison into words. It, too, is
+**derived, not stored**: `learnings.py` only holds the *question* for each
+learning, as a pure function `(views) -> Learning | None` — how wide is the
+gap between the best and worst rule, where does the rule with the most trades
+land in the ranking, what do fees and tax cost, how many sub-rules of a
+composite strategy contribute negatively. All numbers *and* all superlatives
+("biggest drag", "sole anchor") come from the current results. If the price
+history changes, the statements change with it; if a question cannot be
+answered from the available data (e.g. because only one strategy is
+rendered), the rule returns `None` and the learning silently disappears
+instead of inventing a claim.
 
-### Strategien, Szenarien und was quer dazu liegt
+### Strategies, scenarios, and what cuts across them
 
-Eine **Strategie** ist eine Ziel-Gewichtung über Instrumente, gruppiert in Töpfe.
-Ein **Szenario** ist dieselbe Datenstruktur mit einem zusätzlichen Feld
-`gewichte_fn(rows, i)` — die Gewichte sind dann nicht mehr konstant, sondern
-werden je Kurszeile neu bestimmt (saisonal, charttechnisch, nach Momentum …).
-Für die Engine ist das kein Unterschied: sie ruft die Funktion auf und
-rebalanciert auf das, was zurückkommt. Sie kennt keine einzige Regel namentlich.
+A **strategy** is a target weighting across instruments, grouped into
+buckets. A **scenario** is the same data structure with an additional field
+`gewichte_fn(rows, i)` — the weights are then no longer constant but
+determined anew for each price row (seasonal, chart-based, momentum-driven,
+…). For the engine this makes no difference: it calls the function and
+rebalances toward whatever comes back. It does not know a single rule by
+name.
 
-Drei Eigenschaften, die dabei leicht übersehen werden:
+Three properties that are easy to miss:
 
-- **Szenarien sind vollständig unabhängig voneinander.** Jeder Lauf startet bei
-  Woche 0 mit dem vollen Startkapital und sieht nur seine eigene `gewichte_fn`.
-  Es gibt keinen gemeinsamen Zustand, keine Reihenfolge, keine Wechselwirkung —
-  die Läufe könnten in beliebiger Ordnung oder parallel stattfinden.
-- **Szenarien nutzen nur einen Teil der Daten.** Alle Szenarien in `scenarios.py`
-  bauen auf den Töpfen von `Barbell 20/80` auf und rühren damit nur **7 der 17**
-  Ticker an; die 10 Satelliten-Aktien kommen ausschließlich in
-  `Barbell 20/60/20 + Einzelaktien-Satellit` vor. Die Kurshistorie ist bewusst
-  breiter als jede einzelne Auswertung.
-- **Kein Lookahead.** Jede `gewichte_fn` darf ausschließlich `rows[:i+1]` lesen.
-  Eine Regel, die in Woche i entscheidet, darf Woche i+1 nicht kennen — sonst
-  wäre jedes Ergebnis wertlos.
+- **Scenarios are fully independent of one another.** Every run starts at
+  week 0 with the full starting capital and only ever sees its own
+  `gewichte_fn`. There is no shared state, no ordering, no interaction — the
+  runs could happen in any order or in parallel.
+- **Scenarios only use part of the data.** All scenarios in `scenarios.py`
+  build on the buckets of `Barbell 20/80` and therefore only touch **7 of the
+  17** tickers; the 10 satellite stocks appear only in
+  `Barbell 20/60/20 + Single-Stock Satellite`. The price history is
+  deliberately broader than any single evaluation.
+- **No lookahead.** Every `gewichte_fn` may only read `rows[:i+1]`. A rule
+  deciding in week i must not know week i+1 — otherwise every result would be
+  worthless.
 
-**Quer zu allen Strategien und Szenarien** liegen Mechanismen, die die Engine
-immer und für jeden Lauf identisch anwendet:
+**Cutting across all strategies and scenarios** are mechanisms that the
+engine always applies identically to every run:
 
-| Mechanismus | Wirkung |
+| Mechanism | Effect |
 |---|---|
-| Rebalancing | Rückführung auf die Zielgewichte bei Überschreiten der Schwelle |
-| Steueroptimierung am Jahresende | Realisierung von Verlusten bzw. Gewinnen zur Jahresgrenze |
-| Ordergebühren | 1 € je Kauf und Verkauf |
-| Besteuerung | Verlustvortrag → Freibetrag → 26,375 % |
+| Rebalancing | Restores target weights once the threshold is exceeded |
+| Year-end tax optimization | Realizes losses or gains at the year boundary |
+| Order fees | €1 per buy and sell |
+| Taxation | Loss carryforward → tax-free allowance → 26.375% |
 
-Diese Mechanismen sind heute **nicht abschaltbar**. Der Dashboard-Vergleich
-beantwortet damit nur die Frage „welche Gewichtungsregel war besser?", nicht die
-Frage „wie viel hat eigentlich die Steueroptimierung beigetragen?". Ein Vorschlag,
-sie einzeln zuschaltbar zu machen und damit ihren Beitrag als Differenz messbar zu
-machen, liegt als [#17](https://github.com/S540d/Boersenspiel/issues/17) vor.
+These mechanisms are currently **not toggleable**. The dashboard comparison
+therefore only answers "which weighting rule performed better?", not "how
+much did the tax optimization actually contribute?". A proposal to make them
+individually toggleable, and thus measure their contribution as a difference,
+is tracked as [#17](https://github.com/S540d/Boersenspiel/issues/17).
 
-**Leitprinzip (aus dem Pflichtenheft übernommen):** Nur Rohdaten (Kurse)
-werden dauerhaft gespeichert. Alles Abgeleitete (Positionswerte,
-Rebalancing, Steuer, Freibetrag, Verlustvortrag) wird bei jeder
-Dashboard-Erzeugung komplett neu aus der Kurshistorie berechnet –
-`engine.simulate()` ist eine reine Funktion aus (Kurshistorie, Strategie),
-ohne eigenen Zustand. Determinismus ist damit garantiert: identische
-Kurshistorie + identische Strategie ergeben immer dasselbe Ergebnis.
+**Guiding principle (carried over from the requirements document):** Only raw
+data (prices) is persisted long-term. Everything derived (position values,
+rebalancing, tax, tax-free allowance, loss carryforward) is recomputed
+entirely from the price history on every dashboard build –
+`engine.simulate()` is a pure function of (price history, strategy), with no
+state of its own. Determinism follows: identical price history + identical
+strategy always yields the identical result.
 
-### Komponenten
+### Components
 
-| Datei | Zweck |
+| File | Purpose |
 |---|---|
-| `src/boersenspiel/instruments.py` | Die 17 Instrumente (7 Barbell-Basisinstrumente + 10 Einzelaktien-Satellit; Ticker, ISIN) – quellenunabhängig |
-| `src/boersenspiel/strategies.py` | Austauschbare Strategie-Definitionen (Gewichte, Töpfe, Rebalancing-Schwelle) + Steuer-/Gebührkonstanten |
-| `src/boersenspiel/history_store.py` | Einziger Schreibzugriff auf `data/price_history.csv` / `data/fetch_log.csv` |
-| `src/boersenspiel/sources/` | Austauschbare Kursquellen (Standard: `alphavantage.py`) |
-| `src/boersenspiel/engine.py` | Reine Simulationsfunktion: (Kurshistorie, Strategie) → Portfolio-/Steuerzustand |
-| `src/boersenspiel/dashboard.py` | Rendert Simulationsergebnisse als `docs/index.html`, inkl. Key Learnings und strategieübergreifender Renditen-Vergleichsübersicht oben |
-| `src/boersenspiel/learnings.py` | Leitet die Key-Learnings-Texte bei jedem Build neu aus den Simulationsergebnissen ab (keine hinterlegten Erkenntnisse) |
-| `scripts/run_fetch.py` | Automatisierter wöchentlicher Kursabruf (GitHub Actions) |
-| `scripts/record_prices.py` | Manueller Andockpunkt für Kurse aus anderer Quelle (z. B. Cowork/Websuche) |
-| `scripts/backfill_history.py` | Einmaliger historischer Backfill von `price_history.csv` (echte Wochenkurse statt nur live gesammelter Wochen, siehe unten) |
-| `scripts/build_dashboard.py` | Baut `docs/index.html` neu aus der aktuellen Kurshistorie |
+| `src/boersenspiel/instruments.py` | The 17 instruments (7 barbell base instruments + 10 single-stock satellite; ticker, ISIN) – source-independent |
+| `src/boersenspiel/strategies.py` | Interchangeable strategy definitions (weights, buckets, rebalancing threshold) + cross-strategy tax/fee constants |
+| `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
+| `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
+| `src/boersenspiel/engine.py` | Pure simulation function: (price history, strategy) → portfolio/tax state |
+| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, including key learnings and the cross-strategy return comparison overview at the top |
+| `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
+| `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
+| `scripts/record_prices.py` | Manual entry point for prices from another source (e.g. Cowork/web search) |
+| `scripts/backfill_history.py` | One-off historical backfill of `price_history.csv` (real weekly prices instead of only live-collected weeks, see below) |
+| `scripts/build_dashboard.py` | Rebuilds `docs/index.html` from the current price history |
 
-## Kursquelle wechseln
+## Switching the price source
 
-Der Kursabruf ist bewusst hinter einer schmalen Schnittstelle
-(`PriceSource`) abstrahiert und läuft über `history_store.record_week()` –
-egal woher die Kurse kommen, landen sie im selben CSV-Format mit derselben
-Wochen-Idempotenz und demselben Carry-Forward-Vermerk bei fehlenden Kursen.
+Price fetching is deliberately abstracted behind a narrow interface
+(`PriceSource`) and runs through `history_store.record_week()` – no matter
+where the prices come from, they end up in the same CSV format with the same
+weekly idempotency and the same carry-forward note for missing prices.
 
-- **Standard (GitHub Actions):** `scripts/run_fetch.py` nutzt
-  `AlphaVantageSource` – die offizielle, API-Key-basierte Alpha-Vantage-
-  REST-API (`src/boersenspiel/sources/alphavantage.py`). Benötigt die
-  Umgebungsvariable `ALPHAVANTAGE_API_KEY` (siehe unten). Ticker-Symbol-
-  Mapping liegt ausschließlich in dieser Datei.
-- **Zuvor genutzt, weiterhin im Repo vorhanden:** `YfinanceStooqSource`
-  (`src/boersenspiel/sources/yfinance_stooq.py`, yfinance primär, Stooq-CSV
-  als Fallback) – wurde als Standardquelle abgelöst, da yfinance
-  wiederholt an Yahoos Crumb/Cookie-Authentifizierung scheiterte (leere
-  Antworten für alle Ticker, siehe Bekannte Einschränkungen unten). Bleibt
-  als Beispiel für eine austauschbare Quelle im Repo, wird aber von
-  `run_fetch.py` nicht mehr aufgerufen.
-- **Alternative (Cowork/Websuche):** Um weder ein API-Key-Limit noch
-  Ticker-Symbol-Mappings pflegen zu müssen, kann der Kursabruf stattdessen
-  manuell/über einen Cowork-Scheduled-Task laufen, der die Kurse per
-  Websuche ermittelt und direkt an
-  `scripts/record_prices.py --date ... --prices '{"EUNL": ..., ...}'`
-  übergibt. Dazu einfach den `run_fetch.py`-Schritt (oder den ganzen Cron)
-  im Workflow deaktivieren. Engine, Dashboard und Tests bleiben davon
-  unberührt.
+- **Default (GitHub Actions):** `scripts/run_fetch.py` uses
+  `AlphaVantageSource` – the official, API-key-based Alpha Vantage REST API
+  (`src/boersenspiel/sources/alphavantage.py`). Requires the
+  `ALPHAVANTAGE_API_KEY` environment variable (see below). Ticker symbol
+  mapping lives exclusively in this file.
+- **Used previously, still present in the repo:** `YfinanceStooqSource`
+  (`src/boersenspiel/sources/yfinance_stooq.py`, yfinance primary, Stooq CSV
+  as fallback) – replaced as the default source because yfinance repeatedly
+  failed against Yahoo's crumb/cookie authentication (empty responses for
+  all tickers, see Known limitations below). Remains in the repo as an
+  example of an interchangeable source, but is no longer called by
+  `run_fetch.py`.
+- **Alternative (Cowork/web search):** To avoid maintaining either an API-key
+  limit or ticker symbol mappings, price fetching can instead run
+  manually/via a Cowork scheduled task that determines prices via web search
+  and passes them directly to
+  `scripts/record_prices.py --date ... --prices '{"EUNL": ..., ...}'`. Just
+  disable the `run_fetch.py` step (or the whole cron) in the workflow for
+  this. Engine, dashboard, and tests remain unaffected.
 
-Die Entscheidung zwischen den Wegen kann jederzeit und situativ getroffen
-werden, ohne Code umzubauen.
+The choice between these paths can be made at any time, situationally,
+without restructuring code.
 
-### Alpha Vantage einrichten
+### Setting up Alpha Vantage
 
-1. API-Key auf [alphavantage.co](https://www.alphavantage.co/support/#api-key)
-   holen (kostenloser Plan: 25 Requests/Tag, max. 1 Request/Sekunde – bei
-   aktuell 17 Tickern einmal wöchentlich noch ausreichend, aber ohne viel
-   Spielraum für zusätzliche manuelle Abrufe am selben Tag).
-2. Als GitHub-Actions-Secret hinterlegen: Settings → Secrets and variables
-   → Actions → New repository secret → Name `ALPHAVANTAGE_API_KEY`.
-3. Ticker-Symbole wurden per `SYMBOL_SEARCH` verifiziert und weichen teils
-   vom naheliegenden Muster ab: Xetra-Suffix ist `.DEX` (nicht `.DE`); EIMI
-   läuft auf Xetra unter dem lokalen Kürzel `IBC3.DEX`; SEMI (iShares
-   Global Semiconductors) ist auf Xetra nicht gelistet, nur über die
-   Amsterdam-Notierung `SEMI.AMS` (ebenfalls in EUR) verfügbar. BTC-EUR
-   läuft über den separaten `DIGITAL_CURRENCY_DAILY`-Endpunkt. Die 10
-   Einzelaktien des Satelliten-Topfs laufen bis auf SMA Solar (`S92.DEX`,
-   Xetra) direkt über ihren US-Ticker in USD, inkl. der beiden ADRs BYDDY
-   (BYD) und RHHBY (Roche) - eine durchgängige EUR-Notierung an der
-   Frankfurter Börse/Xetra existiert nicht für jeden Wert (z. B. nicht für
-   Coca-Cola). Deshalb rechnet `AlphaVantageSource` diese `USD_TICKERS` bei
-   jedem Abruf per aktuellem `CURRENCY_EXCHANGE_RATE` (USD→EUR) um - sonst
-   würde die (währungsblinde) Engine USD-Beträge fälschlich als EUR
-   behandeln. Schlägt der EUR/USD-Abruf fehl, werden die betroffenen Ticker
-   für diese Woche als `missing` markiert (Carry-Forward greift), statt
-   einen falsch umgerechneten Kurs zu speichern.
+1. Get an API key from
+   [alphavantage.co](https://www.alphavantage.co/support/#api-key) (free
+   plan: 25 requests/day, max. 1 request/second – still sufficient for the
+   current 17 tickers fetched once a week, but with little headroom for
+   additional manual fetches on the same day).
+2. Store it as a GitHub Actions secret: Settings → Secrets and variables →
+   Actions → New repository secret → name `ALPHAVANTAGE_API_KEY`.
+3. Ticker symbols were verified via `SYMBOL_SEARCH` and partly deviate from
+   the obvious pattern: the Xetra suffix is `.DEX` (not `.DE`); EIMI trades
+   on Xetra under the local code `IBC3.DEX`; SEMI (iShares Global
+   Semiconductors) is not listed on Xetra, only via the Amsterdam listing
+   `SEMI.AMS` (also in EUR). BTC-EUR goes through the separate
+   `DIGITAL_CURRENCY_DAILY` endpoint. The 10 single stocks of the satellite
+   bucket run directly on their US ticker in USD except for SMA Solar
+   (`S92.DEX`, Xetra), including the two ADRs BYDDY (BYD) and RHHBY (Roche) -
+   a continuous EUR listing on the Frankfurt Stock Exchange/Xetra does not
+   exist for every stock (e.g. not for Coca-Cola). That's why
+   `AlphaVantageSource` converts these `USD_TICKERS` on every fetch using the
+   current `CURRENCY_EXCHANGE_RATE` (USD→EUR) - otherwise the
+   (currency-blind) engine would misinterpret USD amounts as EUR. If the
+   EUR/USD fetch fails, the affected tickers are marked `missing` for that
+   week (carry-forward applies) instead of storing an incorrectly converted
+   price.
 
-## Historischer Backfill
+## Historical backfill
 
-`data/price_history.csv` wächst im Normalbetrieb nur Woche für Woche seit
-Projektstart (`GLOBAL_QUOTE` liefert nur den aktuellen Kurs). Für
-aussagekräftige Simulationen über mehrere Marktzyklen (z. B. damit
-saisonale Szenarien wie "Sell in May" oder der 40-Wochen-SMA-Crossover
-überhaupt genug Historie zum Greifen haben) gibt es
-`scripts/backfill_history.py`: nutzt `TIME_SERIES_WEEKLY` /
-`DIGITAL_CURRENCY_WEEKLY` (liefern die komplette verfügbare Historie in
-**einem** Request pro Ticker, anders als `GLOBAL_QUOTE`) und schreibt das
-Ergebnis über `history_store.record_week()` (denselben Pfad wie der
-Live-Abruf, inkl. Wochen-Idempotenz und Carry-Forward) komplett neu in
-`price_history.csv`. USD-notierte Ticker werden dabei mit dem historischen
-`FX_WEEKLY`-Kurs der jeweils selben Woche umgerechnet (Forward-Fill, falls
-für eine Woche kein FX-Kurs vorliegt).
+`data/price_history.csv` normally only grows week by week since project
+start (`GLOBAL_QUOTE` only returns the current price). For meaningful
+simulations across multiple market cycles (e.g. so that seasonal scenarios
+like "Sell in May" or the 40-week SMA crossover have enough history to work
+with in the first place), there is `scripts/backfill_history.py`: it uses
+`TIME_SERIES_WEEKLY` / `DIGITAL_CURRENCY_WEEKLY` (return the complete
+available history in **one** request per ticker, unlike `GLOBAL_QUOTE`) and
+writes the result through `history_store.record_week()` (the same path as
+the live fetch, including weekly idempotency and carry-forward), rewriting
+`price_history.csv` completely. USD-denominated tickers are converted using
+the historical `FX_WEEKLY` rate for the same week (forward-fill if no FX
+rate is available for a given week).
 
 ```bash
-python scripts/backfill_history.py --years 5   # Default: 5 Jahre zurück
+python scripts/backfill_history.py --years 5   # default: 5 years back
 ```
 
-Verbraucht einmalig ca. 18 Requests (16 nicht-Krypto-Ticker + 1× `FX_WEEKLY`
-+ 1× Krypto) - passt ins tägliche Free-Tier-Limit von 25, sollte aber nicht
-mehrfach am selben Tag laufen. **Ersetzt** `price_history.csv` komplett -
-kein Zusammenführen mit zuvor live gesammelten Wochen nötig, da der Backfill
-dieselben (und ältere) Wochen ohnehin mit abdeckt.
+Uses roughly 18 requests once (16 non-crypto tickers + 1× `FX_WEEKLY` + 1×
+crypto) - fits within the daily free-tier limit of 25, but shouldn't run
+more than once on the same day. **Replaces** `price_history.csv` completely -
+no merging with previously live-collected weeks is needed, since the backfill
+already covers those (and older) weeks anyway.
 
-Weil der API-Key als Repo-Secret vorliegt (und nicht auf jeder
-Entwicklermaschine), gibt es dafür zusätzlich den manuell startbaren
-Workflow **"Historischer Backfill (manuell)"**
-(`.github/workflows/backfill.yml`): Actions → Workflow auswählen → *Run
-workflow* → `years` setzen und zur Bestätigung `REPLACE` eintippen (der Lauf
-bricht sonst ab, da er die Kurshistorie komplett ersetzt). Der Workflow
-führt Tests, Backfill, eine Plausibilitätsprüfung (Zeilenzahl, Datumsspanne,
-Ticker mit Kurslücken landen in der Job-Summary), den Dashboard-Build, den
-Commit der Datendateien und den Pages-Deploy aus. **Nicht am selben Tag wie
-den wöchentlichen Kursabruf starten** - 18 + 18 Requests reißen das
-Tageslimit von 25.
+Because the API key lives as a repo secret (and not on every developer
+machine), there is also a manually triggered workflow **"Historical Backfill
+(manual)"** (`.github/workflows/backfill.yml`): Actions → select workflow →
+*Run workflow* → set `years` and type `REPLACE` to confirm (the run aborts
+otherwise, since it completely replaces the price history). The workflow
+runs tests, the backfill, a plausibility check (row count, date range,
+tickers with price gaps land in the job summary), the dashboard build, the
+commit of the data files, and the Pages deploy. **Don't start it on the same
+day as the weekly price fetch** - 18 + 18 requests exceed the daily limit of
+25.
 
-## Strategie hinzufügen
+## Adding a strategy
 
-Neue Strategien werden als weiterer `Strategy`-Eintrag in
-`src/boersenspiel/strategies.py` ergänzt (Startkapital, Töpfe mit
-Sub-Gewichten, Ziel-Topf, Ziel-Gewicht, Rebalancing-Schwelle in
-Prozentpunkten) und zur `STRATEGIES`-Liste hinzugefügt – die Engine enthält
-keine Barbell-spezifischen Annahmen, `dashboard.py` rendert automatisch
-alle in `STRATEGIES` hinterlegten Strategien nebeneinander. Aktuell
-hinterlegt: `Barbell 20/80` (aus dem Pflichtenheft), `Barbell 30/70`
-(Beispiel für eine alternative Gewichtung) und `Barbell 20/60/20 +
-Einzelaktien-Satellit` (erweitert Barbell 20/80 um einen dritten Topf mit
-10 gleichgewichteten Einzelaktien statt breiter ETFs – Gesamtrisikoprofil
-80% riskant / 20% sicher bleibt erhalten, siehe `strategies.py` für die
-Details und Auswahlbegründung).
+New strategies are added as another `Strategy` entry in
+`src/boersenspiel/strategies.py` (starting capital, buckets with sub-weights,
+target bucket, target weight, rebalancing threshold in percentage points) and
+added to the `STRATEGIES` list – the engine contains no barbell-specific
+assumptions, `dashboard.py` automatically renders all strategies listed in
+`STRATEGIES` side by side. Currently defined: `Barbell 20/80` (from the
+requirements document), `Barbell 30/70` (example of an alternative
+weighting), and `Barbell 20/60/20 + Single-Stock Satellite` (extends Barbell
+20/80 with a third bucket of 10 equally-weighted single stocks instead of
+broad ETFs – overall risk profile of 80% risky / 20% safe is preserved, see
+`strategies.py` for details and the rationale behind the selection).
 
-### Szenarien
+### Scenarios
 
-Zusätzlich zu den Strategien gibt es in `scenarios.py` zeitabhängige
-Auswertungs-Szenarien: dieselbe Barbell-20/80-Struktur (Topf A "Sicherheit",
-Topf B "Wachstum", 7 Instrumente), aber mit einer Regel, die die Ziel-Gewichte
-je Kurszeile neu bestimmt statt sie konstant zu lassen. Erster Ansatz –
-Parameter sind nicht optimiert oder gebacktestet. Startkapital jeweils
-10.000 €, alle Läufe unabhängig voneinander (siehe
-[Architektur](#architektur) oben).
+In addition to the strategies, `scenarios.py` contains time-dependent
+evaluation scenarios: the same Barbell-20/80 structure (bucket A "Safety",
+bucket B "Growth", 7 instruments), but with a rule that redetermines the
+target weights for each price row instead of keeping them constant. First
+pass – parameters are not optimized or backtested. Starting capital is
+€10,000 in each case, all runs independent of one another (see
+[Architecture](#architecture) above).
 
-**Börsenweisheiten**
+**Market wisdoms**
 
-| Szenario | Regel |
+| Scenario | Rule |
 |---|---|
-| Sell in May | Mai–September defensiv (100% Sicherheit), Oktober–April normale 20/80-Verteilung |
-| Buy & Hold | Startallokation wird nie aktiv rebalanciert (Rebalancing-Schwelle praktisch unerreichbar); Dezember-Steueroptimierung bleibt wie bei allen Strategien aktiv |
-| Jahresendrallye | Dezember/Januar Wachstumsquote auf 95% ("Santa Claus Rally"), sonst normale Verteilung |
-| Antizyklisch kaufen | Wachstumsquote auf 95%, sobald der MSCI-World-ETF (EUNL) mehr als 10% unter seinem 20-Wochen-Hoch notiert ("Buy the Dip") |
-| Verluste begrenzen | Trailing-Stop je Wachstums-Instrument: fällt eines mehr als 15% unter sein eigenes 20-Wochen-Hoch, wird nur dieses auf 0% gesetzt (Rest des Depots unverändert) |
-| Börsenweisheiten (alle fünf kombiniert) | Fasst die fünf Weisheiten oben zu **einer** Strategie zusammen (siehe unten) und weist den Einzeleffekt jedes Spruchs per Leave-one-out aus |
+| Sell in May | Defensive (100% safety) May–September, normal 20/80 split October–April |
+| Buy & Hold | Starting allocation is never actively rebalanced (rebalancing threshold effectively unreachable); December tax optimization stays active as for all strategies |
+| Santa Claus Rally | Growth share set to 95% in December/January, normal split otherwise |
+| Buy the Dip | Growth share set to 95% as soon as the MSCI World ETF (EUNL) trades more than 10% below its 20-week high |
+| Cut Your Losses | Trailing stop per growth instrument: if one falls more than 15% below its own 20-week high, only that instrument is set to 0% (rest of the portfolio unchanged) |
+| Market Wisdoms (all five combined) | Combines the five wisdoms above into **one** strategy (see below) and reports each saying's individual effect via leave-one-out |
 
-**Wie die fünf Weisheiten kombiniert werden.** Die Regeln widersprechen sich
-teilweise — im Mai will „Sell in May" raus, ein gleichzeitiger Kurseinbruch will
-laut „antizyklisch kaufen" rein. Statt sie hart nacheinander anzuwenden, laufen
-sie deshalb in zwei Phasen:
+**How the five wisdoms are combined.** The rules partly contradict each other
+— in May "Sell in May" wants out, while a simultaneous price drop makes "Buy
+the Dip" want in. Instead of applying them hard, one after another, they
+therefore run in two phases:
 
-1. **Quoten-Votum.** Jede Weisheit schlägt eine Wachstumsquote vor oder *enthält
-   sich*, wenn ihre Bedingung diese Woche nicht greift. Ziel ist das
-   **arithmetische Mittel der abgegebenen Voten** — widersprüchliche Signale
-   heben sich damit teilweise auf, statt dass eine Regel die anderen
-   überstimmt. „Buy & Hold" (= „nichts umschichten") votiert als einzige immer
-   für die normale 80%-Quote und wirkt so als dämpfender Anker; damit gibt es
-   stets mindestens ein Votum.
-2. **Instrument-Overlay.** „Verluste begrenzen" wirkt nicht auf die Gesamtquote,
-   sondern je Instrument, und wird deshalb anschließend auf das Ergebnis aus
-   Phase 1 angewendet.
+1. **Share vote.** Each wisdom proposes a growth share, or *abstains* if its
+   condition doesn't apply this week. The target is the **arithmetic mean of
+   the votes cast** — contradictory signals partly cancel out instead of one
+   rule overriding the others. "Buy & Hold" (= "don't rebalance anything")
+   is the only one that always votes for the normal 80% share, acting as a
+   dampening anchor; that guarantees at least one vote at all times.
+2. **Instrument overlay.** "Cut Your Losses" doesn't act on the overall
+   share, but per instrument, and is therefore applied afterward to the
+   result of phase 1.
 
-**Effekt je Spruch.** Im Detailabschnitt der Strategie steht ein Balkendiagramm
-„Effekt der einzelnen Börsenweisheiten": je Spruch die **Leave-one-out**-Differenz
-in Prozentpunkten, also Rendite der vollen Strategie minus Rendite derselben
-Strategie *ohne* genau diesen Spruch. Positiv heißt: der Spruch hat Rendite
-gebracht. Weil sich die Regeln gegenseitig beeinflussen, summieren sich die
-Einzelbeiträge nicht exakt zur Gesamtrendite — es ist eine marginale, keine
-additive Zerlegung.
+**Effect per saying.** The strategy's detail section shows a bar chart
+"Effect of the individual market wisdoms": for each saying, the
+**leave-one-out** difference in percentage points, i.e. the return of the
+full strategy minus the return of the same strategy *without* exactly that
+saying. Positive means: the saying added return. Because the rules affect
+each other, the individual contributions don't sum up exactly to the total
+return — it's a marginal, not an additive decomposition.
 
-**Charttechnik**
+**Chart patterns**
 
-| Szenario | Regel |
+| Scenario | Rule |
 |---|---|
-| SMA-Crossover (10/40 Wochen) | Golden Cross/Death Cross auf dem MSCI-World-ETF: 10-Wochen-SMA unter 40-Wochen-SMA → defensiv (100% Sicherheit), sonst normale Verteilung |
+| SMA Crossover (10/40 weeks) | Golden Cross/Death Cross on the MSCI World ETF: 10-week SMA below 40-week SMA → defensive (100% safety), normal split otherwise |
 
-**Weitere Ansätze**
+**Other approaches**
 
-| Szenario | Regel |
+| Scenario | Rule |
 |---|---|
-| Momentum: Relative-Stärke-Rotation | Innerhalb des Wachstums-Topfs (Gesamtgewicht bleibt 80%) werden nur die 2 Instrumente mit der höchsten 12-Wochen-Trailing-Rendite gleichgewichtet gehalten, die übrigen auf 0% |
-| Volatilitätsbasierte Aktienquote | Wachstumsquote skaliert linear zwischen 50% (hohe) und 90% (niedrige realisierte 12-Wochen-Volatilität des MSCI-World-ETF) – Risk-Parity-/Vol-Targeting-Prinzip |
-| Cost-Average-Einstieg (10 Wochen) | Wachstumsquote rampt über die ersten 10 Wochen linear von 0% auf die normale 80%-Verteilung hoch, statt das Startkapital sofort komplett zu investieren |
+| Momentum: relative strength rotation | Within the growth bucket (total weight stays 80%), only the 2 instruments with the highest 12-week trailing return are held, equally weighted; the rest are set to 0% |
+| Volatility-based equity share | Growth share scales linearly between 50% (high) and 90% (low realized 12-week volatility of the MSCI World ETF) – risk-parity/vol-targeting principle |
+| Cost-average entry (10 weeks) | Growth share ramps linearly from 0% to the normal 80% split over the first 10 weeks, instead of investing the starting capital all at once |
 
-Details, Parameter und Herleitung stehen als Kommentare direkt bei den
-jeweiligen `gewichte_fn`-Implementierungen in `scenarios.py`.
+Details, parameters, and derivations are documented as comments directly at
+the respective `gewichte_fn` implementations in `scenarios.py`.
 
-## Lokale Ausführung
+## Running locally
 
 ```bash
 pip install -r requirements.txt
 
-# Kurse manuell erfassen (z. B. testweise)
+# Enter prices manually (e.g. for testing)
 python scripts/record_prices.py --date 2026-08-17 \
   --prices '{"EUNL": 82.1, "EUNA": 4.95, "4GLD": 61.3, "LYMS": 21.4, "SEMI": 47.8, "EIMI": 29.1, "BTC-EUR": 58000}'
 
-# oder automatisiert via Alpha Vantage (ALPHAVANTAGE_API_KEY muss gesetzt sein)
+# or automated via Alpha Vantage (ALPHAVANTAGE_API_KEY must be set)
 python scripts/run_fetch.py
 
-# Dashboard bauen
+# Build the dashboard
 python scripts/build_dashboard.py
-# -> docs/index.html im Browser öffnen
+# -> open docs/index.html in a browser
 
 # Tests
 pytest -q
 ```
 
-## Modellierungsentscheidungen der Engine
+## Engine modeling decisions
 
-- **Initialkauf:** Ordergebühren (1 €/Trade) werden **vom Startkapital vor
-  der Aufteilung** abgezogen.
-- **Spätere Trades** (Rebalancing, Dezember-Harvest): Gebühren mindern beim
-  Verkauf den realisierten Gewinn und werden beim Kauf der Kostenbasis
-  zugeschlagen (Standard-Transaktionskostenbehandlung).
-- **Kostenbasis** wird je Instrument nach der Durchschnittskosten-Methode
-  geführt (kein FIFO/LIFO mit Einzel-Lots).
-- **Rebalancing** bringt bei Auslösung (>Schwelle Abweichung vom
-  Ziel-Topf-Gewicht) **alle** Instrumente auf ihr Zielgewicht zurück, nicht
-  nur den auslösenden Topf.
-- **Dezember-Harvest:** An der letzten Kurszeile eines abgeschlossenen
-  Kalenderjahres greift genau eine von zwei sich gegenseitig ausschließenden
-  Maßnahmen, je nachdem wie das Steuerjahr bis dahin gelaufen ist (siehe
+- **Initial purchase:** Order fees (€1/trade) are deducted **from the
+  starting capital before the split** across buckets.
+- **Later trades** (rebalancing, December harvest): fees reduce the realized
+  gain on sale and are added to the cost basis on purchase (standard
+  transaction cost treatment).
+- **Cost basis** is tracked per instrument using the average-cost method (no
+  FIFO/LIFO with individual lots).
+- **Rebalancing**, once triggered (deviation from the target bucket weight
+  exceeds the threshold), brings **all** instruments back to their target
+  weight, not just the triggering bucket.
+- **December harvest:** On the last price row of a completed calendar year,
+  exactly one of two mutually exclusive measures applies, depending on how
+  the tax year has gone so far (see
   [#13](https://github.com/S540d/Boersenspiel/issues/13)/[#16](https://github.com/S540d/Boersenspiel/issues/16)):
-  (A) **Freibetrag-Gewinnmitnahme**, solange der Sparerpauschbetrag des
-  Jahres noch nicht ausgeschöpft ist: Gewinnpositionen (größter
-  unrealisierter Gewinn zuerst) werden **anteilig** verkauft und sofort zum
-  selben Kurs zurückgekauft, bis der realisierte Gewinn den verbleibenden
-  Freibetrag genau ausschöpft (nicht überschreitet) — der Gewinn bleibt
-  steuerfrei, die Kostenbasis wird steuerfrei angehoben. (B) **Echtes
-  Tax-Loss-Harvesting**, sobald im Jahr bereits ein steuerpflichtiger Gewinn
-  realisiert wurde (der Freibetrag also schon bei 0 steht): Verlustpositionen
-  (größter unrealisierter Verlust zuerst) werden anteilig verkauft und sofort
-  zurückgekauft, bis die realisierten Verluste den steuerpflichtigen Teil der
-  Jahresgewinne decken — das verschiebt die schon versteuerte Gewinnsumme
-  nicht rückwirkend, sondern baut einen Verlustvortrag auf, der künftige
-  Gewinne mindert. Das Pflichtenheft spezifizierte hier keinen exakten
-  Algorithmus – diese Variante wurde im Planungsgespräch bestätigt.
-- **Steuerlogik** unverändert aus dem Pflichtenheft: Verlustverrechnung vor
-  Freibetrag vor Steuer (26,375 %), Sparerpauschbetrag 1.000 €/Jahr mit
-  Reset zum Kalenderjahreswechsel, ein gemeinsamer Verlust-/Freibetrag-Topf,
-  keine Vorabpauschale, keine Teilfreistellung.
+  (A) **Tax-free-allowance profit taking**, as long as the year's tax-free
+  allowance hasn't been used up yet: profit positions (largest unrealized
+  gain first) are sold **partially** and immediately repurchased at the same
+  price, until the realized gain exactly exhausts (not exceeds) the
+  remaining allowance — the gain stays tax-free, the cost basis is raised
+  tax-free. (B) **True tax-loss harvesting**, as soon as a taxable gain has
+  already been realized during the year (i.e. the allowance is already at
+  0): loss positions (largest unrealized loss first) are sold partially and
+  immediately repurchased, until the realized losses cover the taxable
+  portion of the year's gains — this doesn't retroactively shift the
+  already-taxed gain total, but builds up a loss carryforward that reduces
+  future gains. The requirements document did not specify an exact algorithm
+  here – this variant was confirmed during the planning discussion.
+- **Tax logic** unchanged from the requirements document: loss offsetting
+  before the tax-free allowance before tax (26.375%), tax-free allowance of
+  €1,000/year resetting at the calendar year boundary, one shared
+  loss/allowance pool, no advance lump-sum tax (Vorabpauschale), no partial
+  tax exemption (Teilfreistellung).
 
-## Bekannte Einschränkungen
+## Known limitations
 
-- **yfinance** (nicht mehr Standardquelle) ist eine inoffizielle Bibliothek
-  gegen undokumentierte Yahoo-Endpunkte. Im ersten produktiven Workflow-Lauf
-  (17.08.2026) scheiterte sie für alle 7 Ticker mit
-  `Expecting value: line 1 column 1` – Yahoo verlangt inzwischen eine
-  Crumb/Cookie-Authentifizierung, die die gepinnte Version (0.2.43) nicht
-  mehr unterstützte. Deshalb Umstieg auf Alpha Vantage als Standardquelle.
-- **Alpha Vantage Free-Tier-Limit:** 25 Requests/Tag, max. 1 Request/Sekunde.
-  Bei aktuell 17 Tickern einmal wöchentlich noch unproblematisch, aber kaum
-  noch Puffer für weitere manuelle Abrufe am selben Tag; `AlphaVantageSource`
-  hält zwischen den Requests einen Sleep ein. Schlägt ein Kurs dennoch fehl
-  (z. B. durch Rate-Limit oder eine leere Antwort), wird der letzte bekannte
-  Kurs übernommen und in `fetch_log.csv` vermerkt (nie eine Zeile mit
-  Lücke).
-- **BTC-EUR/Xetra-Zeitversatz:** Ein Montagvormittag-Lauf liefert für die
-  Xetra-ETFs den Freitagsschluss der Vorwoche, für BTC-EUR (24/7-Markt)
-  aber einen zeitlich leicht abweichenden, aktuelleren Kurs – die
-  "wöchentliche" Zeile mischt dadurch Kurse aus einem Fenster von bis zu
-  ca. 2–3 Tagen. Welcher Woche die Zeile zugeordnet wird, entscheidet
-  dagegen der *häufigste* gemeldete Handelstag (also der gemeinsame
-  Börsen-Handelstag, nicht der abweichende BTC-Tag) – siehe
+- **yfinance** (no longer the default source) is an unofficial library
+  against undocumented Yahoo endpoints. In the first production workflow run
+  (2026-08-17) it failed for all 7 tickers with
+  `Expecting value: line 1 column 1` – Yahoo now requires crumb/cookie
+  authentication that the pinned version (0.2.43) no longer supported.
+  Hence the switch to Alpha Vantage as the default source.
+- **Alpha Vantage free-tier limit:** 25 requests/day, max. 1 request/second.
+  Still unproblematic for the current 17 tickers fetched once a week, but
+  barely any headroom for additional manual fetches on the same day;
+  `AlphaVantageSource` sleeps between requests. If a price still fails (e.g.
+  due to rate limiting or an empty response), the last known price is
+  carried forward and noted in `fetch_log.csv` (a row is never left with a
+  gap).
+- **BTC-EUR/Xetra time offset:** A Monday-morning run returns the previous
+  week's Friday close for the Xetra ETFs, but for BTC-EUR (24/7 market) a
+  slightly more recent, time-shifted price – the "weekly" row therefore
+  mixes prices from a window of up to about 2–3 days. Which week the row is
+  assigned to is instead decided by the *most common* reported trading day
+  (i.e. the shared exchange trading day, not the deviating BTC day) – see
   `history_store.row_date_from_quotes()`.
-- **Einmalige manuelle Repo-Einstellungen** (nicht per Workflow-YAML
-  setzbar): Settings → Actions → General → Workflow permissions → "Read and
-  write permissions"; Settings → Pages → Source → "GitHub Actions".
-- `data/price_history.csv` startet bewusst leer (nur Header) – die erste
-  echte Zeile entsteht durch den ersten (ggf. manuell per
-  `workflow_dispatch` ausgelösten) Workflow-Lauf, nicht durch manuelles
-  Seeden.
+- **One-time manual repo settings** (not settable via workflow YAML):
+  Settings → Actions → General → Workflow permissions → "Read and write
+  permissions"; Settings → Pages → Source → "GitHub Actions".
+- `data/price_history.csv` deliberately starts empty (header only) – the
+  first real row is created by the first workflow run (possibly triggered
+  manually via `workflow_dispatch`), not by manual seeding.
 
-## Abweichungen vom Pflichtenheft
+## Deviations from the requirements
 
-| Pflichtenheft v2.0 | Diese Implementierung |
+| Requirements v2.0 | This implementation |
 |---|---|
-| Google Drive/Sheets als Kurshistorie | `data/price_history.csv` im Git-Repo |
-| Täglicher Kursabruf via Cowork Scheduled Task | Wöchentlicher Kursabruf via GitHub Actions Cron (Kursquelle austauschbar, siehe oben) |
-| Dashboard on-demand als Artefakt in einer Unterhaltung | Statische HTML-Seite (Chart.js), automatisch nach jedem Kursabruf neu gebaut, auf GitHub Pages deployed |
-| "Modell B": Kursabruf und Dashboard-Erzeugung getrennt automatisiert | Ein kombinierter Workflow (Kursabruf → Test → Dashboard-Build → Commit → Deploy) |
-| Nur die Barbell-20/80-Strategie | Mehrere austauschbare Strategien (`strategies.py`), Dashboard zeigt sie vergleichend |
+| Google Drive/Sheets as price history | `data/price_history.csv` in the Git repo |
+| Daily price fetch via Cowork scheduled task | Weekly price fetch via GitHub Actions cron (price source interchangeable, see above) |
+| Dashboard on demand as an artifact in a conversation | Static HTML page (Chart.js), automatically rebuilt after every price fetch, deployed on GitHub Pages |
+| "Model B": price fetching and dashboard generation automated separately | One combined workflow (price fetch → test → dashboard build → commit → deploy) |
+| Only the Barbell 20/80 strategy | Multiple interchangeable strategies (`strategies.py`), dashboard shows them comparatively |
 
-Rebalancing-Schwelle, Ordergebühren und Steuerlogik (26,375 %, 1.000 €
-Freibetrag, Verlustvortrag) wurden inhaltlich unverändert aus dem
-Pflichtenheft übernommen.
+Rebalancing threshold, order fees, and tax logic (26.375%, €1,000 tax-free
+allowance, loss carryforward) were carried over from the requirements
+document unchanged.
 
-> **Hinweis zum Pflichtenheft:** `Pflichtenheft_PortfolioProjekt_v2.md` ist
-> bewusst **nicht** in diesem Repository eingecheckt (es liegt außerhalb, z. B.
-> in Google Drive/Confluence des ursprünglichen Planungsgesprächs) und daher
-> hier nicht verlinkbar. Die obige Tabelle sowie die Modellierungsentscheidungen
-> weiter oben fassen die für die Implementierung relevanten Inhalte zusammen;
-> bei Detailfragen zum genauen Wortlaut (z. B. zum Harvest-Algorithmus, siehe
-> [#13](https://github.com/S540d/Boersenspiel/issues/13)) muss auf das externe
-> Dokument zurückgegriffen werden.
+> **Note on the requirements document:** `Pflichtenheft_PortfolioProjekt_v2.md`
+> is deliberately **not** checked into this repository (it lives elsewhere,
+> e.g. in Google Drive/Confluence from the original planning discussion) and
+> therefore can't be linked here. The table above and the modeling decisions
+> further up summarize the content relevant to the implementation; for
+> detailed questions about the exact wording (e.g. about the harvest
+> algorithm, see [#13](https://github.com/S540d/Boersenspiel/issues/13)),
+> the external document must be consulted.
