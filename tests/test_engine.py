@@ -238,25 +238,59 @@ def test_strategy_eigene_optimierungen_werden_ohne_override_verwendet():
     assert all(t.reason != "rebalance" for t in result.trades)
 
 
-def test_missing_price_in_first_row_parks_capital_as_cash_and_invests_later():
-    # T2 hat in der ersten Zeile noch keinen Kurs (z. B. vor seinem IPO). Der
-    # dafuer vorgesehene Kapitalanteil bleibt als Cash geparkt statt zu
-    # verfallen und wird investiert, sobald T2 erstmals einen Kurs hat.
+def test_fehlender_kurs_in_erster_zeile_wird_auf_vorhandene_instrumente_umgelegt():
+    # T2 hat in der ersten Zeile noch keinen Kurs (z. B. vor seinem IPO). Sein
+    # Zielanteil wird auf die vorhandenen Instrumente umgelegt, damit das Depot
+    # voll investiert bleibt statt einen Teil unverzinst zu parken; sobald T2
+    # erstmals einen Kurs hat, wird auf die eigentliche Zielverteilung gebracht.
     rows = [
         PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
         PriceRow(date(2024, 1, 8), {"T1": Decimal("100"), "T2": Decimal("50")}),
     ]
     result = simulate(rows, MISSING_PRICE_STRATEGY)
 
-    # Startkapital 1000 - 2*1 Gebuehr = 998 investierbar, je 499 -> T1 sofort,
-    # T2 verzoegert zum Kurs 50 der zweiten Zeile.
-    assert result.holdings["T1"] == Decimal("4.99")
-    assert result.holdings["T2"] == Decimal("9.98")
+    # Startkapital 1000 - 2*1 Gebuehr = 998 investierbar. Zeile 1: alles in T1
+    # (9.98 Stueck zu 100), nichts geparkt. Zeile 2: T2 existiert -> zurueck auf
+    # 50/50, also je 499 -> T1 4.99 Stueck, T2 9.98 Stueck zu 50.
     assert result.value_history[0].total_value == Decimal("998")
     assert result.value_history[1].total_value == Decimal("998")
-    delayed_buys = [t for t in result.trades if t.reason == "delayed_initial_buy"]
-    assert len(delayed_buys) == 1
-    assert delayed_buys[0].ticker == "T2"
+    assert result.holdings["T1"] == Decimal("4.99")
+    assert result.holdings["T2"] == Decimal("9.98")
+
+    # Der Erstkauf des neu verfuegbaren Instruments laeuft ueber "neues_instrument"
+    # und ist damit im Trade-Log von normaler Drift-Korrektur unterscheidbar.
+    neu = [t for t in result.trades if t.reason == "neues_instrument"]
+    assert {t.ticker for t in neu} == {"T1", "T2"}
+    assert next(t for t in neu if t.ticker == "T2").side == "buy"
+
+
+def test_neues_instrument_wird_auch_ohne_rebalancing_gekauft():
+    # MISSING_PRICE_STRATEGY hat eine unerreichbar hohe Rebalancing-Schwelle, und
+    # hier ist Rebalancing zusaetzlich ganz abgeschaltet: ein neu verfuegbares
+    # Instrument ist trotzdem ein Erstkauf, kein Korrigieren von Drift - sonst
+    # wuerde eine Strategie ein Instrument, das es bei Simulationsbeginn noch
+    # nicht gab, nie halten.
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("100"), "T2": Decimal("50")}),
+    ]
+    result = simulate(rows, MISSING_PRICE_STRATEGY, Optimierungen(rebalancing=False))
+
+    assert result.holdings["T2"] == Decimal("9.98")
+
+
+def test_ohne_jeden_kurs_in_erster_zeile_bleibt_kapital_geparkt():
+    # Grenzfall: hat KEIN Instrument einen Kurs, gibt es nichts, worauf umgelegt
+    # werden koennte - dann greift weiterhin das Parken als pending_cash.
+    rows = [
+        PriceRow(date(2024, 1, 1), {}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("100"), "T2": Decimal("50")}),
+    ]
+    result = simulate(rows, MISSING_PRICE_STRATEGY)
+
+    assert result.value_history[0].total_value == Decimal("998")
+    assert result.holdings["T1"] == Decimal("4.99")
+    assert result.holdings["T2"] == Decimal("9.98")
 
 
 REBALANCING_MISSING_PRICE_STRATEGY = Strategy(
@@ -285,26 +319,23 @@ def test_rebalancing_erhaelt_depotwert_wenn_ein_instrument_noch_keinen_kurs_hat(
     ]
     result = simulate(rows, REBALANCING_MISSING_PRICE_STRATEGY)
 
-    # 1000 - 2*1 Gebuehr = 998 investierbar; T1 kauft fuer 499 zu 100 = 4.99 Stueck,
-    # die 499 fuer T2 bleiben als Cash geparkt.
-    # Zeile 2: T1 = 4.99 * 200 = 998, Cash 499 -> Gesamt 1497. TopfX haelt damit
-    # 66.7% statt 50% -> Rebalancing. T1 wird auf 748.50 zurueckgefuehrt, die
-    # freiwerdenden 249.50 wandern in den T2-Cash-Topf (748.50).
-    assert result.value_history[1].total_value == Decimal("1497")
-
-    rebalance_sells = [t for t in result.trades if t.reason == "rebalance" and t.side == "sell"]
-    assert len(rebalance_sells) == 1
-    assert rebalance_sells[0].ticker == "T1"
-    assert rebalance_sells[0].units * rebalance_sells[0].price == Decimal("249.50")
+    # 1000 - 2*1 Gebuehr = 998 investierbar. T2 hat keinen Kurs, sein Zielanteil
+    # wird auf T1 umgelegt: 998 / 100 = 9.98 Stueck. Zeile 2 verdoppelt T1 auf 200
+    # -> 9.98 * 200 = 1996. Frueher wurde hier rebalanciert, der T2-Kauf entfiel,
+    # und der Verkaufserloes verschwand ersatzlos aus dem Depot.
+    assert result.value_history[1].total_value == Decimal("1996")
 
     # T2 hat weiterhin keinen Kurs und darf deshalb auch nicht gehandelt worden sein.
     assert all(t.ticker != "T2" for t in result.trades)
+    # Ist- und Zielverteilung stimmen ueberein (T1 haelt 100% der umgelegten
+    # Zielgewichte), es gibt also nichts zu rebalancieren.
+    assert all(t.reason != "rebalance" for t in result.trades)
 
 
-def test_rebalancing_investiert_geparktes_kapital_sobald_der_kurs_existiert():
-    # Fortsetzung des Falls oben: sobald T2 erstmals einen Kurs hat, wird das
-    # zwischenzeitlich angewachsene geparkte Kapital investiert - der Depotwert
-    # bleibt dabei erhalten.
+def test_neu_verfuegbares_instrument_wird_auf_zielgewicht_gebracht():
+    # Fortsetzung des Falls oben: sobald T2 erstmals einen Kurs hat, wird die
+    # eigentliche 50/50-Zielverteilung hergestellt - der Depotwert bleibt dabei
+    # unveraendert, es wird nur umgeschichtet.
     rows = [
         PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
         PriceRow(date(2024, 1, 8), {"T1": Decimal("200")}),
@@ -312,10 +343,11 @@ def test_rebalancing_investiert_geparktes_kapital_sobald_der_kurs_existiert():
     ]
     result = simulate(rows, REBALANCING_MISSING_PRICE_STRATEGY)
 
-    # Der Gesamtwert bleibt bei 1497 (T1 unveraendert bei 200), jetzt aber
-    # vollstaendig investiert: 748.50 / 50 = 14.97 Stueck T2.
-    assert result.value_history[2].total_value == Decimal("1497")
-    assert result.holdings["T2"] == Decimal("14.97")
+    # T1 steht unveraendert bei 200, der Gesamtwert bleibt also 1996 - jetzt aber
+    # je 998 auf T1 (4.99 Stueck) und T2 (998 / 50 = 19.96 Stueck) verteilt.
+    assert result.value_history[2].total_value == Decimal("1996")
+    assert result.holdings["T1"] == Decimal("4.99")
+    assert result.holdings["T2"] == Decimal("19.96")
 
 
 # --- Paket A: Steuerkorrektheit (#37/#38/#39, siehe #46) --------------------
