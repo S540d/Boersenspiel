@@ -159,7 +159,11 @@ BUY_AND_HOLD = Strategy(
     beschreibung=(
         "Anfangsallokation wird nie aktiv rebalanciert ('Hin und her macht Taschen "
         "leer'). Der Dezember-Steuermechanismus bleibt wie bei den anderen Strategien "
-        "aktiv."
+        "aktiv. Im kombinierten Szenario 'Börsenweisheiten (alle fünf kombiniert)' "
+        "wirkt dieselbe Weisheit anders: dort votiert sie als einzige Regel immer für "
+        "die normale Barbell-Quote und dient als Dauervotum/dämpfender Anker, weil sich "
+        "'gar nicht umschichten' nicht als Quoten-Votum neben den anderen Regeln "
+        "kombinieren lässt (siehe #27)."
     ),
 )
 
@@ -453,6 +457,45 @@ CHART_SMA_CROSSOVER = Strategy(
 )
 
 
+# --- 2b: Verkürzte Fensterlänge (100/21 statt 50/200 Handelstage, #28) ----------------
+#
+# Owner-Wunsch aus #28: dieselbe Golden-/Death-Cross-Logik wie oben, aber mit
+# kürzeren Fenstern für ein reaktionsschnelleres Signal. Wochen-Näherung wie beim
+# 10/40-Wochen-Original (5 Handelstage/Woche): 21 Handelstage ≈ 4 Wochen, 100
+# Handelstage = 20 Wochen.
+
+SMA_KURZ_WOCHEN_100_21 = 4
+SMA_LANG_WOCHEN_100_21 = 20
+
+
+def chart_sma_crossover_kurz_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+    sma_kurz = _sma(rows, i, TREND_TICKER, SMA_KURZ_WOCHEN_100_21)
+    sma_lang = _sma(rows, i, TREND_TICKER, SMA_LANG_WOCHEN_100_21)
+    if sma_kurz is None or sma_lang is None:
+        # Noch nicht genug Historie fuer den langen SMA -> regulaer investiert.
+        return _NORMAL_GEWICHTE
+    if sma_kurz < sma_lang:
+        return _DEFENSIV_GEWICHTE
+    return _NORMAL_GEWICHTE
+
+
+CHART_SMA_CROSSOVER_KURZ = Strategy(
+    name="Charttechnik: SMA-Crossover (4/20 Wochen)",
+    startkapital=Decimal("10000"),
+    toepfe=BARBELL_20_80.toepfe,
+    ziel_topf=BARBELL_20_80.ziel_topf,
+    ziel_gewicht=BARBELL_20_80.ziel_gewicht,
+    rebalancing_schwelle_pp=Decimal("5"),
+    gewichte_fn=chart_sma_crossover_kurz_gewichte,
+    beschreibung=(
+        "Wie 'SMA-Crossover (10/40 Wochen)', aber mit kürzeren Fenstern (4/20 statt "
+        "10/40 Wochen, entspricht 21/100 statt 50/200 Handelstagen) für ein "
+        "reaktionsschnelleres Signal - Erweiterung des Golden-/Death-Cross-Ansatzes "
+        "aus #28."
+    ),
+)
+
+
 # =====================================================================================
 # 3. Weitere Ansätze
 # =====================================================================================
@@ -629,6 +672,7 @@ SCENARIOS: list[Strategy] = [
     CUT_LOSSES,
     BOERSENWEISHEITEN,
     CHART_SMA_CROSSOVER,
+    CHART_SMA_CROSSOVER_KURZ,
     MOMENTUM_ROTATION,
     VOLATILITY_TARGET,
     COST_AVERAGE_ENTRY,
