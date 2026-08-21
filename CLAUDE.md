@@ -8,10 +8,9 @@ Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie (siehe
 `Pflichtenheft_PortfolioProjekt_v2.md` für die ursprünglichen Anforderungen —
 die Datei liegt bewusst außerhalb dieses Repos, siehe Hinweis in der README).
 Wöchentlicher Kursabruf via GitHub Actions, Kurshistorie als CSV im Repo,
-statisches Dashboard (Chart.js) auf GitHub Pages. Es gibt keinen PR-Workflow
-in diesem Repo — Änderungen gehen direkt auf den Default-Branch
-(`claude/pflichtenheft-umsetzung-planen-6kf05s`, fungiert als `main`, da das
-Repo ursprünglich leer war).
+statisches Dashboard (Chart.js) auf GitHub Pages. Default-Branch ist `main`
+(ursprünglich hieß er `claude/pflichtenheft-umsetzung-planen-6kf05s`, da das
+Repo leer angelegt wurde, und wurde nachträglich zu `main` umbenannt).
 
 ## Commands
 
