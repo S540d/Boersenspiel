@@ -1,5 +1,7 @@
 {% extends "base.html.j2" %}
 {% block title %}{{ s.name }} – Barbell-Portfolio Dashboard{% endblock %}
+{% block meta_description %}{% if s.beschreibung %}{{ s.beschreibung }}{% else %}{{ s.name }}: Kursverlauf, Kennzahlen und Steuerdetails im Barbell-Portfolio-Dashboard.{% endif %}{% endblock %}
+{% block canonical %}https://s540d.github.io/Boersenspiel/{{ s.id }}.html{% endblock %}
 {% block header_extra %}<p class="back-link"><a href="index.html">&larr; Zur Übersicht</a></p>{% endblock %}
 {% block content %}
   <section class="strategy" id="{{ s.id }}">

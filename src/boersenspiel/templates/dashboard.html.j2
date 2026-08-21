@@ -1,5 +1,28 @@
 {% extends "base.html.j2" %}
 {% block content %}
+  <section class="strategy" id="portfolio">
+    <h2>Das Portfolio</h2>
+    <p class="hint">
+      Alle Strategien und Szenarien speisen sich aus denselben 17 Instrumenten;
+      welche davon eine Strategie tatsächlich hält und wie stark, entscheidet
+      erst die jeweilige Gewichtung. Zwei Töpfe gibt es in jeder Strategie:
+      <strong>Topf A – Sicherheit</strong> (breiter Anleihen-ETF, physisches
+      Gold; der kleinere Anteil des Barbells, 20–30%) und
+      <strong>Topf B – Wachstum</strong> (breiter Aktien-ETF, Nasdaq-100-ETF,
+      Halbleiter-ETF, Schwellenländer-ETF und Bitcoin; der größere Anteil,
+      60–80%). Eine Strategie, „Barbell 20/60/20 + Einzelaktien-Satellit",
+      ergänzt einen dritten <strong>Topf C – Einzelaktien-Satellit</strong>:
+      10 gleichgewichtete Einzelaktien statt breiter ETFs. „Satellit" meint
+      hier den gängigen Core-Satellite-Ansatz aus der Portfoliotheorie – eine
+      kleinere, konzentrierte, volatilere Beimischung neben einem breit
+      gestreuten „Kern", nicht einfach „zusätzlich". Die dafür nötigen 20
+      Prozentpunkte kommen aus Topf B, das Gesamtrisikoprofil (80% riskant /
+      20% sicher) bleibt damit wie bei Barbell 20/80 erhalten – nur die
+      Wachstumsseite wird granularer. Die 10 Aktien mischen bewusst
+      hoch-volatile Wachstums-/Themenwerte mit zwei defensiven Blue Chips
+      (Coca-Cola, Roche) als Gegenbeispiel.
+    </p>
+  </section>
 {% if learnings %}
   <section class="strategy" id="key-learnings">
     <h2>Key Learnings</h2>
