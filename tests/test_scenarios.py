@@ -22,6 +22,7 @@ from boersenspiel.scenarios import (
     BUY_AND_HOLD,
     BUY_THE_DIP,
     CHART_SMA_CROSSOVER,
+    CHART_SMA_CROSSOVER_KURZ,
     COST_AVERAGE_ENTRY,
     CUT_LOSSES,
     CUT_LOSSES_FENSTER_WOCHEN,
@@ -33,6 +34,7 @@ from boersenspiel.scenarios import (
     WEISHEITEN,
     buy_the_dip_gewichte,
     chart_sma_crossover_gewichte,
+    chart_sma_crossover_kurz_gewichte,
     cost_average_gewichte,
     cut_losses_gewichte,
     gewichte_fuer_wachstumsquote,
@@ -191,6 +193,21 @@ def test_chart_sma_crossover_defaults_to_normal_weights_without_enough_history()
 def test_chart_sma_crossover_scenario_runs_end_to_end():
     result = simulate(_sample_rows(), CHART_SMA_CROSSOVER)
     assert result.strategy_name == "Charttechnik: SMA-Crossover (10/40 Wochen)"
+    last_point = result.value_history[-1]
+    total_weight = sum(last_point.ticker_weights.values())
+    assert abs(total_weight - Decimal("1")) < Decimal("0.0001")
+
+
+def test_chart_sma_crossover_kurz_defaults_to_normal_weights_without_enough_history():
+    rows = _sample_rows()[:5]
+    gewichte = chart_sma_crossover_kurz_gewichte(rows, 4)
+    # Ticker-Gewicht am Gesamtdepot = Topf-A-Gewicht (0.20) * Sub-Gewicht (0.50).
+    assert gewichte["EUNL"] == Decimal("0.10")
+
+
+def test_chart_sma_crossover_kurz_scenario_runs_end_to_end():
+    result = simulate(_sample_rows(), CHART_SMA_CROSSOVER_KURZ)
+    assert result.strategy_name == "Charttechnik: SMA-Crossover (4/20 Wochen)"
     last_point = result.value_history[-1]
     total_weight = sum(last_point.ticker_weights.values())
     assert abs(total_weight - Decimal("1")) < Decimal("0.0001")
