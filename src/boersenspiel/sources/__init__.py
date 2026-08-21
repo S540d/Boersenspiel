@@ -10,12 +10,11 @@ zurückfallen ("carry forward"). Status ``rate_limited`` ist ein Sonderfall von
 Kurs für dieses Instrument zu haben - ``record_week`` behandelt beide gleich
 (carry forward), vermerkt den Unterschied aber im ``fetch_log.csv``.
 
-Die konkrete Quelle ist bewusst austauschbar: der GitHub-Actions-Workflow
-nutzt standardmäßig ``yfinance_stooq.YfinanceStooqSource``, aber der Kursabruf
-kann genauso gut manuell (z. B. per Cowork-Websuche) erfolgen und die
-ermittelten Kurse direkt über ``scripts/record_prices.py`` an
-``history_store.record_week`` übergeben - ohne dass Engine, Dashboard oder
-Tests davon wissen müssen, woher die Zahlen kamen.
+Die konkrete Quelle ist bewusst austauschbar: aktiver Standardweg ist
+``AlphaVantageSource`` über ``scripts/run_fetch.py`` (GitHub Actions, siehe
+#51 - der frühere manuelle Cowork-Weg über ``record_prices.py`` wurde
+gestrichen, der Kursabruf läuft konsequent über GitHub Actions). Engine,
+Dashboard und Tests wissen dabei nichts davon, woher die Zahlen kamen.
 """
 
 from __future__ import annotations
@@ -36,9 +35,8 @@ class PriceQuote:
     # Handelstag, auf den sich ``price`` bezieht - NICHT der Tag des Abrufs.
     # Ein Montagslauf liefert vor Börsenbeginn den Freitagsschluss; ohne diese
     # Angabe landet der Kurs in der falschen Kalenderwoche (siehe
-    # ``scripts/run_fetch.py``). Quellen, die keinen Handelstag mitliefern
-    # (z. B. der manuelle Weg über ``record_prices.py``), lassen das Feld
-    # None - dann bleibt das übergebene Abrufdatum maßgeblich.
+    # ``scripts/run_fetch.py``). Quellen, die keinen Handelstag mitliefern,
+    # lassen das Feld None - dann bleibt das übergebene Abrufdatum maßgeblich.
     quote_date: date | None = None
 
 

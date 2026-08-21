@@ -51,7 +51,6 @@ flowchart TB
         cron["GitHub Actions<br/>Mon 06:00 UTC"] --> fetch["run_fetch.py"]
         fetch --> av["AlphaVantageSource<br/>symbol mapping · USD→EUR"]
         av --> store
-        manual["record_prices.py<br/>manual / Cowork"] --> store
         back["backfill_history.py<br/>one-off, years back"] --> store
         store["history_store.record_week()<br/><b>only write path</b><br/>weekly idempotency · carry-forward"]
     end
@@ -182,7 +181,6 @@ strategy always yields the identical result.
 | `src/boersenspiel/templates/` | Jinja templates: `base.html.j2` (shared shell incl. the three-dot menu), `dashboard.html.j2`, `strategy_detail.html.j2`, `praemissen.html.j2` |
 | `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
 | `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
-| `scripts/record_prices.py` | Manual entry point for prices from another source (e.g. Cowork/web search) |
 | `scripts/backfill_history.py` | One-off historical backfill of `price_history.csv` (real weekly prices instead of only live-collected weeks, see below) |
 | `scripts/build_dashboard.py` | Rebuilds `docs/index.html` from the current price history |
 
@@ -193,21 +191,14 @@ Price fetching is deliberately abstracted behind a narrow interface
 where the prices come from, they end up in the same CSV format with the same
 weekly idempotency and the same carry-forward note for missing prices.
 
-- **Default (GitHub Actions):** `scripts/run_fetch.py` uses
-  `AlphaVantageSource` – the official, API-key-based Alpha Vantage REST API
-  (`src/boersenspiel/sources/alphavantage.py`). Requires the
-  `ALPHAVANTAGE_API_KEY` environment variable (see below). Ticker symbol
-  mapping lives exclusively in this file.
-- **Alternative (Cowork/web search):** To avoid maintaining either an API-key
-  limit or ticker symbol mappings, price fetching can instead run
-  manually/via a Cowork scheduled task that determines prices via web search
-  and passes them directly to
-  `scripts/record_prices.py --date ... --prices '{"EUNL": ..., ...}'`. Just
-  disable the `run_fetch.py` step (or the whole cron) in the workflow for
-  this. Engine, dashboard, and tests remain unaffected.
-
-The choice between these paths can be made at any time, situationally,
-without restructuring code.
+Price fetching runs exclusively through GitHub Actions:
+`scripts/run_fetch.py` uses `AlphaVantageSource` – the official, API-key-based
+Alpha Vantage REST API (`src/boersenspiel/sources/alphavantage.py`). Requires
+the `ALPHAVANTAGE_API_KEY` environment variable (see below). Ticker symbol
+mapping lives exclusively in this file. A manual, non-Actions entry point
+(via Cowork/web search) existed earlier but was removed
+([#51](https://github.com/S540d/Boersenspiel/issues/51)) in favor of a single,
+consistent GitHub Actions path.
 
 ### Setting up Alpha Vantage
 
@@ -348,11 +339,7 @@ the respective `gewichte_fn` implementations in `scenarios.py`.
 ```bash
 pip install -r requirements.txt
 
-# Enter prices manually (e.g. for testing)
-python scripts/record_prices.py --date 2026-08-17 \
-  --prices '{"EUNL": 82.1, "EUNA": 4.95, "4GLD": 61.3, "LYMS": 21.4, "SEMI": 47.8, "EIMI": 29.1, "BTC-EUR": 58000}'
-
-# or automated via Alpha Vantage (ALPHAVANTAGE_API_KEY must be set)
+# Fetch prices via Alpha Vantage (ALPHAVANTAGE_API_KEY must be set)
 python scripts/run_fetch.py
 
 # Build the dashboard

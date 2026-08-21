@@ -21,7 +21,6 @@ pytest tests/test_engine.py -q     # einzelne Testdatei
 pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # einzelner Test
 
 python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
-python scripts/record_prices.py --date 2026-08-17 --prices '{"EUNL": 82.1, ...}'  # manueller Kurseintrag
 python scripts/backfill_history.py --years 20       # einmaliger historischer Backfill (ersetzt price_history.csv, ~18 API-Requests)
 python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
 python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
@@ -378,11 +377,13 @@ inkrementell fortgeschrieben).
 
 Jede Quelle liefert nur `dict[ticker, PriceQuote]` an
 `history_store.record_week()` — Engine/Dashboard/Tests sind davon
-unabhängig. Um z. B. auf manuellen Kursabruf (Websuche/Cowork) umzustellen,
-statt `scripts/run_fetch.py` einfach `scripts/record_prices.py --date ...
---prices '{...}'` mit den ermittelten Kursen aufrufen; der
-GitHub-Actions-Cron-Schritt kann dafür deaktiviert werden, ohne den Rest des
-Systems anzufassen.
+unabhängig. Der frühere manuelle Weg über `scripts/record_prices.py`
+(Cowork/Websuche) wurde in #51 gestrichen: der Kursabruf läuft konsequent
+über GitHub Actions (`scripts/run_fetch.py`, `AlphaVantageSource`). Ein
+Wechsel der Kursquelle bedeutet seither, eine neue `PriceSource`-
+Implementierung in `sources/` zu ergänzen und `run_fetch.py` darauf
+umzustellen — nicht mehr, den automatisierten Abruf durch einen manuellen
+Prompt-/Agentenweg zu ersetzen.
 
 ### Historischer Backfill
 

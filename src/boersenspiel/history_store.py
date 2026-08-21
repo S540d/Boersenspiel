@@ -123,8 +123,7 @@ def row_date_from_quotes(quotes: dict[str, PriceQuote], fallback: date) -> date:
     zuverlässig deren gemeinsamen letzten Handelstag.
 
     ``fallback`` (üblicherweise das Abrufdatum) greift, wenn keine einzige
-    Quote einen Handelstag mitliefert - etwa beim manuellen Weg über
-    ``record_prices.py``.
+    Quote einen Handelstag mitliefert.
     """
     tage = [q.quote_date for q in quotes.values() if q.status == "ok" and q.quote_date is not None]
     if not tage:
@@ -162,8 +161,8 @@ def record_week(
 
     # Letzter bekannter Kurs je Ticker aus den Wochen VOR der Zielwoche.
     # Bewusst nur zurueckliegende Wochen: wird eine Luecke nachtraeglich
-    # gefuellt (z. B. record_prices.py mit einem alten --date oder ein
-    # Backfill, der Wochen nicht streng chronologisch schreibt), duerfte ein
+    # gefuellt (z. B. ein Backfill, der Wochen nicht streng chronologisch
+    # schreibt), duerfte ein
     # Carry-Forward sonst den Kurs einer SPAETEREN Woche uebernehmen und damit
     # einen Blick in die Zukunft in die Historie schreiben. existing_rows ist
     # aufsteigend sortiert, das letzte update() gewinnt also.

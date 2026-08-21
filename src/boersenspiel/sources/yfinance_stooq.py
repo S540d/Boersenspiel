@@ -4,8 +4,10 @@ GitHub-Actions-Runner haben Internetzugang zu öffentlichen Kursquellen - das
 funktioniert problemlos. Das Ticker-zu-Symbol-Mapping für beide Anbieter liegt
 ausschließlich hier, nicht in ``instruments.py`` - Instrumente bleiben dadurch
 quellenunabhängig definiert, und diese Quelle kann jederzeit gegen eine andere
-(z. B. eine manuelle Cowork-/Websuche-Quelle über ``scripts/record_prices.py``)
-ausgetauscht werden, ohne den Rest des Systems anzufassen.
+ausgetauscht werden, ohne den Rest des Systems anzufassen. Aktiver Standardweg
+ist inzwischen ``alphavantage.py`` (siehe dort); diese Datei bleibt als
+Referenzimplementierung erhalten, wird von ``scripts/run_fetch.py`` aber nicht
+mehr aufgerufen.
 """
 
 from __future__ import annotations

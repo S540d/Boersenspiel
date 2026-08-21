@@ -122,8 +122,8 @@ def test_row_date_ignores_failed_quotes():
 
 
 def test_row_date_falls_back_when_no_source_reports_a_trading_day():
-    """Der manuelle Weg (record_prices.py) liefert keinen Handelstag -
-    dort bleibt das uebergebene Datum massgeblich."""
+    """Liefert keine Quote einen Handelstag, bleibt das uebergebene Datum
+    massgeblich."""
     quotes = {"EUNL": _quote("EUNL", 80.0, None)}
     assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 24)
 
