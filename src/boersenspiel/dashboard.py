@@ -318,6 +318,7 @@ def _build_strategy_view(
     max_drawdown_pct = _max_drawdown_pct(total_values)
     sharpe_ratio = _sharpe_ratio(total_values)
     sortino_ratio = _sortino_ratio(total_values)
+    cash_max_pct, cash_max_datum = _cash_anteil_max(points)
     walk_forward_segmente = _walk_forward_segmente(rows, strategy)
     walk_forward_spread_pp = (
         max(seg["rendite_pct"] for seg in walk_forward_segmente)
@@ -355,6 +356,9 @@ def _build_strategy_view(
         "sharpe_label": f"{sharpe_ratio:.2f}",
         "sortino_ratio": sortino_ratio,
         "sortino_label": f"{sortino_ratio:.2f}",
+        "cash_max_pct": cash_max_pct,
+        "cash_max_label": f"{cash_max_pct:.1f}",
+        "cash_max_datum": cash_max_datum or "–",
         "labels_json": json.dumps(labels),
         "total_values": total_values,
         "total_values_json": json.dumps(total_values),
@@ -388,6 +392,27 @@ def _build_strategy_view(
     }
 
 
+def _cash_anteil_max(points: list) -> tuple[float, str | None]:
+    """Größter Anteil ungenutzten (nicht in ein Instrument investierten)
+    Kapitals über den gesamten Wertverlauf, in Prozent, plus das Datum dieses
+    Höchststands. Cash ist hier ausschließlich der technische
+    ``pending_cash``-Zustand aus ``engine.py`` (Kapitalanteil ohne
+    handelbares Ziel) - siehe README „No separate cash position": die
+    Strategien selbst kennen keine Cash-Zielallokation, Topf A übernimmt
+    diese Rolle."""
+    best_pct = 0.0
+    best_datum: str | None = None
+    for vp in points:
+        if vp.total_value <= 0:
+            continue
+        invested = sum(vp.ticker_values.values(), Decimal(0))
+        pct = float((vp.total_value - invested) / vp.total_value * 100)
+        if pct > best_pct:
+            best_pct = pct
+            best_datum = vp.date.isoformat()
+    return best_pct, best_datum
+
+
 def _erste_kurse(rows: list[PriceRow]) -> dict[str, str]:
     """Datum der ersten Kurszeile je Ticker - macht sichtbar, ab wann ein
     Instrument in der Simulation überhaupt handelbar war."""
@@ -399,15 +424,22 @@ def _erste_kurse(rows: list[PriceRow]) -> dict[str, str]:
     return erste
 
 
-def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy]) -> dict:
+def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views: list[dict]) -> dict:
     """Baut die Daten für die Prämissen-Seite.
 
     Bewusst durchgehend aus den tatsächlich verwendeten Konstanten,
-    ``instruments.py`` und der Kurshistorie abgeleitet - nach demselben Prinzip
-    wie ``learnings.py``: nichts hier ist hinterlegter Text, der gegenüber dem
+    ``instruments.py``, der Kurshistorie und den bereits berechneten
+    Strategie-``views`` abgeleitet - nach demselben Prinzip wie
+    ``learnings.py``: nichts hier ist hinterlegter Text, der gegenüber dem
     Code veralten könnte. Ändert sich z. B. ``ORDERGEBUEHR`` oder die
-    Teilfreistellung eines Instruments, ändert sich diese Seite mit.
-    """
+    Teilfreistellung eines Instruments, ändert sich diese Seite mit. Die
+    ``views`` (statt einer erneuten Simulation) liefern insbesondere den
+    tatsächlichen Cash-Höchststand je Strategie/Szenario - siehe „No
+    separate cash position" (README, #35): die Strategien kennen keine
+    eigene Cash-Zielallokation, `cash_max_pct` misst deshalb ausschließlich
+    den technischen `pending_cash`-Zustand (Kapital ohne handelbares Ziel,
+    #55)."""
+    views_by_id = {v["id"]: v for v in views}
     erste = _erste_kurse(rows)
     instrumente = []
     for ticker in TICKERS:
@@ -429,10 +461,12 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy]) -> dic
 
     strategie_liste = []
     for s in strategies:
+        slug = _slug(s.name)
+        view = views_by_id.get(slug, {})
         strategie_liste.append(
             {
                 "name": s.name,
-                "id": _slug(s.name),
+                "id": slug,
                 "startkapital": f"{s.startkapital:.2f}",
                 "schwelle": f"{s.rebalancing_schwelle_pp}",
                 "ziel_topf": s.ziel_topf,
@@ -441,8 +475,12 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy]) -> dic
                 "toepfe": [
                     {"name": t.name, "gewicht": f"{t.gewicht_gesamt * 100:.0f}"} for t in s.toepfe
                 ],
+                "cash_max_label": view.get("cash_max_label", "0.0"),
+                "cash_max_datum": view.get("cash_max_datum", "–"),
             }
         )
+    cash_werte = [s["cash_max_label"] for s in strategie_liste]
+    cash_ueberall_null = all(float(v.replace(",", ".")) == 0.0 for v in cash_werte)
 
     return {
         "instrumente": instrumente,
@@ -461,6 +499,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy]) -> dic
         "sma_lang": _SMA_LANG_WOCHEN,
         "walk_forward_segmente": _WALK_FORWARD_SEGMENTE,
         "walk_forward_min_wochen": _WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT,
+        "cash_ueberall_null": cash_ueberall_null,
     }
 
 
@@ -522,7 +561,7 @@ def build_dashboard(
         detail_path.write_text(detail_html, encoding="utf-8")
 
     praemissen_html = env.get_template("praemissen.html.j2").render(
-        **_praemissen_kontext(rows, strategies), **common_context
+        **_praemissen_kontext(rows, strategies, views), **common_context
     )
     (output_path.parent / "praemissen.html").write_text(praemissen_html, encoding="utf-8")
 

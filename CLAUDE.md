@@ -189,7 +189,18 @@ inkrementell fortgeschrieben).
   0 und das geparkte Kapital käme nie wieder zum Einsatz. Bleibt bei
   `summe <= 0` (kein einziges Zielinstrument handelbar) alles geparkt, ist
   das gewollt: „raus aus dem Markt" ohne verfügbares defensives Instrument
-  *ist* Cash. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
+  *ist* Cash. **Warum das kaum vorkommt:** Die Strategien haben ohnehin
+  keine eigene Cash-Position im Zielportfolio (siehe README „No separate
+  cash position", #35) — Topf A übernimmt die Cash-Rolle. Geparktes Kapital
+  ist deshalb ein rein technischer, vorübergehender Zustand
+  (`pending_cash`), keine gewollte Anlageklasse. Gegen die reale
+  20-Jahres-Historie geprüft (Stand #55): über alle Strategien und
+  Szenarien hinweg liegt zu **jedem** Zeitpunkt 0% Cash, mit einer einzigen
+  Ausnahme — „Sell in May" hält 27 Wochen lang 100% Cash (September 2006
+  sowie Mai–September 2007), weil 4GLD als einziges Topf-A-Instrument
+  dieser Frühphase erst ab 2008-01-11 einen Kurs hat und die defensive
+  Season damit buchstäblich kein Ziel hatte. Ab 2008 tritt der Fall nie
+  wieder auf. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
   verbleibende Sparerpauschbetrag des Jahres gedeckt ist, mit sofortigem
   Rückkauf zum selben Kurs. `simulate(price_history, strategy,
   optimierungen=None)` nimmt optional eine `Optimierungen`-Instanz entgegen
@@ -330,15 +341,26 @@ inkrementell fortgeschrieben).
   mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
   Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
   nicht Modellierten (Dividenden, Inflation, Spread/Slippage, TER,
-  Zinsen auf Cash). Ganz oben stehen die drei Einschränkungen, die schwerer
-  wiegen als jede Renditezahl: Rückschaufehler bei der Instrumentenauswahl,
-  nicht optimierte/gebacktestete Regeln, und ein einziger Kursverlauf ohne
-  Konfidenzintervalle. `_praemissen_kontext()` leitet dafür **alles** aus
-  den tatsächlich verwendeten Konstanten (`strategies.py`), aus
-  `instruments.py` und aus der übergebenen Kurshistorie ab — nach demselben
-  Prinzip wie `learnings.py`: nichts auf der Seite ist hinterlegter Text,
-  der gegenüber dem Code veralten könnte. Beim Ergänzen deshalb keine
-  Zahl hart ins Template schreiben, sondern über den Kontext ziehen.
+  Zinsen auf Cash). Ein eigener Abschnitt "Cash und ungenutztes Kapital"
+  begründet, warum Strategien keine eigene Cash-Zielallokation kennen (Topf
+  A übernimmt die Cash-Rolle, siehe README "No separate cash position",
+  #35) und zeigt zusätzlich `_cash_anteil_max()` je Strategie/Szenario: den
+  größten je erreichten Anteil an technischem `pending_cash`
+  (Kapitalanteil ganz ohne handelbares Ziel, #55) samt Datum — in
+  `_build_strategy_view()` aus `result.value_history` berechnet und als
+  `cash_max_pct`/`cash_max_datum` im View abgelegt, damit die empirische
+  Aussage ("Cash kommt praktisch nicht vor") nicht von der Kurshistorie
+  abweichen kann. Ganz oben stehen die drei Einschränkungen,
+  die schwerer wiegen als jede Renditezahl: Rückschaufehler bei der
+  Instrumentenauswahl, nicht optimierte/gebacktestete Regeln, und ein
+  einziger Kursverlauf ohne Konfidenzintervalle. `_praemissen_kontext()`
+  leitet dafür **alles** aus den tatsächlich verwendeten Konstanten
+  (`strategies.py`), aus `instruments.py`, aus der übergebenen Kurshistorie
+  und aus den bereits berechneten Strategie-`views` ab (keine zusätzliche
+  Simulation) — nach demselben Prinzip wie `learnings.py`: nichts auf der
+  Seite ist hinterlegter Text, der gegenüber dem Code veralten könnte. Beim
+  Ergänzen deshalb keine Zahl hart ins Template schreiben, sondern über den
+  Kontext ziehen.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -464,7 +486,9 @@ erzeugt und von Start- *und* Detailseite verlinkt wird, dass ihre Werte
 tatsächlich aus `ORDERGEBUEHR`/`SPARERPAUSCHBETRAG_PRO_JAHR`/`TICKERS` und
 der übergebenen Historie stammen (statt hart im Template zu stehen), und
 dass die wesentlichen Einschränkungen samt Platzhalter-Kennzeichnung
-benannt sind.
+benannt sind, sowie dass der Cash-Abschnitt für eine Strategie ohne jemals
+ungenutztes Kapital "0.0" und für eine Strategie mit durchgehend
+fehlendem Zielinstrument den korrekten Cash-Höchststand samt Datum zeigt.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter
