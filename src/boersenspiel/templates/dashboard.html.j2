@@ -1,5 +1,28 @@
 {% extends "base.html.j2" %}
 {% block content %}
+  <section class="strategy" id="portfolio">
+    <h2>Das Portfolio</h2>
+    <p class="hint">
+      Alle Strategien und Szenarien speisen sich aus denselben 17 Instrumenten;
+      welche davon eine Strategie tatsächlich hält und wie stark, entscheidet
+      erst die jeweilige Gewichtung. Zwei Töpfe gibt es in jeder Strategie:
+      <strong>Topf A – Sicherheit</strong> (breiter Anleihen-ETF, physisches
+      Gold; der kleinere Anteil des Barbells, 20–30%) und
+      <strong>Topf B – Wachstum</strong> (breiter Aktien-ETF, Nasdaq-100-ETF,
+      Halbleiter-ETF, Schwellenländer-ETF und Bitcoin; der größere Anteil,
+      60–80%). Eine Strategie, „Barbell 20/60/20 + Einzelaktien-Satellit",
+      ergänzt einen dritten <strong>Topf C – Einzelaktien-Satellit</strong>:
+      10 gleichgewichtete Einzelaktien statt breiter ETFs. „Satellit" meint
+      hier den gängigen Core-Satellite-Ansatz aus der Portfoliotheorie – eine
+      kleinere, konzentrierte, volatilere Beimischung neben einem breit
+      gestreuten „Kern", nicht einfach „zusätzlich". Die dafür nötigen 20
+      Prozentpunkte kommen aus Topf B, das Gesamtrisikoprofil (80% riskant /
+      20% sicher) bleibt damit wie bei Barbell 20/80 erhalten – nur die
+      Wachstumsseite wird granularer. Die 10 Aktien mischen bewusst
+      hoch-volatile Wachstums-/Themenwerte mit zwei defensiven Blue Chips
+      (Coca-Cola, Roche) als Gegenbeispiel.
+    </p>
+  </section>
 {% if learnings %}
   <section class="strategy" id="key-learnings">
     <h2>Key Learnings</h2>
@@ -20,15 +43,24 @@
 {% endif %}
   <section class="strategy" id="uebersicht">
     <h2>Übersicht: Rendite im Vergleich</h2>
+    <p class="hint">
+      Volatilität (annualisierte Standardabweichung der Wochenrenditen) und Max
+      Drawdown (größter Wertverlust vom bisherigen Höchststand) stehen bewusst neben
+      der Rendite: eine hohe Rendite bei konzentrierten oder ungetesteten Regeln
+      (z. B. Chartsignale) kann mit entsprechend höherem Risiko erkauft sein, das die
+      Rendite allein nicht zeigt.
+    </p>
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <div class="overflow-x">
       <table class="summary-table">
-        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
+        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
         <tbody>
         {% for s in summary %}
           <tr>
             <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
+            <td>{{ s.volatilitaet_label }}</td>
+            <td class="{{ 'negative' if s.max_drawdown_pct else '' }}">{{ s.max_drawdown_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
             <td>{{ s.total_value }}</td>
           </tr>

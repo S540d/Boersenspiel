@@ -8,10 +8,9 @@ Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie (siehe
 `Pflichtenheft_PortfolioProjekt_v2.md` für die ursprünglichen Anforderungen —
 die Datei liegt bewusst außerhalb dieses Repos, siehe Hinweis in der README).
 Wöchentlicher Kursabruf via GitHub Actions, Kurshistorie als CSV im Repo,
-statisches Dashboard (Chart.js) auf GitHub Pages. Es gibt keinen PR-Workflow
-in diesem Repo — Änderungen gehen direkt auf den Default-Branch
-(`claude/pflichtenheft-umsetzung-planen-6kf05s`, fungiert als `main`, da das
-Repo ursprünglich leer war).
+statisches Dashboard (Chart.js) auf GitHub Pages. Default-Branch ist `main`
+(ursprünglich hieß er `claude/pflichtenheft-umsetzung-planen-6kf05s`, da das
+Repo leer angelegt wurde, und wurde nachträglich zu `main` umbenannt).
 
 ## Commands
 
@@ -119,7 +118,10 @@ inkrementell fortgeschrieben).
   der erfolgreichen Quotes, bei Gleichstand der frühere) statt aus dem
   Abrufdatum: ein Montagslauf vor Börsenbeginn liefert den Freitagsschluss
   der Vorwoche, der sonst eine ISO-Woche zu spät und damit versetzt zum
-  Backfill einsortiert würde.
+  Backfill einsortiert würde. `read_fetch_log()` liest `fetch_log.csv`
+  zurück (`FetchLogEntry(date, ticker, status, source, note)`) – bislang nur
+  geschrieben, seit #42 auch gelesen, um im Dashboard sichtbar zu machen,
+  welche Kurse zuletzt fortgeschrieben statt frisch abgerufen wurden.
 - `sources/` — austauschbare `PriceSource`-Implementierungen
   (`sources/__init__.py` definiert das Protokoll). **Standard:**
   `alphavantage.py` (offizielle REST-API, braucht `ALPHAVANTAGE_API_KEY`).
@@ -191,7 +193,21 @@ inkrementell fortgeschrieben).
   Rendite mit genau diesem Mechanismus aus. Für beide Abschnitte simuliert
   die Darstellungsschicht die Vergleichsvarianten zusätzlich — auch das
   bleibt reine Anwendung von `engine.simulate()`, keine eigene
-  Berechnungslogik.
+  Berechnungslogik. Drei weitere reine Anzeige-Ableitungen (#40/#41/#42),
+  alle ohne Rückwirkung auf Simulation oder Renditezahlen:
+  `_volatilitaet_pct()`/`_max_drawdown_pct()` ergänzen die Übersichtstabelle
+  um annualisierte Volatilität (Standardabweichung der Wochenrenditen ×
+  √52) und Max Drawdown je Strategie/Szenario, damit eine hohe Rendite
+  konzentrierter oder ungetesteter Regeln (z. B. Chartsignale) nicht ohne
+  Risikobezug als überlegen erscheint; jede Zeile der Instrumententabelle
+  bekommt zusätzlich `abweichung_pp_label`/`konzentration_warnung` (⚠, wenn
+  ein einzelnes Instrument stärker als die Rebalancing-Schwelle der
+  Strategie vom Zielgewicht abweicht — der Topf-A-Rebalancing-Trigger prüft
+  nur die Topf-Ebene, nicht die Konzentration innerhalb eines Topfs) sowie
+  `carry_forward_wochen` aus `_carry_forward_streaks()` (⚠ seit N Wochen
+  eingefroren, aus `fetch_log.csv` via `read_fetch_log()`).
+  `build_dashboard()` nimmt dafür optional `fetch_log` entgegen;
+  `scripts/build_dashboard.py` übergibt `read_fetch_log()` standardmäßig.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -265,7 +281,8 @@ Trades, keine `rebalance`-Trades, keine Dezember-Harvest-Trades, Steuerstatus
 bleibt bei den Defaultwerten), plus ein Test, dass ein explizit übergebenes
 `Optimierungen()` (alle Defaults) exakt dasselbe Ergebnis liefert wie gar
 keine Übergabe, und dass `Strategy.optimierungen` ohne Override greift.
-`tests/test_history_store.py` prüft Wochen-Idempotenz und Carry-Forward.
+`tests/test_history_store.py` prüft Wochen-Idempotenz, Carry-Forward und
+`read_fetch_log()`.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
 Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
 `tests/test_scenarios.py` verifiziert die generische `gewichte_fn`-Mechanik
@@ -280,7 +297,13 @@ Links auf `<slug>.html`) bleiben auf der Startseite, Kennzahl-Kacheln,
 Topf-Gewichtung, Instrumententabelle sowie die Beitrags-/Optimierungs-
 Effekte-Abschnitte erscheinen nur auf der jeweiligen `<slug>.html`; der
 Beitrags-Abschnitt wird dort weiterhin nur bei gesetztem `beitraege`
-gerendert. `tests/test_learnings.py` fährt jede Learning-Regel gegen
+gerendert. Seit #40/#41/#42 zusätzlich: Volatilität/Max-Drawdown-Funktionen
+gegen handgerechnete Kursreihen (konstant/monoton/auf-und-ab), die
+Konzentrationswarnung anhand einer Strategie mit einem einzelnen Topf (in
+dem der Topf-Trigger nie greift, weil der Topf immer 100% hält, während
+sich die Instrumente darin frei auseinanderentwickeln) sowie die
+Eingefroren-Markierung anhand eines übergebenen `fetch_log`.
+`tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter
 Rangfolge) sowie dass nicht beantwortbare Regeln still wegfallen.

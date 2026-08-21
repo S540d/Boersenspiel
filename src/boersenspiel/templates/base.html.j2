@@ -4,7 +4,17 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>{% block title %}Barbell-Portfolio Dashboard{% endblock %}</title>
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<meta name="description" content="{% block meta_description %}Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie: Kursverlauf, Rendite-Vergleich und Steuerkennzahlen mehrerer Strategien und Börsenweisheiten-Szenarien.{% endblock %}">
+<meta name="robots" content="index, follow">
+<link rel="canonical" href="{% block canonical %}https://s540d.github.io/Boersenspiel/{% endblock %}">
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ self.title() }}">
+<meta property="og:description" content="{{ self.meta_description() }}">
+<meta property="og:url" content="{{ self.canonical() }}">
+<meta name="twitter:card" content="summary">
+<meta name="twitter:title" content="{{ self.title() }}">
+<meta name="twitter:description" content="{{ self.meta_description() }}">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4" crossorigin="anonymous"></script>
 <style>
   :root {
     color-scheme: light;
@@ -132,6 +142,7 @@
   table.summary-table a { color: inherit; text-decoration: underline; text-decoration-color: var(--border); }
   .positive { color: var(--good); }
   .negative { color: var(--series-2); }
+  .warn { color: var(--series-4); font-weight: 600; }
   .detail-link { margin: 0; font-size: 0.9rem; }
   .back-link { margin: 0; font-size: 0.9rem; }
 </style>

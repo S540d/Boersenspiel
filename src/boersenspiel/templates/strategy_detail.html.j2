@@ -1,5 +1,7 @@
 {% extends "base.html.j2" %}
 {% block title %}{{ s.name }} – Barbell-Portfolio Dashboard{% endblock %}
+{% block meta_description %}{% if s.beschreibung %}{{ s.beschreibung }}{% else %}{{ s.name }}: Kursverlauf, Kennzahlen und Steuerdetails im Barbell-Portfolio-Dashboard.{% endif %}{% endblock %}
+{% block canonical %}https://s540d.github.io/Boersenspiel/{{ s.id }}.html{% endblock %}
 {% block header_extra %}<p class="back-link"><a href="index.html">&larr; Zur Übersicht</a></p>{% endblock %}
 {% block content %}
   <section class="strategy" id="{{ s.id }}">
@@ -77,9 +79,17 @@
         </table>
       </div>
     </div>
+    <p class="hint">
+      "Abw. pp" ist die Abweichung des Ist- vom Ziel-Gewicht dieses Instruments in
+      Prozentpunkten; ⚠ markiert eine Abweichung über der Rebalancing-Schwelle dieser
+      Strategie ({{ s.rebalancing_schwelle_pp }} pp) - der Rebalancing-Trigger selbst
+      prüft nur die Abweichung von Topf A, nicht die Konzentration einzelner
+      Instrumente innerhalb eines Topfs. "Kursstatus" zeigt, wenn der zuletzt
+      verwendete Kurs mangels frischem Abruf fortgeschrieben statt neu ermittelt wurde.
+    </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th></tr></thead>
+        <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th><th>Abw. pp</th><th>Kursstatus</th></tr></thead>
         <tbody>
         {% for row in s.holdings_table %}
           <tr>
@@ -89,6 +99,10 @@
             <td>{{ row.value }}</td>
             <td>{{ row.ist_gewicht }}</td>
             <td>{{ row.ziel_gewicht }}</td>
+            <td class="{{ 'warn' if row.konzentration_warnung else '' }}">{{ row.abweichung_pp_label }}{% if row.konzentration_warnung %} &#9888;{% endif %}</td>
+            <td class="{{ 'warn' if row.carry_forward_wochen > 0 else '' }}">
+              {% if row.carry_forward_wochen > 0 %}&#9888; seit {{ row.carry_forward_wochen }} Woche{{ 'n' if row.carry_forward_wochen != 1 else '' }} eingefroren{% else %}&ndash;{% endif %}
+            </td>
           </tr>
         {% endfor %}
         </tbody>

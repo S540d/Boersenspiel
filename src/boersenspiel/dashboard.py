@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import json
 import re
+import statistics
 from dataclasses import replace
 from datetime import datetime, timezone
 from decimal import Decimal
@@ -18,9 +19,13 @@ from pathlib import Path
 from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .engine import SimulationResult, simulate
-from .history_store import PriceRow
+from .history_store import FetchLogEntry, PriceRow
 from .learnings import derive_learnings
 from .strategies import STRATEGIES, Strategy
+
+# Status-Werte in fetch_log.csv, bei denen der Kurs NICHT frisch abgerufen wurde
+# (siehe history_store.record_week) - Grundlage fuer die "eingefroren"-Markierung (#42).
+_STALE_STATUS = {"carried_forward", "missing"}
 
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[2] / "docs" / "index.html"
@@ -59,6 +64,66 @@ def _f(value: Decimal) -> float:
     return float(value)
 
 
+# --- Risikokennzahlen (#40) -------------------------------------------------------
+#
+# Ergaenzen die Rendite um Volatilitaet und Max Drawdown, damit Strategien mit sehr
+# unterschiedlichem Risikoprofil (breit diversifiziert vs. konzentriert, ungetestete
+# Chartsignale) nicht allein anhand der nominalen Rendite verglichen werden. Reine
+# Anzeige-Ableitung aus der bereits von engine.simulate() gelieferten Wertreihe, keine
+# eigene Simulation.
+
+
+def _wochenrenditen(total_values: list[float]) -> list[float]:
+    return [
+        (total_values[i] - total_values[i - 1]) / total_values[i - 1]
+        for i in range(1, len(total_values))
+        if total_values[i - 1] > 0
+    ]
+
+
+def _volatilitaet_pct(total_values: list[float]) -> float:
+    """Annualisierte Volatilitaet (Standardabweichung der Wochenrenditen * sqrt(52))
+    in Prozent."""
+    renditen = _wochenrenditen(total_values)
+    if len(renditen) < 2:
+        return 0.0
+    return statistics.pstdev(renditen) * (52**0.5) * 100
+
+
+def _max_drawdown_pct(total_values: list[float]) -> float:
+    """Groesster Wertverlust vom bisherigen Hoechststand aus, in Prozent (>= 0)."""
+    peak: float | None = None
+    max_dd = 0.0
+    for wert in total_values:
+        if peak is None or wert > peak:
+            peak = wert
+        if peak and peak > 0:
+            max_dd = max(max_dd, (peak - wert) / peak)
+    return max_dd * 100
+
+
+# --- Eingefrorene Kurse (#42) ------------------------------------------------------
+
+
+def _carry_forward_streaks(rows: list[PriceRow], fetch_log: list[FetchLogEntry]) -> dict[str, int]:
+    """Je Ticker: Anzahl der zuletzt aufeinanderfolgenden Wochen (endend bei der
+    letzten Kurszeile), in denen laut fetch_log.csv KEIN frischer Kurs abgerufen werden
+    konnte (Status carried_forward/missing) - macht sichtbar, wenn eine flache
+    Kursentwicklung einen fehlgeschlagenen Datenabruf statt echter Marktstille
+    widerspiegelt."""
+    stale = {(entry.date, entry.ticker) for entry in fetch_log if entry.status in _STALE_STATUS}
+    tickers = {ticker for row in rows for ticker in row.prices}
+    streaks: dict[str, int] = {}
+    for ticker in tickers:
+        wochen = 0
+        for row in reversed(rows):
+            if (row.date, ticker) not in stale:
+                break
+            wochen += 1
+        streaks[ticker] = wochen
+    return streaks
+
+
 _UMLAUT_TRANSLIT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"})
 
 
@@ -94,7 +159,12 @@ def _optimierungs_effekte(strategy: Strategy, rows: list[PriceRow], basis_rendit
     return effekte
 
 
-def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
+def _build_strategy_view(
+    strategy: Strategy,
+    result: SimulationResult,
+    rows: list[PriceRow],
+    carry_forward: dict[str, int] | None = None,
+) -> dict:
     points = result.value_history
     labels = [vp.date.isoformat() for vp in points]
     total_values = [_f(vp.total_value) for vp in points]
@@ -112,6 +182,7 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         topf.name: _f(sum((ticker_targets.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0))) * 100
         for topf in strategy.toepfe
     }
+    carry_forward = carry_forward or {}
     last = points[-1]
     holdings_table = []
     for ticker, units in sorted(result.holdings.items()):
@@ -119,6 +190,8 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         price = (value / units) if units else Decimal(0)
         ist_gewicht = last.ticker_weights.get(ticker, Decimal(0)) * 100
         ziel_gewicht = ticker_targets.get(ticker, Decimal(0)) * 100
+        abweichung_pp = ist_gewicht - ziel_gewicht
+        carry_forward_wochen = carry_forward.get(ticker, 0)
         holdings_table.append(
             {
                 "ticker": ticker,
@@ -127,11 +200,21 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
                 "value": f"{value:.2f}",
                 "ist_gewicht": f"{ist_gewicht:.1f}",
                 "ziel_gewicht": f"{ziel_gewicht:.1f}",
+                "abweichung_pp_label": f"{abweichung_pp:+.1f}",
+                # Warnung bei starker Abweichung eines EINZELNEN Instruments vom
+                # Zielgewicht (#41) - der Rebalancing-Trigger prueft nur die
+                # Topf-A-Abweichung, nicht die Konzentration innerhalb eines Topfs.
+                # Nutzt bewusst dieselbe Schwelle wie das Topf-Rebalancing statt einer
+                # neu erfundenen Zahl.
+                "konzentration_warnung": abs(abweichung_pp) > strategy.rebalancing_schwelle_pp,
+                "carry_forward_wochen": carry_forward_wochen,
             }
         )
 
     gewinn = last.total_value - strategy.startkapital
     rendite_pct = _rendite_pct(result, strategy)
+    volatilitaet_pct = _volatilitaet_pct(total_values)
+    max_drawdown_pct = _max_drawdown_pct(total_values)
 
     # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
     beitraege = []
@@ -154,6 +237,10 @@ def _build_strategy_view(strategy: Strategy, result: SimulationResult, rows: lis
         "rendite_pct": _f(rendite_pct),
         "rendite_pct_label": f"{rendite_pct:+.2f}",
         "gewinn_label": f"{gewinn:+.2f}",
+        "volatilitaet_pct": volatilitaet_pct,
+        "volatilitaet_label": f"{volatilitaet_pct:.2f}",
+        "max_drawdown_pct": max_drawdown_pct,
+        "max_drawdown_label": f"{-max_drawdown_pct:.2f}" if max_drawdown_pct else "0.00",
         "labels_json": json.dumps(labels),
         "total_values": total_values,
         "total_values_json": json.dumps(total_values),
@@ -189,16 +276,22 @@ def build_dashboard(
     price_history: list[PriceRow],
     strategies: list[Strategy] | None = None,
     output_path: Path = DEFAULT_OUTPUT,
+    fetch_log: list[FetchLogEntry] | None = None,
 ) -> Path:
     """Baut die Startseite (nur Wertverlauf je Strategie/Szenario) sowie je eine
     Detailseite pro Strategie/Szenario (alles andere, inkl. 50-/200-Tage-Näherung) -
-    siehe #31. Die Detailseiten landen als ``<slug>.html`` neben ``output_path``."""
+    siehe #31. Die Detailseiten landen als ``<slug>.html`` neben ``output_path``.
+
+    ``fetch_log`` (optional, aus ``history_store.read_fetch_log()``) macht sichtbar,
+    welche Instrumente zuletzt mit einem eingefrorenen statt frisch abgerufenen Kurs
+    bewertet wurden (#42)."""
     if not price_history:
         raise ValueError("Kurshistorie ist leer - kein Dashboard erzeugbar")
     strategies = strategies if strategies is not None else STRATEGIES
     rows = sorted(price_history, key=lambda r: r.date)
+    carry_forward = _carry_forward_streaks(rows, fetch_log or [])
 
-    views = [_build_strategy_view(s, simulate(rows, s), rows) for s in strategies]
+    views = [_build_strategy_view(s, simulate(rows, s), rows, carry_forward) for s in strategies]
     summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
     learnings = derive_learnings(views)
 
