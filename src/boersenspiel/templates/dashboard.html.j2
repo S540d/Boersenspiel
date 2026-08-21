@@ -43,15 +43,24 @@
 {% endif %}
   <section class="strategy" id="uebersicht">
     <h2>Übersicht: Rendite im Vergleich</h2>
+    <p class="hint">
+      Volatilität (annualisierte Standardabweichung der Wochenrenditen) und Max
+      Drawdown (größter Wertverlust vom bisherigen Höchststand) stehen bewusst neben
+      der Rendite: eine hohe Rendite bei konzentrierten oder ungetesteten Regeln
+      (z. B. Chartsignale) kann mit entsprechend höherem Risiko erkauft sein, das die
+      Rendite allein nicht zeigt.
+    </p>
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <div class="overflow-x">
       <table class="summary-table">
-        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
+        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
         <tbody>
         {% for s in summary %}
           <tr>
             <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
+            <td>{{ s.volatilitaet_label }}</td>
+            <td class="{{ 'negative' if s.max_drawdown_pct else '' }}">{{ s.max_drawdown_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
             <td>{{ s.total_value }}</td>
           </tr>

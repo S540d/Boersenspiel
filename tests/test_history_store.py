@@ -4,7 +4,8 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from boersenspiel.history_store import read_price_history, record_week, row_date_from_quotes
+from boersenspiel.history_store import read_fetch_log, read_price_history, record_week, row_date_from_quotes
+from boersenspiel.instruments import TICKERS
 from boersenspiel.sources import PriceQuote
 
 
@@ -125,3 +126,27 @@ def test_row_date_falls_back_when_no_source_reports_a_trading_day():
     dort bleibt das uebergebene Datum massgeblich."""
     quotes = {"EUNL": _quote("EUNL", 80.0, None)}
     assert row_date_from_quotes(quotes, fallback=date(2026, 8, 24)) == date(2026, 8, 24)
+
+
+def _alle_kurse_ok() -> dict[str, PriceQuote]:
+    """Vollstaendige Quotes fuer ALLE Ticker (status ok), damit ein Test sich auf die
+    Status-Zeilen fuer die tatsaechlich interessierenden Ticker konzentrieren kann -
+    ``record_week`` protokolliert sonst jeden fehlenden Ticker als 'missing'."""
+    return _quotes(**{t: 100.0 for t in TICKERS})
+
+
+def test_read_fetch_log_returns_carried_forward_and_missing_entries(tmp_path: Path):
+    record_week(date(2024, 1, 1), _alle_kurse_ok(), data_dir=tmp_path)
+    quotes = _alle_kurse_ok()
+    quotes["EUNL"] = PriceQuote("EUNL", None, "missing", "test")
+    record_week(date(2024, 1, 8), quotes, data_dir=tmp_path)
+
+    entries = [e for e in read_fetch_log(tmp_path) if e.ticker == "EUNL"]
+    assert len(entries) == 1
+    assert entries[0].date == date(2024, 1, 8)
+    assert entries[0].status == "carried_forward"
+
+
+def test_read_fetch_log_empty_when_no_gaps(tmp_path: Path):
+    record_week(date(2024, 1, 1), _alle_kurse_ok(), data_dir=tmp_path)
+    assert read_fetch_log(tmp_path) == []

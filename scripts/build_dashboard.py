@@ -9,7 +9,7 @@ from pathlib import Path
 import _bootstrap  # noqa: F401
 
 from boersenspiel.dashboard import DEFAULT_OUTPUT, build_dashboard
-from boersenspiel.history_store import read_price_history
+from boersenspiel.history_store import read_fetch_log, read_price_history
 from boersenspiel.scenarios import SCENARIOS, SCENARIOS_BY_NAME
 from boersenspiel.strategies import STRATEGIES, STRATEGIES_BY_NAME
 
@@ -35,7 +35,7 @@ def main() -> int:
             raise SystemExit(f"Unbekannte Strategie: {args.strategy!r}. Verfuegbar: {list(ALL_STRATEGIES_BY_NAME)}")
         strategies = [ALL_STRATEGIES_BY_NAME[args.strategy]]
 
-    output_path = build_dashboard(price_history, strategies, args.output)
+    output_path = build_dashboard(price_history, strategies, args.output, fetch_log=read_fetch_log())
     print(f"Dashboard erzeugt: {output_path}")
     return 0
 

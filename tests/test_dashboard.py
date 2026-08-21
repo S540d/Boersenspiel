@@ -12,8 +12,8 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from boersenspiel.dashboard import _slug, build_dashboard
-from boersenspiel.history_store import PriceRow
+from boersenspiel.dashboard import _max_drawdown_pct, _slug, _volatilitaet_pct, build_dashboard
+from boersenspiel.history_store import FetchLogEntry, PriceRow
 from boersenspiel.strategies import Beitrag, Strategy, Topf
 
 ZWEI_STRATEGIEN = [
@@ -166,3 +166,124 @@ def test_build_dashboard_omits_beitrag_section_without_beitraege(tmp_path: Path)
 
     assert "Effekt der einzelnen Börsenweisheiten" not in detail_html
     assert "beitrag-chart" not in detail_html
+
+
+# --- Risikokennzahlen: Volatilitaet & Max Drawdown (#40) ------------------------------
+
+
+def _auf_und_ab_rows() -> list[PriceRow]:
+    """T1 verdoppelt sich, faellt dann auf den Ausgangswert zurueck und erholt sich
+    teilweise - erzeugt sowohl einen messbaren Drawdown als auch Streuung in den
+    Wochenrenditen (anders als die monoton steigende Standard-Fixture ``_rows()``)."""
+    return [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("200")}),
+        PriceRow(date(2024, 1, 15), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 22), {"T1": Decimal("150")}),
+    ]
+
+
+def test_volatilitaet_pct_von_konstanter_reihe_ist_null():
+    assert _volatilitaet_pct([1000.0, 1000.0, 1000.0]) == 0.0
+
+
+def test_volatilitaet_pct_erkennt_streuung():
+    # Wechselnde Vorzeichen bei den Wochenrenditen (+100%, -50%, +50%) -> deutlich
+    # von 0 verschiedene Standardabweichung.
+    assert _volatilitaet_pct([100.0, 200.0, 100.0, 150.0]) > 0.0
+
+
+def test_max_drawdown_pct_bei_monotonem_anstieg_ist_null():
+    assert _max_drawdown_pct([100.0, 150.0, 200.0]) == 0.0
+
+
+def test_max_drawdown_pct_misst_groessten_ruecksetzer():
+    # Hoechststand 200, danach Rueckgang auf 100 -> 50% Drawdown; die anschliessende
+    # Teilerholung auf 150 bleibt darunter und darf das Maximum nicht verkleinern.
+    assert _max_drawdown_pct([100.0, 200.0, 100.0, 150.0]) == 50.0
+
+
+def test_summary_table_zeigt_volatilitaet_und_max_drawdown_spalten(tmp_path: Path):
+    output = build_dashboard(_auf_und_ab_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert "Volatilität % (ann.)" in html
+    assert "Max Drawdown %" in html
+
+
+def test_risikokennzahlen_sind_nur_auf_startseite(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+    # Volatilitaet/Max Drawdown sind Teil der Vergleichsuebersicht (#40), nicht der
+    # Detailseite - dieselbe Trennung wie bei Wertverlauf-Chart vs. Kennzahl-Kacheln.
+    assert "Max Drawdown %" not in detail_html
+
+
+# --- Klumpenrisiko-Warnung im Rebalancing (#41) ----------------------------------------
+
+
+def _konzentrations_strategie() -> Strategy:
+    return Strategy(
+        name="Konzentriert",
+        startkapital=Decimal("1000"),
+        toepfe=[
+            Topf(
+                name="Topf",
+                gewicht_gesamt=Decimal("1"),
+                sub_gewichte={"T1": Decimal("0.5"), "T2": Decimal("0.5")},
+            )
+        ],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("10"),
+    )
+
+
+def _drift_rows() -> list[PriceRow]:
+    return [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("1000"), "T2": Decimal("100")}),
+    ]
+
+
+def test_holdings_table_warnt_bei_instrument_konzentration_trotz_topf_im_ziel(tmp_path: Path):
+    # Einziger Topf haelt IMMER 100% des Depots -> der Topf-A-Rebalancing-Trigger
+    # (#41) loest nie aus, obwohl T1 hier den Grossteil des Topfs uebernimmt.
+    build_dashboard(_drift_rows(), [_konzentrations_strategie()], output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "konzentriert")
+
+    assert "Abw. pp" in detail_html
+    assert "&#9888;" in detail_html  # Warnsymbol fuer die zu stark abweichenden Instrumente
+
+
+def test_holdings_table_keine_warnung_wenn_abweichung_unter_schwelle(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+    # Einziges Instrument haelt exakt sein Zielgewicht (100%) -> keine Abweichung.
+    assert "&#9888;" not in detail_html
+
+
+# --- Sichtbarkeit eingefrorener Kurse (#42) --------------------------------------------
+
+
+def test_holdings_table_markiert_eingefrorenen_kurs(tmp_path: Path):
+    fetch_log = [
+        FetchLogEntry(
+            date=date(2024, 1, 8),
+            ticker="T1",
+            status="carried_forward",
+            source="test",
+            note="Kein aktueller Kurs verfuegbar, letzter bekannter Kurs uebernommen",
+        )
+    ]
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html", fetch_log=fetch_log)
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "seit 1 Woche eingefroren" in detail_html
+
+
+def test_holdings_table_ohne_fetch_log_zeigt_keine_eingefroren_markierung(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "eingefroren" not in detail_html
