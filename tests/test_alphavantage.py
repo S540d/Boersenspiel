@@ -270,7 +270,10 @@ def test_fetch_fx_weekly_eur_per_usd(monkeypatch: pytest.MonkeyPatch):
     assert result == {date(2026, 8, 14): 0.92}
 
 
-def test_fetch_crypto_weekly_history_prefers_eur_column(monkeypatch: pytest.MonkeyPatch):
+def test_fetch_crypto_weekly_history_prefers_usd_column(monkeypatch: pytest.MonkeyPatch):
+    """market=USD statt market=EUR (Issue #56: EUR liefert im Free-Tier nur
+    ca. 50 statt der vollen Historie) - die Spaltenwahl bevorzugt deshalb
+    jetzt die USD- statt der EUR-Spalte im alten, zweispaltigen Format."""
     payload = {
         "Time Series (Digital Currency Weekly)": {
             "2026-08-14": {"4a. close (USD)": "70000.00", "4b. close (EUR)": "58000.00"},
@@ -281,7 +284,7 @@ def test_fetch_crypto_weekly_history_prefers_eur_column(monkeypatch: pytest.Monk
     source = av.AlphaVantageSource(api_key="dummy")
     result = source.fetch_crypto_weekly_history(since=date(2024, 1, 1))
 
-    assert result == {date(2026, 8, 14): 58000.0}
+    assert result == {date(2026, 8, 14): 70000.0}
 
 
 def test_fetch_crypto_weekly_history_flat_format(monkeypatch: pytest.MonkeyPatch):
@@ -295,6 +298,22 @@ def test_fetch_crypto_weekly_history_flat_format(monkeypatch: pytest.MonkeyPatch
     result = source.fetch_crypto_weekly_history(since=date(2020, 1, 1))
 
     assert result == {date(2026, 8, 14): 58000.0}
+
+
+def test_fetch_crypto_weekly_history_requests_usd_market(monkeypatch: pytest.MonkeyPatch):
+    """Issue #56: market=EUR liefert im Free-Tier nur ca. 50 statt der vollen
+    Historie zurueck - der Request muss deshalb market=USD anfragen."""
+    seen_params: dict = {}
+
+    def fake_get(url, params, timeout):
+        seen_params.update(params)
+        return _FakeResponse({"Time Series (Digital Currency Weekly)": {"2026-08-14": {"4. close": "58000.00"}}})
+
+    monkeypatch.setattr(av.requests, "get", fake_get)
+    source = av.AlphaVantageSource(api_key="dummy")
+    source.fetch_crypto_weekly_history(since=date(2020, 1, 1))
+
+    assert seen_params["market"] == "USD"
 
 
 def test_quote_reports_trading_day_not_request_day(monkeypatch: pytest.MonkeyPatch):
