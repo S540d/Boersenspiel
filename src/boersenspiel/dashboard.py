@@ -23,6 +23,7 @@ from .history_store import FetchLogEntry, PriceRow
 from .instruments import INSTRUMENTS, TICKERS
 from .learnings import derive_learnings
 from .strategies import (
+    DIVIDENDENRENDITE_PLATZHALTER,
     ORDERGEBUEHR,
     SPARERPAUSCHBETRAG_PRO_JAHR,
     SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR,
@@ -451,6 +452,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 "isin": inst.isin or "–",
                 "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
                 "thesaurierend": "ja" if inst.thesaurierend else "nein",
+                "ausschuettend": "ja" if inst.ausschuettend else "nein",
                 "spekulationsfrist": (
                     f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
                 ),
@@ -494,6 +496,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "spek_freigrenze": f"{SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR:.0f}",
         "vorabpauschale_basiszins": f"{VORABPAUSCHALE_BASISZINS_PLATZHALTER * 100:.1f}".replace(".", ","),
         "vorabpauschale_faktor": f"{VORABPAUSCHALE_FAKTOR * 100:.0f}",
+        "dividendenrendite": f"{DIVIDENDENRENDITE_PLATZHALTER * 100:.1f}".replace(".", ","),
         "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER * 100:.0f}",
         "sma_kurz": _SMA_KURZ_WOCHEN,
         "sma_lang": _SMA_LANG_WOCHEN,

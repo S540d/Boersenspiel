@@ -277,3 +277,17 @@ VORABPAUSCHALE_FAKTOR = Decimal("0.70")  # gesetzlich fixierter Anteil des Basis
 # STEUERSATZ statt dem tatsächlich anzuwendenden persönlichen
 # Einkommensteuersatz (siehe #37-Diskussion).
 SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR = Decimal("1000")
+
+# --- Dividendenrendite für ausschüttende Einzelaktien (#57) -----------------
+#
+# Bewusster Platzhalter nach demselben Muster wie
+# VORABPAUSCHALE_BASISZINS_PLATZHALTER: statt für jede der 10 Einzelaktien-
+# Satelliten eine echte historische Dividendenrendite zu recherchieren (manche
+# zahlen wie Coca-Cola/Roche seit Jahrzehnten, andere wie Tesla/Palantir/
+# Rivian/MSTR/BYD aktuell gar nichts), wird pauschal eine einheitliche
+# Dividendenrendite angenommen - Owner-Entscheidung in #57. Wirkt in
+# `engine.py` als jährlicher Bar-Ertrag (nicht nur Kostenbasis-Erhöhung wie
+# bei der Vorabpauschale), der über den bestehenden Cash-Parken-Mechanismus
+# automatisch reinvestiert wird und wie ein realer Kapitalertrag der
+# Abgeltungsteuer unterliegt.
+DIVIDENDENRENDITE_PLATZHALTER = Decimal("0.025")  # 2,5% p.a., Platzhalter

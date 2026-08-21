@@ -55,6 +55,7 @@ from decimal import Decimal
 from .history_store import PriceRow
 from .instruments import INSTRUMENTS
 from .strategies import (
+    DIVIDENDENRENDITE_PLATZHALTER,
     ORDERGEBUEHR,
     SPARERPAUSCHBETRAG_PRO_JAHR,
     SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR,
@@ -79,6 +80,11 @@ def _thesaurierend(ticker: str) -> bool:
 def _spekulationsfrist_tage(ticker: str) -> int | None:
     instrument = INSTRUMENTS.get(ticker)
     return instrument.spekulationsfrist_tage if instrument is not None else None
+
+
+def _ausschuettend(ticker: str) -> bool:
+    instrument = INSTRUMENTS.get(ticker)
+    return instrument.ausschuettend if instrument is not None else False
 
 
 @dataclass
@@ -223,8 +229,10 @@ def simulate(
     # unabhängig vom Sparerpauschbetrag/Verlustvortrag der Kapitalerträge (#37).
     spek_verlustvortrag = Decimal(0)
     spek_gewinn_jahr = Decimal(0)
-    # Portfoliowert je thesaurierendem Instrument zu Jahresbeginn - Grundlage
-    # für die vereinfachte Vorabpauschale (#39), s. apply_vorabpauschale().
+    # Portfoliowert je thesaurierendem/ausschüttendem Instrument zu
+    # Jahresbeginn - Grundlage für die vereinfachte Vorabpauschale (#39, s.
+    # apply_vorabpauschale()) bzw. die pauschale Dividendenrendite (#57, s.
+    # apply_dividende()).
     wert_jahresbeginn: dict[str, Decimal] = {}
     wert_jahresbeginn_jahr: int | None = None
 
@@ -347,6 +355,31 @@ def simulate(
             # Die gesamte (nicht nur die versteuerte) Vorabpauschale hebt die
             # Kostenbasis an - sie gilt als fiktiv reinvestierte Ausschüttung.
             pos.cost_total += vorabpauschale
+
+    def apply_dividende() -> None:
+        """Vereinfachte jährliche Dividendenausschüttung für die
+        Einzelaktien-Satelliten (#57, Platzhalter-Dividendenrendite auf Basis
+        des Portfoliowerts zu Jahresbeginn - dieselbe Näherung wie bei
+        ``apply_vorabpauschale``). Anders als die Vorabpauschale ist das ein
+        REALER Kapitalertrag (kein reiner Steuerkonstrukt): er wird als
+        echtes zusätzliches Cash gutgeschrieben, das über den bestehenden
+        Cash-Parken-Mechanismus in der nächsten Kurszeile automatisch
+        reinvestiert wird ("delayed_initial_buy"), und läuft deshalb -
+        anders als die Vorabpauschale - auch dann, wenn ``opt.besteuerung``
+        deaktiviert ist (nur die Besteuerung selbst wird dann übersprungen,
+        siehe ``process_realized_gain``)."""
+        for t in tickers:
+            if not _ausschuettend(t):
+                continue
+            start_wert = wert_jahresbeginn.get(t)
+            pos = positions[t]
+            if not start_wert or pos.units <= 0:
+                continue
+            dividende = start_wert * DIVIDENDENRENDITE_PLATZHALTER
+            if dividende <= 0:
+                continue
+            process_realized_gain(dividende, t)
+            pending_cash[t] += dividende
 
     def rebalance_to_targets(
         prices: dict[str, Decimal], trade_date: date, reason: str, weights: dict[str, Decimal]
@@ -631,6 +664,9 @@ def simulate(
                     if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
                         last_rebalance_date = row.date
 
+        if row.date in harvest_dates:
+            apply_dividende()
+
         if opt.besteuerung and row.date in harvest_dates:
             apply_vorabpauschale(prices, row.date)
 
@@ -645,7 +681,11 @@ def simulate(
         values = current_values(prices)
         total_value = sum(values.values(), Decimal(0)) + total_cash()
         if wert_jahresbeginn_jahr != row.date.year:
-            wert_jahresbeginn = {t: values.get(t, Decimal(0)) for t in tickers if _thesaurierend(t)}
+            wert_jahresbeginn = {
+                t: values.get(t, Decimal(0))
+                for t in tickers
+                if _thesaurierend(t) or _ausschuettend(t)
+            }
             wert_jahresbeginn_jahr = row.date.year
         ticker_weights = {
             t: (values.get(t, Decimal(0)) / total_value if total_value > 0 else Decimal(0)) for t in tickers

@@ -410,6 +410,67 @@ def test_vorabpauschale_verbraucht_freibetrag_ohne_verkauf():
     assert result.tax_status.kumulierte_steuer == Decimal("0")
 
 
+def test_dividende_wird_als_cash_gutgeschrieben_und_versteuert():
+    # KO (ausschuettend, keine Teilfreistellung) - am Jahresende (letzte Zeile
+    # 2024, mit Optimierungen(steueroptimierung=False), um den Effekt vom
+    # Dezember-Harvest zu isolieren) greift die pauschale Dividendenrendite
+    # (2,5% p.a.), obwohl der Kurs unveraendert bleibt und keine Position
+    # verkauft wird.
+    # Wert Jahresbeginn: 9,99 Einheiten * 100 = 999.
+    # Dividende = 999 * 0,025 = 24,975, komplett steuerpflichtig (0%
+    # Teilfreistellung fuer Einzelaktien) und in voller Hoehe gegen den
+    # Freibetrag verrechnet: 1000 - 24,975 = 975,025.
+    # Die Dividende wird als pending_cash gutgeschrieben, aber (mangels
+    # weiterer Kurszeile) nicht mehr reinvestiert - die Stueckzahl bleibt
+    # unveraendert, der ausgewiesene Portfoliowert steigt trotzdem um die
+    # Dividende (999 + 24,975 = 1023,975).
+    strategy = Strategy(
+        name="Test-Dividende",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"KO": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(steueroptimierung=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"KO": Decimal("100")}),
+        PriceRow(date(2024, 12, 30), {"KO": Decimal("100")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.holdings["KO"] == Decimal("9.99")  # keine Trades ausser Initialkauf
+    assert result.tax_status.freibetrag_verbleibend == Decimal("975.025")
+    assert result.tax_status.kumulierte_steuer == Decimal("0")
+    assert result.value_history[-1].total_value == Decimal("1023.975")
+
+
+def test_dividende_bleibt_aus_wenn_besteuerung_deaktiviert_ist():
+    # opt.besteuerung=False laesst process_realized_gain() fruehzeitig
+    # zurueckkehren (Freibetrag/Steuer bleiben unveraendert), der reale
+    # Cash-Zufluss (und damit der Portfoliowert) bleibt aber bestehen - die
+    # Dividende ist ein echter Kapitalertrag, kein reines Steuerkonstrukt wie
+    # die Vorabpauschale.
+    strategy = Strategy(
+        name="Test-Dividende-ohne-Besteuerung",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"KO": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(steueroptimierung=False, besteuerung=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"KO": Decimal("100")}),
+        PriceRow(date(2024, 12, 30), {"KO": Decimal("100")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.tax_status.freibetrag_verbleibend == Decimal("1000")
+    assert result.tax_status.kumulierte_steuer == Decimal("0")
+    assert result.value_history[-1].total_value == Decimal("1023.975")
+
+
 def test_btc_gewinn_innerhalb_spekulationsfrist_landet_in_eigener_freigrenze():
     # BTC-EUR (Spekulationsfrist 365 Tage) neben 4GLD (normale Abgeltungsteuer)
     # - derselbe Rebalance-Verkauf wie in test_simple_strategy_... (Gewinn
