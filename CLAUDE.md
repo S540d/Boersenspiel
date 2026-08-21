@@ -81,27 +81,41 @@ inkrementell fortgeschrieben).
   `BUY_AND_HOLD` nutzt z. B. `Optimierungen(rebalancing=False)` statt einer
   künstlich unerreichbaren Rebalancing-Schwelle.
 - `scenarios.py` — Auswertungs-Szenarien als gewöhnliche `Strategy`-Instanzen
-  mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten —
-  "Sell in May and Go Away" (saisonal defensiv Mai–September), "Buy & Hold"
-  (nie aktiv rebalancieren), "Jahresendrallye" (Dez/Jan Wachstumsquote auf
-  95%), "Antizyklisch kaufen" (Wachstumsquote auf 95% nach >10% Rückgang vom
-  Rolling-Hoch) und "Verluste begrenzen" (Trailing-Stop je Wachstums-
-  Instrument, >15% Rückgang vom eigenen Rolling-Hoch schaltet nur dieses
-  Instrument auf 0%) sowie "Börsenweisheiten (alle fünf kombiniert)", das die
-  fünf zu einer Strategie zusammenfasst: jede Weisheit ist ein `Weisheit`-
-  Baustein, der in Phase 1 eine Wachstumsquote votiert (oder sich enthält,
-  wenn seine Bedingung diese Woche nicht greift) und/oder in Phase 2 als
-  Instrument-Overlay wirkt. Ziel-Quote ist das **arithmetische Mittel der
+  mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten — seit
+  #30 bewusst fünf der bekanntesten ENGLISCHEN Börsenweisheiten statt
+  deutscher Sprüche/Übersetzungen als Grundlage, jeweils einzeln als eigenes
+  Szenario: "Sell in May and Go Away" (saisonal defensiv Mai–September), "Time
+  in the Market Beats Timing the Market" (nie aktiv rebalancieren — interner
+  Python-Bezeichner/Slug bleibt `BUY_AND_HOLD`, weil "Buy & Hold" selbst ein
+  etablierter englischer Fachbegriff ist), "Santa Claus Rally" (Dez/Jan
+  Wachstumsquote auf 95%), "Buy the Dip" (Wachstumsquote auf 95% nach >10%
+  Rückgang vom Rolling-Hoch) und "Cut Your Losses" (Trailing-Stop je
+  Wachstums-Instrument, >15% Rückgang vom eigenen Rolling-Hoch schaltet nur
+  dieses Instrument auf 0%) sowie "Börsenweisheiten (alle fünf kombiniert)",
+  das die fünf zu einer Strategie zusammenfasst: jede Weisheit ist ein
+  `Weisheit`-Baustein, der in Phase 1 eine Wachstumsquote votiert (oder sich
+  enthält, wenn seine Bedingung diese Woche nicht greift) und/oder in Phase 2
+  als Instrument-Overlay wirkt. Ziel-Quote ist das **arithmetische Mittel der
   abgegebenen Voten** — widersprüchliche Signale (Mai-Ausstieg vs. Dip-Kauf)
   heben sich damit teilweise auf, statt dass eine Regel die anderen
-  überstimmt; "Buy & Hold" votiert als einzige immer (für die normale Quote)
-  und wirkt so als dämpfender Anker — dieser Mechanismus-Unterschied zum
-  Solo-Szenario (dort schaltet "Buy & Hold" stattdessen komplett das
-  Rebalancing ab) steht seit #27 auch als `beschreibung` auf der
-  `BUY_AND_HOLD`-Detailseite, nachdem der Owner entschieden hat, dass die
-  Mechanik selbst unverändert bleibt. "Verluste begrenzen" ist die einzige
-  Overlay-Regel und läuft nach Phase 1. Der Einzeleffekt jedes Spruchs kommt
-  über `Strategy.beitraege` (Leave-one-out) ins Dashboard; (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
+  überstimmt; "Time in the market beats timing the market" votiert als
+  einzige immer (für die normale Quote) und wirkt so als dämpfender Anker —
+  dieser Mechanismus-Unterschied zum Solo-Szenario (dort schaltet
+  `BUY_AND_HOLD` stattdessen komplett das Rebalancing ab) steht seit #27 auch
+  als `beschreibung` auf der `BUY_AND_HOLD`-Detailseite, nachdem der Owner
+  entschieden hat, dass die Mechanik selbst unverändert bleibt. "Cut your
+  losses short, let your winners run" ist die einzige Overlay-Regel und läuft
+  nach Phase 1. Der Einzeleffekt jedes Spruchs kommt über `Strategy.beitraege`
+  (Leave-one-out) ins Dashboard. Die fünf einzelnen Weisheiten-Szenarien
+  tragen zusätzlich `Strategy.teil_von = BOERSENWEISHEITEN_NAME` (#30) - rein
+  deklarativ, ändert nichts an der Simulation, macht sie aber im Dashboard als
+  Unterszenarien der Kombi-Strategie erkennbar: `dashboard.
+  _teilszenario_gruppen()` gruppiert sie serverseitig für einen gemeinsamen
+  Vergleichs-Chart auf der Startseite (Kombi-Strategie + alle Unterszenarien
+  im selben Chart, statt verstreut zwischen allen übrigen Strategien/
+  Szenarien) - generisch über `teil_von`, nicht auf die Börsenweisheiten fest
+  verdrahtet, falls künftig weitere zusammengesetzte Strategien Unterszenarien
+  bekommen; (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
   10/40 Wochen) auf dem MSCI-World-ETF, seit #28 zusätzlich als eigenes
   Szenario `CHART_SMA_CROSSOVER_KURZ` mit verkürztem Zeitraum (4/20 Wochen ≈
   21/100 Handelstage statt 50/200, gleiche 5-Handelstage/Woche-Näherung wie
@@ -271,9 +285,14 @@ inkrementell fortgeschrieben).
   `templates/dashboard.html.j2` (die
   Startseite `docs/index.html`) zeigt die strategieübergreifende
   Vergleichsübersicht ("Übersicht: Rendite im Vergleich" - Balkendiagramm +
-  nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite) sowie
-  je Strategie nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit
-  gemeinsamer Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
+  nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite),
+  darunter (#30) je Gruppe zusammengesetzter Strategien mit Unterszenarien
+  (aktuell: die Börsenweisheiten) einen eigenen "<Kombi-Name> im Vergleich"-
+  Abschnitt mit einem Mehrfach-Linienchart aus `_teilszenario_gruppen()`
+  (Kombi-Strategie + alle ihre `teil_von`-Unterszenarien im selben Chart,
+  gemeinsame Y-Achsen-Skalierung nur innerhalb der Gruppe), sowie je Strategie
+  nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit gemeinsamer
+  Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
   `templates/strategy_detail.html.j2` rendert für **jede** Strategie/jedes
   Szenario eine eigene `docs/<slug>.html` mit allem anderen (Kennzahl-
   Kacheln, Steuer-Stats, Topf-Gewichtung Ist/Ziel, Instrumententabelle) plus
@@ -470,7 +489,11 @@ Links auf `<slug>.html`) bleiben auf der Startseite, Kennzahl-Kacheln,
 Topf-Gewichtung, Instrumententabelle sowie die Beitrags-/Optimierungs-
 Effekte-Abschnitte erscheinen nur auf der jeweiligen `<slug>.html`; der
 Beitrags-Abschnitt wird dort weiterhin nur bei gesetztem `beitraege`
-gerendert. Seit #40/#41/#42 zusätzlich: Volatilität/Max-Drawdown-Funktionen
+gerendert. Seit #30 zusätzlich: `_teilszenario_gruppen()` gegen eine triviale
+Kombi-plus-zwei-Kinder-Fixture (Kombi-Strategie plus zwei `teil_von`-
+Unterszenarien) - der Gruppen-Chart auf der Startseite enthält alle drei als
+Datasets, und ohne gesetztes `teil_von` erscheint gar kein Gruppen-Abschnitt.
+Seit #40/#41/#42 zusätzlich: Volatilität/Max-Drawdown-Funktionen
 gegen handgerechnete Kursreihen (konstant/monoton/auf-und-ab), die
 Konzentrationswarnung anhand einer Strategie mit einem einzelnen Topf (in
 dem der Topf-Trigger nie greift, weil der Topf immer 100% hält, während

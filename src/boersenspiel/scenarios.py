@@ -12,12 +12,16 @@ Lookahead-Bias).
 Dies ist ein erster Ansatz (bewusst einfache Regeln, keine Optimierung/Backtesting der
 Parameter) für drei Kategorien:
 
-1. Börsenweisheiten: "Sell in May and Go Away", "Buy & Hold" (Gegenbeispiel: gar keine
-   taktische Umschichtung), "Jahresendrallye" (Santa-Claus-Rally), "Antizyklisch kaufen"
-   (Buy the Dip) und "Verluste begrenzen" (Trailing-Stop je Wachstums-Instrument) -
-   jeweils einzeln, plus "Börsenweisheiten (alle fünf kombiniert)", das die fünf in
-   einer Strategie zusammenführt und den Einzeleffekt jedes Spruchs per Leave-one-out
-   ausweist.
+1. Börsenweisheiten: fünf der bekanntesten ENGLISCHEN Börsenweisheiten (#30 -
+   bewusst keine deutschen Sprüche/Übersetzungen mehr als Grundlage), jeweils
+   einzeln als eigenes Szenario: "Sell in May and Go Away" (saisonal
+   defensiv), "Time in the Market Beats Timing the Market" (Gegenbeispiel:
+   gar keine taktische Umschichtung - Mechanik weiterhin intern als
+   BUY_AND_HOLD benannt), "Santa Claus Rally" (Dez/Jan-Saisonalität), "Buy
+   the Dip" (antizyklisch nach Kursrückgang) und "Cut Your Losses" (Trailing-
+   Stop je Wachstums-Instrument) - plus "Börsenweisheiten (alle fünf
+   kombiniert)", das die fünf in einer Strategie zusammenführt und den
+   Einzeleffekt jedes Spruchs per Leave-one-out ausweist.
 2. Charttechnik: gleitender-Durchschnitt-Crossover (Golden Cross / Death Cross) auf dem
    MSCI-World-ETF als Trendindikator fürs Gesamtdepot.
 3. Weitere Ansätze: Momentum-/Relative-Stärke-Rotation zwischen den Wachstums-
@@ -38,6 +42,12 @@ TOPF_SICHERHEIT: Topf = BARBELL_20_80.toepfe[0]
 TOPF_WACHSTUM: Topf = BARBELL_20_80.toepfe[1]
 GROWTH_TICKER: list[str] = list(TOPF_WACHSTUM.sub_gewichte.keys())
 TREND_TICKER = "EUNL"  # MSCI-World-ETF als Proxy fuer den breiten Markttrend
+
+# Name der kombinierten Strategie (siehe Abschnitt 1f) - vorab als Konstante,
+# damit die fuenf einzelnen Weisheiten-Szenarien weiter oben schon per
+# ``teil_von`` darauf verweisen koennen (#30, Unterszenarien-Gruppierung fuers
+# Dashboard).
+BOERSENWEISHEITEN_NAME = "Börsenweisheiten (alle fünf kombiniert)"
 
 # Wachstumsquote der unveraenderten Barbell-Verteilung (Topf B am Gesamtdepot).
 NORMALE_WACHSTUMSQUOTE: Decimal = TOPF_WACHSTUM.gewicht_gesamt
@@ -123,24 +133,29 @@ SELL_IN_MAY = Strategy(
         "Von Mai bis September (inklusive) 100% defensiv (Topf A), sonst normale "
         "Barbell-Verteilung. Testet die Börsenweisheit 'Sell in May and go away'."
     ),
+    teil_von=BOERSENWEISHEITEN_NAME,
 )
 
 
-# --- 1b: "Buy & Hold" -----------------------------------------------------------------
+# --- 1b: "Time in the Market Beats Timing the Market" ---------------------------------
 #
-# Gegenstück zur taktischen Umschichtung: klassische Weisheit "Hin und her
-# macht Taschen leer" - Anfangsallokation wird nie aktiv rebalanciert (die
+# Gegenstück zur taktischen Umschichtung: eine der meistzitierten englischen
+# Börsenweisheiten (#30) - Anfangsallokation wird nie aktiv rebalanciert (die
 # Rebalancing-Schwelle liegt oberhalb jeder erreichbaren Abweichung). Der
 # Dezember-Verlustverrechnungs-Mechanismus (steuerliche Optimierung, keine
 # Umschichtung der Zielgewichte) bleibt wie bei den anderen Strategien aktiv.
+# Interner Name (Python-Bezeichner/Strategie-Slug) bleibt bewusst
+# ``BUY_AND_HOLD`` - "Buy & Hold" ist selbst ein etablierter englischer
+# Fachbegriff, nur der zitierte Spruch/die Beschreibung wechseln auf die
+# konkretere Weisheit.
 
 def votum_buy_and_hold(rows: list[PriceRow], i: int) -> Decimal | None:
-    """"Hin und her macht Taschen leer": stimmt immer fuer die unveraenderte
-    Ausgangsverteilung. Als Einzelszenario heisst das "gar nicht rebalancieren"
-    (siehe ``BUY_AND_HOLD``); im Verbund mit anderen Weisheiten ist die
-    entsprechende Aussage "nichts umschichten", also ein Dauervotum fuer die
-    normale Wachstumsquote - das die Ausschlaege der uebrigen Weisheiten
-    daempft, statt sie zu unterdruecken."""
+    """"Time in the market beats timing the market": stimmt immer fuer die
+    unveraenderte Ausgangsverteilung. Als Einzelszenario heisst das "gar
+    nicht rebalancieren" (siehe ``BUY_AND_HOLD``); im Verbund mit anderen
+    Weisheiten ist die entsprechende Aussage "nichts umschichten", also ein
+    Dauervotum fuer die normale Wachstumsquote - das die Ausschlaege der
+    uebrigen Weisheiten daempft, statt sie zu unterdruecken."""
     return NORMALE_WACHSTUMSQUOTE
 
 
@@ -157,23 +172,24 @@ BUY_AND_HOLD = Strategy(
     # benannt statt implizit über einen Zahlenwert erzwungen.
     optimierungen=Optimierungen(rebalancing=False),
     beschreibung=(
-        "Anfangsallokation wird nie aktiv rebalanciert ('Hin und her macht Taschen "
-        "leer'). Der Dezember-Steuermechanismus bleibt wie bei den anderen Strategien "
-        "aktiv. Im kombinierten Szenario 'Börsenweisheiten (alle fünf kombiniert)' "
-        "wirkt dieselbe Weisheit anders: dort votiert sie als einzige Regel immer für "
-        "die normale Barbell-Quote und dient als Dauervotum/dämpfender Anker, weil sich "
-        "'gar nicht umschichten' nicht als Quoten-Votum neben den anderen Regeln "
-        "kombinieren lässt (siehe #27)."
+        "Anfangsallokation wird nie aktiv rebalanciert ('Time in the market beats "
+        "timing the market'). Der Dezember-Steuermechanismus bleibt wie bei den "
+        "anderen Strategien aktiv. Im kombinierten Szenario 'Börsenweisheiten (alle "
+        "fünf kombiniert)' wirkt dieselbe Weisheit anders: dort votiert sie als "
+        "einzige Regel immer für die normale Barbell-Quote und dient als "
+        "Dauervotum/dämpfender Anker, weil sich 'gar nicht umschichten' nicht als "
+        "Quoten-Votum neben den anderen Regeln kombinieren lässt (siehe #27)."
     ),
+    teil_von=BOERSENWEISHEITEN_NAME,
 )
 
 
-# --- 1c: "Jahresendrallye" (Santa-Claus-Rally) -----------------------------------------
+# --- 1c: "Santa Claus Rally" -----------------------------------------------------------
 #
-# Börsenweisheit: die Aktienmärkte tendieren zum Jahreswechsel (Dezember bis
-# Anfang Januar) überdurchschnittlich stark zu steigen ("Santa Claus Rally").
-# In diesem Fenster wird die Wachstumsquote von 80% auf 95% hochgefahren,
-# sonst gilt die normale Barbell-Verteilung.
+# Englische Börsenweisheit (#30): die Aktienmärkte tendieren zum Jahreswechsel
+# (Dezember bis Anfang Januar) überdurchschnittlich stark zu steigen. In
+# diesem Fenster wird die Wachstumsquote von 80% auf 95% hochgefahren, sonst
+# gilt die normale Barbell-Verteilung.
 
 _JAHRESENDRALLYE_MONATE = {12, 1}
 
@@ -190,7 +206,7 @@ def santa_claus_rally_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decima
 
 
 SANTA_CLAUS_RALLY = Strategy(
-    name="Börsenweisheit: Jahresendrallye",
+    name="Börsenweisheit: Santa Claus Rally",
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -198,25 +214,26 @@ SANTA_CLAUS_RALLY = Strategy(
     rebalancing_schwelle_pp=Decimal("5"),
     gewichte_fn=santa_claus_rally_gewichte,
     beschreibung=(
-        "In Dezember und Januar Wachstumsquote auf 95% hochgefahren ('Santa-Claus-"
+        "In Dezember und Januar Wachstumsquote auf 95% hochgefahren ('Santa Claus "
         "Rally'), sonst normale Barbell-Verteilung."
     ),
+    teil_von=BOERSENWEISHEITEN_NAME,
 )
 
 
-# --- 1d: "Antizyklisch kaufen" (Buy the Dip) -------------------------------------------
+# --- 1d: "Buy the Dip" ------------------------------------------------------------------
 #
-# Börsenweisheit ("kaufe, wenn die Kanonen donnern" / Rothschild): nach einem
-# deutlichen Kursrückgang antizyklisch stärker investieren statt zu verkaufen.
-# Liegt der MSCI-World-ETF mehr als BUY_THE_DIP_SCHWELLE unter seinem
-# gleitenden Höchststand der letzten BUY_THE_DIP_FENSTER_WOCHEN Wochen, wird
-# die Wachstumsquote auf 95% hochgefahren, sonst gilt die normale Verteilung.
+# Englische Börsenweisheit (#30): nach einem deutlichen Kursrückgang
+# antizyklisch stärker investieren statt zu verkaufen. Liegt der
+# MSCI-World-ETF mehr als BUY_THE_DIP_SCHWELLE unter seinem gleitenden
+# Höchststand der letzten BUY_THE_DIP_FENSTER_WOCHEN Wochen, wird die
+# Wachstumsquote auf 95% hochgefahren, sonst gilt die normale Verteilung.
 
 BUY_THE_DIP_FENSTER_WOCHEN = 20
 BUY_THE_DIP_SCHWELLE = Decimal("0.10")  # 10% Rückgang vom Rolling-Hoch
 
 
-def votum_antizyklisch_kaufen(rows: list[PriceRow], i: int) -> Decimal | None:
+def votum_buy_the_dip(rows: list[PriceRow], i: int) -> Decimal | None:
     kurse = _rolling_prices(rows, i, TREND_TICKER, BUY_THE_DIP_FENSTER_WOCHEN)
     if kurse is None:
         return None
@@ -231,12 +248,12 @@ def votum_antizyklisch_kaufen(rows: list[PriceRow], i: int) -> Decimal | None:
 
 
 def buy_the_dip_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
-    quote = votum_antizyklisch_kaufen(rows, i)
+    quote = votum_buy_the_dip(rows, i)
     return _NORMAL_GEWICHTE if quote is None else gewichte_fuer_wachstumsquote(quote)
 
 
 BUY_THE_DIP = Strategy(
-    name="Börsenweisheit: Antizyklisch kaufen",
+    name="Börsenweisheit: Buy the Dip",
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -245,15 +262,15 @@ BUY_THE_DIP = Strategy(
     gewichte_fn=buy_the_dip_gewichte,
     beschreibung=(
         "Liegt der MSCI-World-ETF mehr als 10% unter seinem 20-Wochen-Hoch, "
-        "Wachstumsquote auf 95% hochfahren ('kaufe, wenn die Kanonen donnern'), "
-        "sonst normale Verteilung."
+        "Wachstumsquote auf 95% hochfahren ('buy the dip'), sonst normale Verteilung."
     ),
+    teil_von=BOERSENWEISHEITEN_NAME,
 )
 
 
-# --- 1e: "Verluste begrenzen" (Trailing-Stop je Wachstums-Instrument) ------------------
+# --- 1e: "Cut Your Losses (Short), Let Your Winners Run" ------------------------------
 #
-# Börsenweisheit "cut your losses short": fällt ein einzelnes Wachstums-
+# Englische Börsenweisheit (#30): fällt ein einzelnes Wachstums-
 # Instrument mehr als CUT_LOSSES_SCHWELLE unter sein Rolling-Hoch der letzten
 # CUT_LOSSES_FENSTER_WOCHEN Wochen, wird NUR dieses Instrument auf 0% gesetzt -
 # das freiwerdende Gewicht fließt anteilig in den Sicherheits-Topf. Andere
@@ -296,7 +313,7 @@ def cut_losses_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
 
 
 CUT_LOSSES = Strategy(
-    name="Börsenweisheit: Verluste begrenzen",
+    name="Börsenweisheit: Cut Your Losses",
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -308,6 +325,7 @@ CUT_LOSSES = Strategy(
         "eigenes 20-Wochen-Hoch, wird nur dieses auf 0% gesetzt ('cut your losses "
         "short'), andere Wachstums-Instrumente bleiben unangetastet."
     ),
+    teil_von=BOERSENWEISHEITEN_NAME,
 )
 
 
@@ -315,8 +333,8 @@ CUT_LOSSES = Strategy(
 #
 # Fasst die fünf Weisheiten oben zu EINER Strategie zusammen, statt sie nur
 # nebeneinander zu stellen. Die Regeln widersprechen sich teilweise (im Mai will
-# "Sell in May" raus, ein gleichzeitiger Kurseinbruch will laut "antizyklisch
-# kaufen" rein), deshalb werden sie nicht hart nacheinander angewendet, sondern
+# "Sell in May" raus, ein gleichzeitiger Kurseinbruch will laut "Buy the Dip"
+# rein), deshalb werden sie nicht hart nacheinander angewendet, sondern
 # in zwei Phasen zusammengeführt:
 #
 #   Phase 1 - Quoten-Votum: jede Weisheit darf eine Wachstumsquote vorschlagen
@@ -326,7 +344,7 @@ CUT_LOSSES = Strategy(
 #     auf, statt dass eine Regel die anderen überstimmt. "Buy & Hold" votiert
 #     als einzige immer (für die normale Quote) und wirkt so als dämpfender
 #     Anker; damit gibt es auch stets mindestens ein Votum.
-#   Phase 2 - Instrument-Overlay: "Verluste begrenzen" wirkt nicht auf die
+#   Phase 2 - Instrument-Overlay: "Cut Your Losses" wirkt nicht auf die
 #     Gesamtquote, sondern je Instrument, und wird deshalb anschließend auf das
 #     Ergebnis aus Phase 1 angewendet.
 #
@@ -351,10 +369,10 @@ class Weisheit:
 
 WEISHEITEN: tuple[Weisheit, ...] = (
     Weisheit(spruch="Sell in May and go away", quote_fn=votum_sell_in_may),
-    Weisheit(spruch="Hin und her macht Taschen leer", quote_fn=votum_buy_and_hold),
-    Weisheit(spruch="Jahresendrallye (Santa-Claus-Rally)", quote_fn=votum_jahresendrallye),
-    Weisheit(spruch="Kaufen, wenn die Kanonen donnern", quote_fn=votum_antizyklisch_kaufen),
-    Weisheit(spruch="Verluste begrenzen, Gewinne laufen lassen", overlay_fn=overlay_verluste_begrenzen),
+    Weisheit(spruch="Time in the market beats timing the market", quote_fn=votum_buy_and_hold),
+    Weisheit(spruch="Santa Claus Rally", quote_fn=votum_jahresendrallye),
+    Weisheit(spruch="Buy the dip", quote_fn=votum_buy_the_dip),
+    Weisheit(spruch="Cut your losses short, let your winners run", overlay_fn=overlay_verluste_begrenzen),
 )
 
 
@@ -395,13 +413,13 @@ def _weisheiten_strategy(name: str, weisheiten: tuple[Weisheit, ...], **kwargs) 
 
 
 BOERSENWEISHEITEN = _weisheiten_strategy(
-    "Börsenweisheiten (alle fünf kombiniert)",
+    BOERSENWEISHEITEN_NAME,
     WEISHEITEN,
     beschreibung=(
         "Fasst die fünf Börsenweisheiten oben zu einer Strategie zusammen: jede votiert "
         "für eine Wachstumsquote (oder enthält sich), die Ziel-Quote ist das "
-        "arithmetische Mittel der abgegebenen Voten. 'Verluste begrenzen' wirkt danach "
-        "zusätzlich als Instrument-Overlay."
+        "arithmetische Mittel der abgegebenen Voten. 'Cut your losses short, let your "
+        "winners run' wirkt danach zusätzlich als Instrument-Overlay."
     ),
     beitraege=tuple(
         Beitrag(

@@ -76,6 +76,19 @@
       </table>
     </div>
   </section>
+{% for gruppe in teilszenario_gruppen %}
+  <section class="strategy" id="gruppe-{{ gruppe.id }}">
+    <h2>{{ gruppe.name }} im Vergleich</h2>
+    <p class="hint">
+      Wertverlauf der Kombi-Strategie und ihrer {{ gruppe.mitglieder|length - 1 }}
+      Unterszenarien in einem Chart, statt verstreut zwischen allen übrigen
+      Strategien/Szenarien - direkter Vergleich, wie das arithmetische Mittel
+      der Einzelvoten (Kombi-Strategie) im Verhältnis zu jedem einzelnen Votum
+      abschneidet (#30).
+    </p>
+    <div class="chart-box-large"><canvas id="gruppen-chart-{{ loop.index }}"></canvas></div>
+  </section>
+{% endfor %}
 {% for s in strategies %}
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
@@ -130,6 +143,38 @@
       },
     },
   });
+
+  const gruppenSeriesColors = [colors.series1, colors.series2, colors.series3, colors.series4];
+
+  {% for gruppe in teilszenario_gruppen %}
+  new Chart(document.getElementById('gruppen-chart-{{ loop.index }}'), {
+    type: 'line',
+    data: {
+      labels: {{ gruppe.mitglieder[0].labels_json | safe }},
+      datasets: [
+        {% for m in gruppe.mitglieder %}
+        {
+          label: {{ m.name | tojson }},
+          data: {{ m.total_values_json | safe }},
+          borderColor: gruppenSeriesColors[{{ loop.index0 }} % gruppenSeriesColors.length],
+          backgroundColor: gruppenSeriesColors[{{ loop.index0 }} % gruppenSeriesColors.length],
+          borderWidth: {{ 3 if loop.first else 1.5 }},
+          pointRadius: 0,
+          tension: 0.15,
+        },
+        {% endfor %}
+      ],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf im Vergleich', color: colors.text } },
+      scales: {
+        x: commonScales.x,
+        y: { ...commonScales.y, min: 0, suggestedMax: {{ gruppe.chart_max }} * 1.05 },
+      },
+    },
+  });
+  {% endfor %}
 
   {% for s in strategies %}
   new Chart(document.getElementById('value-chart-{{ loop.index }}'), {

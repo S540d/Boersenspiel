@@ -234,6 +234,40 @@ def _slug(name: str) -> str:
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", normalisiert)).strip("-")
 
 
+def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list[dict]:
+    """Gruppiert Unterszenarien (``Strategy.teil_von``, #30) je übergeordneter
+    Strategie für einen gemeinsamen Vergleichs-Chart auf der Startseite -
+    generisch für jede zusammengesetzte Strategie (aktuell: die fünf
+    einzelnen Börsenweisheiten-Szenarien unter "Börsenweisheiten (alle fünf
+    kombiniert)"), keine eigene Simulationslogik. Liefert nur Gruppen, deren
+    übergeordnete Strategie tatsächlich mitgerendert wird."""
+    views_by_id = {v["id"]: v for v in views}
+    kinder_je_eltern: dict[str, list[dict]] = {}
+    for s in strategies:
+        if s.teil_von is None:
+            continue
+        eltern_id = _slug(s.teil_von)
+        kind_id = _slug(s.name)
+        if eltern_id not in views_by_id or kind_id not in views_by_id:
+            continue
+        kinder_je_eltern.setdefault(s.teil_von, []).append(views_by_id[kind_id])
+
+    gruppen = []
+    for eltern_name, kinder in kinder_je_eltern.items():
+        eltern_view = views_by_id[_slug(eltern_name)]
+        mitglieder = [eltern_view] + kinder
+        alle_werte = [wert for m in mitglieder for wert in m["total_values"]]
+        gruppen.append(
+            {
+                "name": eltern_name,
+                "id": _slug(eltern_name),
+                "mitglieder": mitglieder,
+                "chart_max": max(alle_werte) if alle_werte else 0.0,
+            }
+        )
+    return gruppen
+
+
 def _rendite_pct(result: SimulationResult, strategy: Strategy) -> Decimal:
     if strategy.startkapital <= 0:
         return Decimal(0)
@@ -360,6 +394,7 @@ def _build_strategy_view(
         "cash_max_pct": cash_max_pct,
         "cash_max_label": f"{cash_max_pct:.1f}",
         "cash_max_datum": cash_max_datum or "–",
+        "teil_von": strategy.teil_von,
         "labels_json": json.dumps(labels),
         "total_values": total_values,
         "total_values_json": json.dumps(total_values),
@@ -528,6 +563,7 @@ def build_dashboard(
     views = [_build_strategy_view(s, simulate(rows, s), rows, carry_forward) for s in strategies]
     summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
     learnings = derive_learnings(views)
+    teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
 
     # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
     # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
@@ -552,6 +588,7 @@ def build_dashboard(
         summary=summary,
         learnings=learnings,
         wert_chart_max=wert_chart_max,
+        teilszenario_gruppen=teilszenario_gruppen,
         **common_context,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)

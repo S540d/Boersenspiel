@@ -94,6 +94,14 @@ class Strategy:
     # greifen. ``engine.simulate()`` übernimmt diese, sofern ihr nicht explizit eine
     # andere ``Optimierungen``-Instanz übergeben wird (siehe #17).
     optimierungen: Optimierungen = field(default_factory=Optimierungen)
+    # Optional: Name einer anderen Strategie/eines anderen Szenarios, dessen
+    # Unterszenario dieses hier ist (#30) - z. B. tragen die fünf einzelnen
+    # Börsenweisheiten-Szenarien den Namen von "Börsenweisheiten (alle fünf
+    # kombiniert)". Rein deklarativ fürs Dashboard (gruppierte
+    # Vergleichs-Charts, siehe ``dashboard._boersenweisheiten_gruppe()``) -
+    # ändert nichts an der Simulation selbst, jedes Unterszenario bleibt eine
+    # vollständig eigenständige ``Strategy``.
+    teil_von: str | None = None
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""

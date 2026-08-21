@@ -293,6 +293,12 @@ pass – parameters are not optimized or backtested. Starting capital is
 | Cut Your Losses | Trailing stop per growth instrument: if one falls more than 15% below its own 20-week high, only that instrument is set to 0% (rest of the portfolio unchanged) |
 | Market Wisdoms (all five combined) | Combines the five wisdoms above into **one** strategy (see below) and reports each saying's individual effect via leave-one-out |
 
+The five solo scenarios above are sub-scenarios of "Market Wisdoms (all five
+combined)" (`Strategy.teil_von`, [#30](https://github.com/S540d/Boersenspiel/issues/30)) —
+the dashboard home page shows them together with the combined strategy in a
+dedicated comparison chart, in addition to appearing individually among all
+other strategies/scenarios.
+
 **How the five wisdoms are combined.** The rules partly contradict each other
 — in May "Sell in May" wants out, while a simultaneous price drop makes "Buy
 the Dip" want in. Instead of applying them hard, one after another, they

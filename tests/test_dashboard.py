@@ -184,6 +184,46 @@ def test_build_dashboard_omits_beitrag_section_without_beitraege(tmp_path: Path)
     assert "beitrag-chart" not in detail_html
 
 
+# --- Unterszenario-Gruppen-Chart (Strategy.teil_von, #30) ------------------------------
+
+
+def _strategien_mit_unterszenarien() -> list[Strategy]:
+    """Eine Kombi-Strategie plus zwei 'Unterszenarien', die per ``teil_von`` auf
+    sie verweisen - analog zu den fünf Börsenweisheiten unter der kombinierten
+    Strategie in scenarios.py, aber mit einer trivialen Zwei-Strategien-
+    Fixture statt der echten Barbell-Instrumente."""
+    basis = dict(
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    return [
+        Strategy(name="Kombi", **basis),
+        Strategy(name="Kind A", teil_von="Kombi", **basis),
+        Strategy(name="Kind B", teil_von="Kombi", **basis),
+    ]
+
+
+def test_build_dashboard_gruppiert_unterszenarien_in_eigenem_chart(tmp_path: Path):
+    output = build_dashboard(_rows(), _strategien_mit_unterszenarien(), output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert "Kombi im Vergleich" in html
+    assert 'id="gruppen-chart-1"' in html
+    gruppen_chart_js = html.split("getElementById('gruppen-chart-1')", 1)[1].split("options:", 1)[0]
+    assert gruppen_chart_js.count("label:") == 3  # Kombi + Kind A + Kind B
+
+
+def test_build_dashboard_ohne_teil_von_zeigt_keine_gruppen_charts(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert "Kombi im Vergleich" not in html
+    assert "gruppen-chart" not in html
+
+
 # --- Risikokennzahlen: Volatilitaet & Max Drawdown (#40) ------------------------------
 
 
