@@ -259,6 +259,65 @@ def test_missing_price_in_first_row_parks_capital_as_cash_and_invests_later():
     assert delayed_buys[0].ticker == "T2"
 
 
+REBALANCING_MISSING_PRICE_STRATEGY = Strategy(
+    name="Test-Rebalancing-Missing",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"T1": Decimal("1")}),
+        Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"T2": Decimal("1")}),
+    ],
+    ziel_topf="TopfX",
+    ziel_gewicht=Decimal("0.5"),
+    rebalancing_schwelle_pp=Decimal("1"),  # niedrig genug, damit rebalanciert wird
+)
+
+
+def test_rebalancing_erhaelt_depotwert_wenn_ein_instrument_noch_keinen_kurs_hat():
+    # Regressionstest: T2 existiert noch nicht (kein Kurs - wie Bitcoin vor 2009
+    # oder Rivian vor dem IPO 2021), waehrend T1 sich verdoppelt und damit ein
+    # Rebalancing ausloest. Frueher wurde T2 beim Rebalancing stillschweigend
+    # uebersprungen: der T1-Verkauf lief, der zugehoerige T2-Kauf entfiel, und der
+    # Erloes verschwand ersatzlos aus dem Depot (ueber eine lange Kurshistorie
+    # schrumpfte das Depot dadurch woechentlich gegen 0 EUR).
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("200")}),
+    ]
+    result = simulate(rows, REBALANCING_MISSING_PRICE_STRATEGY)
+
+    # 1000 - 2*1 Gebuehr = 998 investierbar; T1 kauft fuer 499 zu 100 = 4.99 Stueck,
+    # die 499 fuer T2 bleiben als Cash geparkt.
+    # Zeile 2: T1 = 4.99 * 200 = 998, Cash 499 -> Gesamt 1497. TopfX haelt damit
+    # 66.7% statt 50% -> Rebalancing. T1 wird auf 748.50 zurueckgefuehrt, die
+    # freiwerdenden 249.50 wandern in den T2-Cash-Topf (748.50).
+    assert result.value_history[1].total_value == Decimal("1497")
+
+    rebalance_sells = [t for t in result.trades if t.reason == "rebalance" and t.side == "sell"]
+    assert len(rebalance_sells) == 1
+    assert rebalance_sells[0].ticker == "T1"
+    assert rebalance_sells[0].units * rebalance_sells[0].price == Decimal("249.50")
+
+    # T2 hat weiterhin keinen Kurs und darf deshalb auch nicht gehandelt worden sein.
+    assert all(t.ticker != "T2" for t in result.trades)
+
+
+def test_rebalancing_investiert_geparktes_kapital_sobald_der_kurs_existiert():
+    # Fortsetzung des Falls oben: sobald T2 erstmals einen Kurs hat, wird das
+    # zwischenzeitlich angewachsene geparkte Kapital investiert - der Depotwert
+    # bleibt dabei erhalten.
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("200")}),
+        PriceRow(date(2024, 1, 15), {"T1": Decimal("200"), "T2": Decimal("50")}),
+    ]
+    result = simulate(rows, REBALANCING_MISSING_PRICE_STRATEGY)
+
+    # Der Gesamtwert bleibt bei 1497 (T1 unveraendert bei 200), jetzt aber
+    # vollstaendig investiert: 748.50 / 50 = 14.97 Stueck T2.
+    assert result.value_history[2].total_value == Decimal("1497")
+    assert result.holdings["T2"] == Decimal("14.97")
+
+
 # --- Paket A: Steuerkorrektheit (#37/#38/#39, siehe #46) --------------------
 
 

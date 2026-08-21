@@ -326,6 +326,24 @@ def simulate(
         diffs = {
             t: weights.get(t, Decimal(0)) * total_value - values.get(t, Decimal(0)) for t in tickers
         }
+        # Instrumente ohne Kurs in DIESER Zeile (typisch: das Instrument existiert
+        # noch nicht - Bitcoin vor 2009, Rivian vor dem IPO 2021, ...) sind nicht
+        # handelbar. Ihr Zielanteil wird als Cash geparkt, exakt wie beim
+        # Initialkauf (pending_cash/"delayed_initial_buy"), statt einfach
+        # uebersprungen zu werden.
+        #
+        # Das ist NOTWENDIG fuer die Werterhaltung, nicht bloss Kosmetik: die
+        # Verkaufserloese bzw. Kaufbetraege unten werden keinem Cash-Konto
+        # gutgeschrieben/entnommen - die Umschichtung ist allein dadurch
+        # summenneutral, dass sich die diffs zu genau dem vorhandenen Cash
+        # aufaddieren. Wird ein Instrument stattdessen stillschweigend
+        # uebersprungen, gilt das nicht mehr: die Verkaeufe der uebrigen
+        # Instrumente laufen weiter, der zugehoerige Kauf entfaellt, und der
+        # Erloes verschwindet ersatzlos aus dem Depot (bei langer Historie mit
+        # vielen noch nicht existierenden Instrumenten bis auf 0 EUR).
+        for t in tickers:
+            if prices.get(t) is None:
+                pending_cash[t] = weights.get(t, Decimal(0)) * total_value
         executed = False
         for t in tickers:
             diff = diffs[t]

@@ -153,7 +153,21 @@ inkrementell fortgeschrieben).
   nach der Durchschnittskosten-Methode (kein FIFO/LIFO); Rebalancing bringt
   bei Auslösung *alle* Instrumente auf ihr Zielgewicht zurück, nicht nur den
   auslösenden Topf; alle Geld-/Stückzahl-Arithmetik nutzt `Decimal`, nie
-  `float`. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
+  `float`. **Werterhaltung beim Rebalancing (wichtig beim Ändern):**
+  `rebalance_to_targets()` führt kein Cash-Konto — Verkaufserlöse werden
+  nirgends gutgeschrieben, Kaufbeträge nirgends entnommen. Die Umschichtung
+  ist allein dadurch summenneutral, dass sich die `diffs` über *alle*
+  Instrumente zu genau dem vorhandenen `pending_cash` aufaddieren. Ein
+  Instrument einfach zu überspringen zerstört diese Invariante und lässt
+  Geld ersatzlos verschwinden. Für Instrumente ohne Kurs in der aktuellen
+  Zeile (existieren noch nicht: Bitcoin vor 2009, Rivian vor dem IPO 2021,
+  die meisten ETFs am Anfang der 20-Jahres-Historie) wird der Zielanteil
+  deshalb als `pending_cash` geparkt — dieselbe Mechanik wie beim
+  Initialkauf (`delayed_initial_buy`), die das Kapital investiert, sobald
+  der Kurs erstmals existiert. Vor dieser Korrektur schrumpften alle
+  rebalancierenden Strategien über die lange Historie wöchentlich um
+  ~50% bis auf 0 EUR (nur `BUY_AND_HOLD` blieb korrekt, da es nie
+  rebalanciert) — Regressionstests in `tests/test_engine.py`. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
   verbleibende Sparerpauschbetrag des Jahres gedeckt ist, mit sofortigem
   Rückkauf zum selben Kurs. `simulate(price_history, strategy,
   optimierungen=None)` nimmt optional eine `Optimierungen`-Instanz entgegen
