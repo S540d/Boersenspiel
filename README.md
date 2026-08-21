@@ -364,6 +364,19 @@ pytest -q
 
 ## Engine modeling decisions
 
+- **No separate cash position:** When a scenario switches to "defensive"
+  (e.g. "Sell in May", the SMA death cross, or the "limit losses" trailing
+  stop), the capital moves entirely into bucket A (safety: EUNL/EUNA/4GLD —
+  broad bond and gold ETFs), **not** into an unremunerated or fixed-interest
+  cash holding. In this model, bucket A **is** the cash role: liquid, broadly
+  diversified, and markedly less volatile than bucket B, but not guaranteed
+  to hold its value. A separate, genuine cash position would have two
+  drawbacks: (1) it would need a made-up interest rate (see
+  [#35](https://github.com/S540d/Boersenspiel/issues/35)) instead of a value
+  derivable from the price history, breaking the principle that everything
+  derived comes exclusively from real market data; (2) it would implicitly
+  duplicate bucket A without serving any other purpose. Discussed and
+  decided in [#35](https://github.com/S540d/Boersenspiel/issues/35).
 - **Initial purchase:** Order fees (€1/trade) are deducted **from the
   starting capital before the split** across buckets.
 - **Later trades** (rebalancing, December harvest): fees reduce the realized
