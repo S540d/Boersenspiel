@@ -48,12 +48,17 @@
       Drawdown (größter Wertverlust vom bisherigen Höchststand) stehen bewusst neben
       der Rendite: eine hohe Rendite bei konzentrierten oder ungetesteten Regeln
       (z. B. Chartsignale) kann mit entsprechend höherem Risiko erkauft sein, das die
-      Rendite allein nicht zeigt.
+      Rendite allein nicht zeigt. Sharpe- und Sortino-Ratio fassen das in eine
+      Rendite-pro-Risiko-Kennzahl: Sharpe teilt die annualisierte Rendite durch die
+      gesamte Streuung, Sortino nur durch die Streuung der Verlustwochen (Streuung
+      nach oben zählt dort nicht als Risiko). Höher ist besser; negativ heißt, das
+      eingegangene Risiko hat sich nicht gelohnt. Ein risikofreier Zins von 0% ist
+      dabei ein bewusster Platzhalter, kein realer Referenzzins.
     </p>
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <div class="overflow-x">
       <table class="summary-table">
-        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
+        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Sharpe</th><th>Sortino</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
         <tbody>
         {% for s in summary %}
           <tr>
@@ -61,6 +66,8 @@
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
             <td>{{ s.volatilitaet_label }}</td>
             <td class="{{ 'negative' if s.max_drawdown_pct else '' }}">{{ s.max_drawdown_label }}</td>
+            <td class="{{ 'positive' if s.sharpe_ratio >= 0 else 'negative' }}">{{ s.sharpe_label }}</td>
+            <td class="{{ 'positive' if s.sortino_ratio >= 0 else 'negative' }}">{{ s.sortino_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
             <td>{{ s.total_value }}</td>
           </tr>

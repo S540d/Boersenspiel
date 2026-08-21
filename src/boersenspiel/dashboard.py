@@ -102,6 +102,97 @@ def _max_drawdown_pct(total_values: list[float]) -> float:
     return max_dd * 100
 
 
+# --- Risikoadjustierte Kennzahlen: Sharpe & Sortino -------------------------------
+#
+# Ergaenzen Rendite/Volatilitaet/Max-Drawdown um ein Rendite-pro-Risiko-Verhaeltnis:
+# eine hohe annualisierte Rendite bei ebenso hoher Volatilitaet (bzw. bei vielen
+# schweren Verlustwochen) ist kein besseres Ergebnis als eine niedrigere Rendite bei
+# geringem Risiko - genau das zeigt die nominale Rendite allein nicht.
+#
+# Bewusster Platzhalter (analog VORABPAUSCHALE_BASISZINS_PLATZHALTER in
+# strategies.py): ein echter risikofreier Zins (z. B. laufzeitnahe
+# Bundesanleihen-Rendite) ist hier noch nicht hinterlegt, 0% ist eine
+# vereinfachende Annahme.
+_RISIKOFREIER_ZINS_PLATZHALTER = 0.0
+
+
+def _sharpe_ratio(total_values: list[float]) -> float:
+    """Annualisierte Ueberrendite je Einheit annualisierter Volatilitaet
+    (Standardabweichung aller Wochenrenditen, positive wie negative)."""
+    renditen = _wochenrenditen(total_values)
+    if len(renditen) < 2:
+        return 0.0
+    std_pct = statistics.pstdev(renditen) * (52**0.5)
+    if std_pct == 0:
+        return 0.0
+    ann_mean_pct = statistics.fmean(renditen) * 52
+    return (ann_mean_pct - _RISIKOFREIER_ZINS_PLATZHALTER) / std_pct
+
+
+def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
+    """Wurzel des mittleren quadrierten Unterschreitens von ``ziel`` ueber ALLE
+    Wochen (nicht nur die negativen) - Standarddefinition der Sortino-Kennzahl."""
+    if not renditen:
+        return 0.0
+    quadrate = [min(r - ziel, 0.0) ** 2 for r in renditen]
+    return (sum(quadrate) / len(quadrate)) ** 0.5
+
+
+def _sortino_ratio(total_values: list[float]) -> float:
+    """Wie ``_sharpe_ratio``, aber nur Verlustwochen fliessen ins Risikomass ein -
+    Streuung nach oben (Gewinnwochen) wird nicht als Risiko gewertet."""
+    renditen = _wochenrenditen(total_values)
+    if len(renditen) < 2:
+        return 0.0
+    downside_pct = _downside_deviation(renditen) * (52**0.5)
+    if downside_pct == 0:
+        return 0.0
+    ann_mean_pct = statistics.fmean(renditen) * 52
+    return (ann_mean_pct - _RISIKOFREIER_ZINS_PLATZHALTER) / downside_pct
+
+
+# --- Walk-Forward-Robustheit ueber Teilperioden -----------------------------------
+#
+# Alle Szenarien in scenarios.py sind bislang "erster Ansatz, nicht optimiert" auf
+# EINER einzigen, kurzen Kurshistorie durchgerechnet - eine gut aussehende Rendite
+# koennte dort ebenso gut Zufall/Overfitting auf genau diesen Zeitraum sein wie ein
+# echter Vorteil. Da die Regeln selbst keine an Daten gefitteten Parameter haben
+# (kein Training im eigentlichen Sinn), ist eine klassische Train/Test-Aufteilung
+# nicht anwendbar; stattdessen prueft dieser Abschnitt Konsistenz ueber die Zeit:
+# dieselbe Strategie wird unabhaengig auf mehreren aufeinanderfolgenden Teilperioden
+# JEWEILS FRISCH (eigenes Startkapital, keine fortgefuehrte Position) simuliert. Eine
+# Strategie, die nur in einer Teilperiode stark performt und in den anderen schwach
+# oder negativ, ist weniger vertrauenswuerdig als eine mit aehnlicher Rendite in
+# jedem Segment - auch wenn die Gesamtrendite ueber die volle Historie identisch
+# waere. Reine Anzeige-Ableitung: ruft engine.simulate() mehrfach mit Ausschnitten
+# derselben Kurshistorie auf, keine eigene Berechnungslogik.
+_WALK_FORWARD_SEGMENTE = 3
+_WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT = 10
+
+
+def _walk_forward_segmente(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
+    max_segmente = max(1, len(rows) // _WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT)
+    segmente = min(_WALK_FORWARD_SEGMENTE, max_segmente)
+    if segmente < 2:
+        return []
+
+    grenzen = [round(i * len(rows) / segmente) for i in range(segmente + 1)]
+    ergebnisse = []
+    for start, ende in zip(grenzen, grenzen[1:]):
+        segment_rows = rows[start:ende]
+        if len(segment_rows) < 2:
+            continue
+        rendite_pct = _rendite_pct(simulate(segment_rows, strategy), strategy)
+        ergebnisse.append(
+            {
+                "label": f"{segment_rows[0].date.isoformat()} – {segment_rows[-1].date.isoformat()}",
+                "rendite_pct": _f(rendite_pct),
+                "rendite_label": f"{rendite_pct:+.2f}",
+            }
+        )
+    return ergebnisse
+
+
 # --- Eingefrorene Kurse (#42) ------------------------------------------------------
 
 
@@ -215,6 +306,15 @@ def _build_strategy_view(
     rendite_pct = _rendite_pct(result, strategy)
     volatilitaet_pct = _volatilitaet_pct(total_values)
     max_drawdown_pct = _max_drawdown_pct(total_values)
+    sharpe_ratio = _sharpe_ratio(total_values)
+    sortino_ratio = _sortino_ratio(total_values)
+    walk_forward_segmente = _walk_forward_segmente(rows, strategy)
+    walk_forward_spread_pp = (
+        max(seg["rendite_pct"] for seg in walk_forward_segmente)
+        - min(seg["rendite_pct"] for seg in walk_forward_segmente)
+        if walk_forward_segmente
+        else 0.0
+    )
 
     # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
     beitraege = []
@@ -241,6 +341,10 @@ def _build_strategy_view(
         "volatilitaet_label": f"{volatilitaet_pct:.2f}",
         "max_drawdown_pct": max_drawdown_pct,
         "max_drawdown_label": f"{-max_drawdown_pct:.2f}" if max_drawdown_pct else "0.00",
+        "sharpe_ratio": sharpe_ratio,
+        "sharpe_label": f"{sharpe_ratio:.2f}",
+        "sortino_ratio": sortino_ratio,
+        "sortino_label": f"{sortino_ratio:.2f}",
         "labels_json": json.dumps(labels),
         "total_values": total_values,
         "total_values_json": json.dumps(total_values),
@@ -269,6 +373,8 @@ def _build_strategy_view(
         "last_harvest_date": result.last_harvest_date.isoformat() if result.last_harvest_date else "-",
         "beitraege": beitraege,
         "optimierungs_effekte": _optimierungs_effekte(strategy, rows, rendite_pct),
+        "walk_forward_segmente": walk_forward_segmente,
+        "walk_forward_spread_label": f"{walk_forward_spread_pp:.2f}",
     }
 
 

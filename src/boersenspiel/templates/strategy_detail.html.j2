@@ -79,6 +79,34 @@
         </table>
       </div>
     </div>
+    {% if s.walk_forward_segmente %}
+    <div class="beitraege">
+      <h3>Robustheit über Teilperioden (Walk-Forward)</h3>
+      <p class="hint">
+        Dieselbe Strategie unabhängig auf mehreren aufeinanderfolgenden Zeiträumen
+        simuliert - jeweils mit eigenem Startkapital, nicht als eine durchlaufende
+        Position. Zeigt, ob die Rendite über die Zeit einigermaßen konsistent ist
+        oder nur in einem einzelnen Zeitraum entstand (dann wäre die Gesamtrendite
+        wenig aussagekräftig für die Zukunft). Schwankungsbreite über die Perioden:
+        <strong>{{ s.walk_forward_spread_label }} Prozentpunkte</strong> (größte minus
+        kleinste Perioden-Rendite).
+      </p>
+      <div class="chart-box"><canvas id="walk-chart"></canvas></div>
+      <div class="overflow-x">
+        <table>
+          <thead><tr><th>Zeitraum</th><th>Rendite %</th></tr></thead>
+          <tbody>
+          {% for seg in s.walk_forward_segmente %}
+            <tr>
+              <td>{{ seg.label }}</td>
+              <td class="{{ 'positive' if seg.rendite_pct >= 0 else 'negative' }}">{{ seg.rendite_label }}</td>
+            </tr>
+          {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
     <p class="hint">
       "Abw. pp" ist die Abweichung des Ist- vom Ziel-Gewicht dieses Instruments in
       Prozentpunkten; ⚠ markiert eine Abweichung über der Rebalancing-Schwelle dieser
@@ -213,6 +241,25 @@
       },
     },
   });
+
+  {% if s.walk_forward_segmente %}
+  new Chart(document.getElementById('walk-chart'), {
+    type: 'bar',
+    data: {
+      labels: {{ s.walk_forward_segmente | map(attribute='label') | list | tojson }},
+      datasets: [{
+        label: 'Rendite % im Zeitraum',
+        data: {{ s.walk_forward_segmente | map(attribute='rendite_pct') | list | tojson }},
+        backgroundColor: {{ s.walk_forward_segmente | map(attribute='rendite_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+      }],
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      plugins: { legend: { display: false }, title: { display: true, text: 'Rendite je Teilperiode (Walk-Forward)', color: colors.text } },
+      scales: commonScales,
+    },
+  });
+  {% endif %}
 
   new Chart(document.getElementById('topf-chart'), {
     type: 'line',
