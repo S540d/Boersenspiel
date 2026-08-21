@@ -296,7 +296,7 @@ pass – parameters are not optimized or backtested. Starting capital is
 | Scenario | Rule |
 |---|---|
 | Sell in May | Defensive (100% safety) May–September, normal 20/80 split October–April |
-| Buy & Hold | Starting allocation is never actively rebalanced (rebalancing threshold effectively unreachable); December tax optimization stays active as for all strategies |
+| Buy & Hold | Starting allocation is never actively rebalanced (rebalancing threshold effectively unreachable); December tax optimization stays active as for all strategies. In the combined "Market Wisdoms" scenario below it acts differently: it always votes for the normal 80% share as a dampening anchor, since "don't rebalance at all" can't itself be expressed as a share vote (clarified in [#27](https://github.com/S540d/Boersenspiel/issues/27)) |
 | Santa Claus Rally | Growth share set to 95% in December/January, normal split otherwise |
 | Buy the Dip | Growth share set to 95% as soon as the MSCI World ETF (EUNL) trades more than 10% below its 20-week high |
 | Cut Your Losses | Trailing stop per growth instrument: if one falls more than 15% below its own 20-week high, only that instrument is set to 0% (rest of the portfolio unchanged) |
@@ -330,6 +330,7 @@ return — it's a marginal, not an additive decomposition.
 | Scenario | Rule |
 |---|---|
 | SMA Crossover (10/40 weeks) | Golden Cross/Death Cross on the MSCI World ETF: 10-week SMA below 40-week SMA → defensive (100% safety), normal split otherwise |
+| SMA Crossover (4/20 weeks) | Same Golden Cross/Death Cross rule with a shorter window (4/20 weeks ≈ 21/100 trading days instead of 50/200) for a more responsive signal ([#28](https://github.com/S540d/Boersenspiel/issues/28)) |
 
 **Other approaches**
 
