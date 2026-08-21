@@ -378,6 +378,19 @@ pytest -q
   derived comes exclusively from real market data; (2) it would implicitly
   duplicate bucket A without serving any other purpose. Discussed and
   decided in [#35](https://github.com/S540d/Boersenspiel/issues/35).
+  A different, purely technical kind of "cash" still exists internally:
+  `pending_cash` in `engine.py` temporarily parks the target share of an
+  instrument that has no price *at all yet* for the current row (not yet
+  listed, or — before [#55](https://github.com/S540d/Boersenspiel/issues/55) —
+  no tradeable bucket-A target). It is not a strategic allocation, only a
+  bookkeeping placeholder invested as soon as a target exists (see
+  `handelbare_gewichte()` below). Checked against the real 20-year history
+  after #55: every strategy and scenario holds 0% cash at every point in
+  time, with a single exception — "Sell in May" holds 100% cash for 27
+  weeks (September 2006 and May–September 2007), because 4GLD, the only
+  bucket-A instrument available that early, has no price before
+  2008-01-11 and the defensive season therefore had no target at all. The
+  case never recurs after 2008.
 - **Initial purchase:** Order fees (€1/trade) are deducted **from the
   starting capital before the split** across buckets.
 - **Later trades** (rebalancing, December harvest): fees reduce the realized

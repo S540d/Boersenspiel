@@ -143,6 +143,49 @@
       </table>
     </div>
 
+    <h3>Cash und ungenutztes Kapital</h3>
+    <p class="hint">
+      Keine Strategie hat eine eigene Cash-Zielallokation. Schaltet ein
+      Szenario auf „defensiv“ (z.&nbsp;B. „Sell in May“, SMA-Death-Cross,
+      Trailing-Stop), wandert das Kapital vollständig in Topf A (Sicherheit)
+      &ndash; <strong>Topf A übernimmt die Cash-Rolle</strong>, statt einer
+      unverzinsten oder mit einem erfundenen Zins versehenen Cash-Position.
+      Eine echte Cash-Position hätte zwei Nachteile: sie bräuchte einen
+      Phantasiezins statt eines aus der Kurshistorie ableitbaren Werts, und
+      sie würde Topf A ohne eigenen Zweck duplizieren.
+    </p>
+    <p class="hint">
+      Cash im technischen Sinn (<code>pending_cash</code> in
+      <code>engine.py</code>) entsteht trotzdem kurzzeitig, wenn ein
+      Kapitalanteil <em>überhaupt kein</em> handelbares Ziel hat &ndash; etwa
+      weil ein Instrument noch keinen Kurs hat oder, im Extremfall, kein
+      einziges Zielinstrument eines Topfs existiert. Das ist kein Fehler,
+      sondern die einzig ehrliche Abbildung von „raus aus dem Markt ohne
+      verfügbares Instrument“.
+      {% if cash_ueberall_null %}
+      Über die komplette Kurshistorie betrachtet hält aktuell jede
+      Strategie und jedes Szenario durchgehend 0% Cash.
+      {% else %}
+      Über die komplette Kurshistorie betrachtet hält aktuell nicht jede
+      Strategie durchgehend 0% Cash &ndash; die Tabelle unten zeigt den
+      höchsten je erreichten Anteil und wann er auftrat.
+      {% endif %}
+    </p>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th>Strategie</th><th>Cash-Höchststand %</th><th>Datum</th></tr></thead>
+        <tbody>
+        {% for s in strategien %}
+          <tr>
+            <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
+            <td class="{{ 'warn' if s.cash_max_label != '0.0' else '' }}">{{ s.cash_max_label }}</td>
+            <td>{{ s.cash_max_datum }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
     <h3>Steuerannahmen</h3>
     <div class="stat-row">
       <div class="stat-tile"><div class="label">Steuersatz</div><div class="value">{{ steuersatz }} %</div></div>

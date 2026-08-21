@@ -457,3 +457,39 @@ def test_praemissen_seite_markiert_spaeter_verfuegbare_instrumente(tmp_path: Pat
     html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
 
     assert "Instrumente und ab wann es sie gab" in html
+
+
+# --- Cash-Abschnitt (Begruendung "keine separate Cash-Position" + Live-Werte) ----------
+
+
+def test_praemissen_seite_zeigt_null_prozent_cash_wenn_immer_alles_investiert_ist(tmp_path: Path):
+    # ZWEI_STRATEGIEN kaufen T1 sofort vollstaendig und rebalancieren nie -> zu
+    # keinem Zeitpunkt ungenutztes Kapital. Die Seite muss das aus den Views
+    # ableiten, nicht behaupten.
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert "Cash und ungenutztes Kapital" in html
+    assert "Topf A" in html  # Begruendung "Topf A uebernimmt die Cash-Rolle"
+    assert "hält aktuell jede" in html
+    assert html.count(">0.0<") >= 2
+
+
+def test_praemissen_seite_zeigt_cash_hoechststand_wenn_kein_zielinstrument_handelbar(tmp_path: Path):
+    # T2 hat in KEINER Zeile einen Kurs -> das Kapital dieses (isolierten)
+    # Topfs bleibt vollstaendig geparkt (pending_cash), da handelbare_gewichte()
+    # nichts zum Umlegen findet.
+    strategie = Strategy(
+        name="Nur T2",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T2": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    build_dashboard(_rows(), [strategie], output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert "hält aktuell nicht jede" in html
+    assert "100.0" in html
+    assert "2024-01-01" in html.split("Cash und ungenutztes Kapital", 1)[1]
