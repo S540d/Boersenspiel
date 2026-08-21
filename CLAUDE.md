@@ -97,10 +97,17 @@ inkrementell fortgeschrieben).
   abgegebenen Voten** — widersprüchliche Signale (Mai-Ausstieg vs. Dip-Kauf)
   heben sich damit teilweise auf, statt dass eine Regel die anderen
   überstimmt; "Buy & Hold" votiert als einzige immer (für die normale Quote)
-  und wirkt so als dämpfender Anker. "Verluste begrenzen" ist die einzige
+  und wirkt so als dämpfender Anker — dieser Mechanismus-Unterschied zum
+  Solo-Szenario (dort schaltet "Buy & Hold" stattdessen komplett das
+  Rebalancing ab) steht seit #27 auch als `beschreibung` auf der
+  `BUY_AND_HOLD`-Detailseite, nachdem der Owner entschieden hat, dass die
+  Mechanik selbst unverändert bleibt. "Verluste begrenzen" ist die einzige
   Overlay-Regel und läuft nach Phase 1. Der Einzeleffekt jedes Spruchs kommt
   über `Strategy.beitraege` (Leave-one-out) ins Dashboard; (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
-  10/40 Wochen) auf dem MSCI-World-ETF; (3) weitere Ansätze — Momentum-/
+  10/40 Wochen) auf dem MSCI-World-ETF, seit #28 zusätzlich als eigenes
+  Szenario `CHART_SMA_CROSSOVER_KURZ` mit verkürztem Zeitraum (4/20 Wochen ≈
+  21/100 Handelstage statt 50/200, gleiche 5-Handelstage/Woche-Näherung wie
+  beim Original) für ein reaktionsschnelleres Signal; (3) weitere Ansätze — Momentum-/
   Relative-Stärke-Rotation (Top-2 der Wachstums-Instrumente nach
   12-Wochen-Trailing-Rendite), volatilitätsbasierte Aktienquote (50–90%
   Wachstum je nach realisierter EUNL-Volatilität) und Cost-Average-Einstieg
@@ -340,7 +347,8 @@ steuerfrei, andernfalls wäre eine deutliche Steuer sichtbar).
 Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
 `tests/test_scenarios.py` verifiziert die generische `gewichte_fn`-Mechanik
 in der Engine anhand handgerechneter Werte sowie die konkreten Szenarien
-(Sell in May, Buy & Hold, SMA-Crossover) als End-to-End-Smoke-Tests. Für das
+(Sell in May, Buy & Hold, SMA-Crossover inkl. der verkürzten 4/20-Wochen-
+Variante aus #28) als End-to-End-Smoke-Tests. Für das
 kombinierte Börsenweisheiten-Szenario sind die gemittelten Quoten handgerechnet
 (Mai → 40%, Dezember → 87,5%) sowie geprüft, dass die Gewichte in jeder Woche zu
 1 summieren und jede Leave-one-out-Variante genau eine Weisheit weglässt.
