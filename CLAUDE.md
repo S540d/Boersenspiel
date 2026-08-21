@@ -353,13 +353,40 @@ inkrementell fortgeschrieben).
   "erster Ansatz, nicht optimiert/gebacktestet" auf einer einzigen, noch
   kurzen Kurshistorie sind. Die Schwankungsbreite (größte minus kleinste
   Perioden-Rendite) steht als Kennzahl über der Tabelle.
+  Zeitraum-Presets (`_zeitraum_presets()`, #54, "Variante B" aus der
+  Owner-Entscheidung gegenüber reinem Chart-Zuschneiden): da `docs/*.html`
+  statische, ohne Backend gebaute Seiten sind, kann ein Zeitraumfilter nicht
+  live neu simulieren — echte Steuer-/Rebalancing-Logik lässt sich nicht in
+  JS nachbauen. Stattdessen simuliert der Build je Strategie/Szenario vier
+  feste Presets (1/3/5 Jahre zurück ab dem letzten Kurstag via
+  `_jahre_zurueck()`, sowie "Gesamte Historie") jeweils VOLLSTÄNDIG NEU
+  (frisches Startkapital, analog `_walk_forward_segmente()`) inklusive
+  Rendite/Volatilität/Max-Drawdown/Sharpe/Sortino und eigenem
+  Wertverlauf-Chart. Auf der Startseite bekommt dafür jeder Wertverlauf-Chart
+  einen Zeitraum-Umschalter (reines Chart.js-Datenwechsel im Browser, `<script>`
+  `initZeitraumSwitch()`); auf der Detailseite ergänzt ein eigener Abschnitt
+  "Kennzahlen nach Betrachtungszeitraum" (eigener Chart + fünf Kennzahl-
+  Kacheln) denselben Umschalter — die bislang nur auf der Startseite
+  gezeigten Kennzahlen Volatilität/Max Drawdown/Sharpe/Sortino (#40/#41)
+  erscheinen dadurch jetzt auch auf der Detailseite, aber ausschließlich
+  innerhalb dieses neuen, periodenabhängigen Abschnitts (nicht als
+  zusätzliche statische Kachel, siehe die entsprechend angepassten Tests in
+  `tests/test_dashboard.py`). Die 50-/200-Tage-Näherung
+  (`sma-chart`) bleibt bewusst immer auf der vollen Historie, unabhängig vom
+  gewählten Preset, da die gleitenden Durchschnitte selbst ausreichend
+  Vorlauf brauchen. "Clientseitig einstellbar" bezieht sich auf die
+  Bedienung (Umschalten ohne weiteren Server-Request), nicht auf die
+  Berechnung, die vollständig beim Build passiert.
   `templates/praemissen.html.j2` (`docs/praemissen.html`, über das
   Drei-Punkt-Menü von jeder Seite erreichbar) sammelt die Prämissen, auf
   denen alle Zahlen beruhen — Datenbasis und Zeitraum, Instrumententabelle
   mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
   Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
-  nicht Modellierten (Dividenden, Inflation, Spread/Slippage, TER,
-  Zinsen auf Cash). Ein eigener Abschnitt "Cash und ungenutztes Kapital"
+  nicht Modellierten (unternehmensspezifische Dividendenhöhen — Einzelaktien
+  nutzen seit #57 einheitlich eine pauschale Platzhalter-Dividendenrendite,
+  siehe `strategies.DIVIDENDENRENDITE_PLATZHALTER` —, Inflation,
+  Spread/Slippage, TER, Zinsen auf Cash). Ein eigener Abschnitt "Cash und
+  ungenutztes Kapital"
   begründet, warum Strategien keine eigene Cash-Zielallokation kennen (Topf
   A übernimmt die Cash-Rolle, siehe README "No separate cash position",
   #35) und zeigt zusätzlich `_cash_anteil_max()` je Strategie/Szenario: den
@@ -505,7 +532,20 @@ nur Gewinnwochen → Sortino bewusst 0.0 statt undefiniert,
 `_walk_forward_segmente()` gegen eine lange synthetische Kursreihe (leer
 bei zu wenig Wochen, exakt drei Segmente bei ausreichender Historie) und
 End-to-End, dass der Detailseiten-Abschnitt "Robustheit über Teilperioden"
-nur bei genug Kurshistorie erscheint. Für die Prämissen-Seite: dass sie
+nur bei genug Kurshistorie erscheint. Für die Zeitraum-Presets (#54):
+`_jahre_zurueck()` gegen den Normalfall sowie den Schaltjahr-Sonderfall
+(29.02. minus 1 Jahr fällt auf den 28.02. zurück), `_zeitraum_presets()`
+gegen eine mehrjährige synthetische Kursreihe (alle vier Presets vorhanden,
+kürzerer Zeitraum liefert eine andere Rendite als die volle Historie, der
+"alle"-Preset entspricht exakt einer normalen `engine.simulate()` über die
+komplette Historie) sowie End-to-End, dass Start- und Detailseite den neuen
+Umschalter/Abschnitt rendern. Die beiden älteren Tests, die Volatilität/Max
+Drawdown/Sharpe/Sortino als *ausschließlich* auf der Startseite vorkommend
+geprüft hatten, wurden dafür angepasst (`test_risikokennzahlen_
+ausserhalb_des_zeitraum_abschnitts_nur_auf_startseite`/`test_sharpe_
+sortino_ausserhalb_des_zeitraum_abschnitts_nur_auf_startseite`): diese
+Kennzahlen erscheinen auf der Detailseite jetzt genau einmal, aber nur
+innerhalb des neuen periodenabhängigen Abschnitts. Für die Prämissen-Seite: dass sie
 erzeugt und von Start- *und* Detailseite verlinkt wird, dass ihre Werte
 tatsächlich aus `ORDERGEBUEHR`/`SPARERPAUSCHBETRAG_PRO_JAHR`/`TICKERS` und
 der übergebenen Historie stammen (statt hart im Template zu stehen), und

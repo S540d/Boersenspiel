@@ -12,7 +12,7 @@ import json
 import re
 import statistics
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -204,6 +204,77 @@ def _walk_forward_segmente(rows: list[PriceRow], strategy: Strategy) -> list[dic
     return ergebnisse
 
 
+# --- Zeitraum-Presets (#54) --------------------------------------------------------
+#
+# Wunsch: Betrachtungszeitraum im Dashboard clientseitig einstellbar machen. Da
+# docs/*.html statische, bei jedem Build erzeugte Seiten ohne Backend sind (GitHub
+# Pages), kann ein Zeitraumfilter nicht "live" neu simulieren - echte Steuer-/
+# Rebalancing-Logik lässt sich nicht in JS nachbauen. Variante B (Owner-Entscheidung
+# in #54, gegenüber reinem Chart-Zuschneiden): feste Zeitraum-Presets (1/3/5 Jahre
+# sowie die gesamte Historie) werden beim Build je Strategie/Szenario VOLLSTÄNDIG
+# NEU simuliert (frisches Startkapital, keine fortgeführte Position - analog
+# ``_walk_forward_segmente()``), inklusive Rendite/Vola/Max-Drawdown/Sharpe/Sortino
+# UND eigenem Wertverlauf-Chart. Die Seite liefert damit für jeden Preset einen
+# fertigen Datensatz aus; ein Umschalter im Browser (reines JS, kein weiterer
+# Server-Request) wechselt nur, welcher bereits vorhandene Datensatz angezeigt wird -
+# "clientseitig einstellbar" im Sinne der Bedienung, nicht der Berechnung.
+_ZEITRAUM_PRESETS: list[tuple[str, int | None]] = [
+    ("1j", 1),
+    ("3j", 3),
+    ("5j", 5),
+    ("alle", None),
+]
+_ZEITRAUM_PRESET_LABELS: dict[str, str] = {
+    "1j": "1 Jahr",
+    "3j": "3 Jahre",
+    "5j": "5 Jahre",
+    "alle": "Gesamte Historie",
+}
+
+
+def _jahre_zurueck(stichtag: date, jahre: int) -> date:
+    """``stichtag`` minus ``jahre`` volle Jahre - faellt bei einem nicht
+    existierenden 29. Februar auf den 28. zurueck, statt eine Exception zu
+    werfen."""
+    try:
+        return stichtag.replace(year=stichtag.year - jahre)
+    except ValueError:
+        return stichtag.replace(year=stichtag.year - jahre, day=28)
+
+
+def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
+    letztes_datum = rows[-1].date
+    presets = []
+    for preset_id, jahre in _ZEITRAUM_PRESETS:
+        if jahre is None:
+            preset_rows = rows
+        else:
+            cutoff = _jahre_zurueck(letztes_datum, jahre)
+            preset_rows = [r for r in rows if r.date >= cutoff]
+        if len(preset_rows) < 1:
+            continue
+        result = simulate(preset_rows, strategy)
+        total_values = [_f(vp.total_value) for vp in result.value_history]
+        labels = [vp.date.isoformat() for vp in result.value_history]
+        rendite_pct = _rendite_pct(result, strategy)
+        presets.append(
+            {
+                "id": preset_id,
+                "label": _ZEITRAUM_PRESET_LABELS[preset_id],
+                "rendite_pct": _f(rendite_pct),
+                "rendite_label": f"{rendite_pct:+.2f}",
+                "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
+                "max_drawdown_label": f"{-_max_drawdown_pct(total_values):.2f}",
+                "sharpe_label": f"{_sharpe_ratio(total_values):.2f}",
+                "sortino_label": f"{_sortino_ratio(total_values):.2f}",
+                "labels": labels,
+                "total_values": total_values,
+                "chart_max": max(total_values) if total_values else 0.0,
+            }
+        )
+    return presets
+
+
 # --- Eingefrorene Kurse (#42) ------------------------------------------------------
 
 
@@ -361,6 +432,7 @@ def _build_strategy_view(
         if walk_forward_segmente
         else 0.0
     )
+    zeitraum_presets = _zeitraum_presets(rows, strategy)
 
     # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
     beitraege = []
@@ -425,6 +497,8 @@ def _build_strategy_view(
         "optimierungs_effekte": _optimierungs_effekte(strategy, rows, rendite_pct),
         "walk_forward_segmente": walk_forward_segmente,
         "walk_forward_spread_label": f"{walk_forward_spread_pp:.2f}",
+        "zeitraum_presets": zeitraum_presets,
+        "zeitraum_presets_json": json.dumps(zeitraum_presets),
     }
 
 
