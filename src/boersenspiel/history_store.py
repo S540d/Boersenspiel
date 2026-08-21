@@ -35,6 +35,15 @@ class PriceRow:
     prices: dict[str, Decimal]
 
 
+@dataclass(frozen=True)
+class FetchLogEntry:
+    date: date
+    ticker: str
+    status: str
+    source: str
+    note: str
+
+
 def _price_history_path(data_dir: Path) -> Path:
     return data_dir / PRICE_HISTORY_FILE
 
@@ -67,6 +76,29 @@ def read_price_history(data_dir: Path = DEFAULT_DATA_DIR) -> list[PriceRow]:
             rows.append(PriceRow(date=row_date, prices=prices))
     rows.sort(key=lambda r: r.date)
     return rows
+
+
+def read_fetch_log(data_dir: Path = DEFAULT_DATA_DIR) -> list[FetchLogEntry]:
+    """Liest das Kursabruf-Protokoll: eine Zeile je Ticker/Woche, in der KEIN frischer
+    Kurs abgerufen werden konnte (Status ``carried_forward`` oder ``missing``, siehe
+    ``record_week``). Grundlage für die Sichtbarkeit eingefrorener Kurse im Dashboard
+    (#42) - ``price_history.csv`` allein zeigt nicht, ob ein Kurs echt oder
+    fortgeschrieben ist."""
+    _ensure_files(data_dir)
+    entries: list[FetchLogEntry] = []
+    with _fetch_log_path(data_dir).open(newline="") as f:
+        reader = csv.DictReader(f)
+        for raw in reader:
+            entries.append(
+                FetchLogEntry(
+                    date=date.fromisoformat(raw["Date"]),
+                    ticker=raw["Ticker"],
+                    status=raw["Status"],
+                    source=raw["Source"],
+                    note=raw["Note"],
+                )
+            )
+    return entries
 
 
 def _iso_week(d: date) -> tuple[int, int]:
