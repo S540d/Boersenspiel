@@ -153,7 +153,43 @@ inkrementell fortgeschrieben).
   nach der Durchschnittskosten-Methode (kein FIFO/LIFO); Rebalancing bringt
   bei Auslösung *alle* Instrumente auf ihr Zielgewicht zurück, nicht nur den
   auslösenden Topf; alle Geld-/Stückzahl-Arithmetik nutzt `Decimal`, nie
-  `float`. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
+  `float`. **Werterhaltung beim Rebalancing (wichtig beim Ändern):**
+  `rebalance_to_targets()` führt kein Cash-Konto — Verkaufserlöse werden
+  nirgends gutgeschrieben, Kaufbeträge nirgends entnommen. Die Umschichtung
+  ist allein dadurch summenneutral, dass sich die `diffs` über *alle*
+  Instrumente zu genau dem vorhandenen `pending_cash` aufaddieren. Ein
+  Instrument einfach zu überspringen zerstört diese Invariante und lässt
+  Geld ersatzlos verschwinden. Für Instrumente ohne Kurs in der aktuellen
+  Zeile wird der Zielanteil deshalb als `pending_cash` geparkt — dieselbe
+  Mechanik wie beim Initialkauf (`delayed_initial_buy`). Vor dieser
+  Korrektur schrumpften alle rebalancierenden Strategien über die lange
+  Historie wöchentlich um ~50% bis auf 0 EUR (nur `BUY_AND_HOLD` blieb
+  korrekt, da es nie rebalanciert) — Regressionstests in
+  `tests/test_engine.py`.
+  **Noch nicht existierende Instrumente (`handelbare_gewichte()`):** Über
+  die 20-Jahres-Historie existiert ein großer Teil der Instrumente anfangs
+  noch nicht (Bitcoin vor 2009, Rivian vor dem IPO 2021, die meisten ETFs
+  am Anfang). Ihr Zielanteil wird **anteilig auf die tatsächlich
+  handelbaren Instrumente umgelegt**, statt ihn unverzinst zu parken —
+  sonst lägen zu Beginn der Historie über 60% des Depots brach und die
+  Rendite der frühen Jahre wäre praktisch aussagelos (gemessen: Endwert
+  89.408 € beim Parken gegenüber 125.893 € beim Umlegen). Die relativen
+  Verhältnisse *innerhalb* der verfügbaren Instrumente bleiben dabei
+  erhalten; das Depot bleibt voll investiert, in dem, was es zu diesem
+  Zeitpunkt gab. Zwei Ereignisse setzen Kapital neu an, **beide bewusst
+  unabhängig von `opt.rebalancing`** (es sind Erstkäufe, kein Korrigieren
+  von Drift — dieselbe Logik wie beim bisherigen `delayed_initial_buy`,
+  sonst hielte `BUY_AND_HOLD` nie ein Instrument, das es bei
+  Simulationsbeginn noch nicht gab): `neues_instrument`, sobald ein Ticker
+  erstmals einen Kurs hat, und `kapitaleinsatz`, sobald geparktes Cash
+  wieder ein handelbares Ziel hat. Letzteres ist nötig, weil der
+  Rebalancing-Trigger nur Topf A prüft: war zeitweise *kein* Zielinstrument
+  handelbar (z. B. „Sell in May" startet im September 2006 defensiv, Topf A
+  existiert aber erst ab 2008), sind Ist- und Zielgewicht von Topf A beide
+  0 und das geparkte Kapital käme nie wieder zum Einsatz. Bleibt bei
+  `summe <= 0` (kein einziges Zielinstrument handelbar) alles geparkt, ist
+  das gewollt: „raus aus dem Markt" ohne verfügbares defensives Instrument
+  *ist* Cash. Dezember-Harvest realisiert Verluste (größter zuerst) bis der
   verbleibende Sparerpauschbetrag des Jahres gedeckt ist, mit sofortigem
   Rückkauf zum selben Kurs. `simulate(price_history, strategy,
   optimierungen=None)` nimmt optional eine `Optimierungen`-Instanz entgegen
@@ -216,10 +252,13 @@ inkrementell fortgeschrieben).
     tatsächlich anzuwendenden persönlichen Einkommensteuersatz.
 - `dashboard.py` + `templates/` — reine Darstellungsschicht, rendert
   `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
-  Strategie(n) aus `STRATEGIES`. Seit #31 zwei Seitentypen statt einer
+  Strategie(n) aus `STRATEGIES`. Seit #31 mehrere Seitentypen statt einer
   einzigen `index.html`: `templates/base.html.j2` definiert Kopf/Fuß/Styles
   einmal per Jinja-Vererbung (`{% extends %}` + Blocks `title`/
-  `header_extra`/`content`/`scripts`); `templates/dashboard.html.j2` (die
+  `header_extra`/`content`/`scripts`) und enthält das Drei-Punkt-Menü
+  (`<details class="menu">`, reines CSS/HTML ohne JS), über das von **jeder**
+  Seite die Übersicht und die Prämissen-Seite erreichbar sind;
+  `templates/dashboard.html.j2` (die
   Startseite `docs/index.html`) zeigt die strategieübergreifende
   Vergleichsübersicht ("Übersicht: Rendite im Vergleich" - Balkendiagramm +
   nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite) sowie
@@ -285,6 +324,21 @@ inkrementell fortgeschrieben).
   "erster Ansatz, nicht optimiert/gebacktestet" auf einer einzigen, noch
   kurzen Kurshistorie sind. Die Schwankungsbreite (größte minus kleinste
   Perioden-Rendite) steht als Kennzahl über der Tabelle.
+  `templates/praemissen.html.j2` (`docs/praemissen.html`, über das
+  Drei-Punkt-Menü von jeder Seite erreichbar) sammelt die Prämissen, auf
+  denen alle Zahlen beruhen — Datenbasis und Zeitraum, Instrumententabelle
+  mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
+  Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
+  nicht Modellierten (Dividenden, Inflation, Spread/Slippage, TER,
+  Zinsen auf Cash). Ganz oben stehen die drei Einschränkungen, die schwerer
+  wiegen als jede Renditezahl: Rückschaufehler bei der Instrumentenauswahl,
+  nicht optimierte/gebacktestete Regeln, und ein einziger Kursverlauf ohne
+  Konfidenzintervalle. `_praemissen_kontext()` leitet dafür **alles** aus
+  den tatsächlich verwendeten Konstanten (`strategies.py`), aus
+  `instruments.py` und aus der übergebenen Kurshistorie ab — nach demselben
+  Prinzip wie `learnings.py`: nichts auf der Seite ist hinterlegter Text,
+  der gegenüber dem Code veralten könnte. Beim Ergänzen deshalb keine
+  Zahl hart ins Template schreiben, sondern über den Kontext ziehen.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -405,7 +459,12 @@ nur Gewinnwochen → Sortino bewusst 0.0 statt undefiniert,
 `_walk_forward_segmente()` gegen eine lange synthetische Kursreihe (leer
 bei zu wenig Wochen, exakt drei Segmente bei ausreichender Historie) und
 End-to-End, dass der Detailseiten-Abschnitt "Robustheit über Teilperioden"
-nur bei genug Kurshistorie erscheint.
+nur bei genug Kurshistorie erscheint. Für die Prämissen-Seite: dass sie
+erzeugt und von Start- *und* Detailseite verlinkt wird, dass ihre Werte
+tatsächlich aus `ORDERGEBUEHR`/`SPARERPAUSCHBETRAG_PRO_JAHR`/`TICKERS` und
+der übergebenen Historie stammen (statt hart im Template zu stehen), und
+dass die wesentlichen Einschränkungen samt Platzhalter-Kennzeichnung
+benannt sind.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter

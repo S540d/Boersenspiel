@@ -102,6 +102,9 @@
   table { width: 100%; border-collapse: collapse; font-size: 0.9rem; }
   th, td { text-align: right; padding: 6px 8px; border-bottom: 1px solid var(--grid); font-variant-numeric: tabular-nums; }
   th:first-child, td:first-child { text-align: left; }
+  /* Tabellenspalten sind auf Zahlen ausgelegt (rechtsbuendig); Textspalten
+     jenseits der ersten brauchen deshalb eine explizite Ausnahme. */
+  th.text-left, td.text-left { text-align: left; }
   th { color: var(--text-muted); font-weight: 500; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.02em; }
   .overflow-x { overflow-x: auto; }
   footer { max-width: 1100px; margin: 24px auto 0; color: var(--text-muted); font-size: 0.8rem; }
@@ -145,12 +148,46 @@
   .warn { color: var(--series-4); font-weight: 600; }
   .detail-link { margin: 0; font-size: 0.9rem; }
   .back-link { margin: 0; font-size: 0.9rem; }
+  .header-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
+  .menu { position: relative; flex: none; }
+  .menu summary {
+    list-style: none; cursor: pointer; width: 32px; height: 32px; border-radius: 6px;
+    display: flex; align-items: center; justify-content: center; font-size: 1.2rem;
+    line-height: 1; color: var(--text-secondary); border: 1px solid var(--border);
+    background: var(--surface-1);
+  }
+  .menu summary::-webkit-details-marker { display: none; }
+  .menu summary:hover { color: var(--text-primary); }
+  .menu[open] summary { color: var(--text-primary); }
+  .menu nav {
+    position: absolute; right: 0; top: 38px; z-index: 10; min-width: 220px;
+    background: var(--surface-1); border: 1px solid var(--border); border-radius: 8px;
+    padding: 6px; box-shadow: 0 6px 24px rgba(0,0,0,0.12);
+  }
+  .menu nav a {
+    display: block; padding: 8px 10px; border-radius: 5px; font-size: 0.88rem;
+    color: var(--text-primary); text-decoration: none;
+  }
+  .menu nav a:hover { background: var(--page); }
+  .menu nav .menu-hint { display: block; padding: 4px 10px 8px; color: var(--text-muted); font-size: 0.75rem; }
 </style>
 </head>
 <body>
 <header>
-  <h1>{% block header_title %}Barbell-Portfolio Dashboard{% endblock %}</h1>
-  <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
+  <div class="header-bar">
+    <div>
+      <h1>{% block header_title %}Barbell-Portfolio Dashboard{% endblock %}</h1>
+      <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
+    </div>
+    <details class="menu">
+      <summary aria-label="Menü" title="Menü">&#8942;</summary>
+      <nav>
+        <a href="index.html">Übersicht</a>
+        <a href="praemissen.html">Prämissen &amp; Annahmen</a>
+        <span class="menu-hint">Worauf die Zahlen beruhen</span>
+      </nav>
+    </details>
+  </div>
   {% block header_extra %}{% endblock %}
 </header>
 <main>

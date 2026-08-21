@@ -23,7 +23,14 @@ from boersenspiel.dashboard import (
     build_dashboard,
 )
 from boersenspiel.history_store import FetchLogEntry, PriceRow
-from boersenspiel.strategies import Beitrag, Strategy, Topf
+from boersenspiel.instruments import TICKERS
+from boersenspiel.strategies import (
+    ORDERGEBUEHR,
+    SPARERPAUSCHBETRAG_PRO_JAHR,
+    Beitrag,
+    Strategy,
+    Topf,
+)
 
 ZWEI_STRATEGIEN = [
     Strategy(
@@ -389,3 +396,64 @@ def test_build_dashboard_versteckt_walk_forward_abschnitt_bei_kurzer_historie(tm
 
     assert "Robustheit über Teilperioden" not in detail_html
     assert "walk-chart" not in detail_html
+
+
+# --- Praemissen-Seite -------------------------------------------------------------
+
+
+def test_praemissen_seite_wird_erzeugt_und_ueberall_verlinkt(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+
+    praemissen = tmp_path / "praemissen.html"
+    assert praemissen.exists()
+    # Erreichbar ueber das Drei-Punkt-Menue auf JEDER Seite, nicht nur der Startseite.
+    assert "praemissen.html" in output.read_text(encoding="utf-8")
+    assert "praemissen.html" in _detail_html(tmp_path, "a-verdoppler")
+
+
+def test_praemissen_seite_leitet_werte_aus_den_echten_konstanten_ab(tmp_path: Path):
+    # Kernanspruch der Seite: nichts hier ist hinterlegter Text, der gegenueber
+    # dem Code veralten koennte - die Werte kommen aus strategies.py/instruments.py
+    # und der uebergebenen Kurshistorie.
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert f"{ORDERGEBUEHR:.2f}" in html
+    assert f"{SPARERPAUSCHBETRAG_PRO_JAHR:.0f}" in html
+    # Zeitraum und Zeilenzahl stammen aus der uebergebenen Historie.
+    assert "2024-01-01" in html
+    assert "2024-01-08" in html
+    # Alle Instrumente aus instruments.py sind aufgefuehrt, mit ihrer
+    # Teilfreistellung und der BTC-Spekulationsfrist.
+    for ticker in TICKERS:
+        assert ticker in html
+    assert "365 Tage" in html
+
+
+def test_praemissen_seite_benennt_die_wesentlichen_einschraenkungen(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    # Einzeltoken statt ganzer Saetze: der Fliesstext im Template ist umbrochen,
+    # ein Satzfragment wuerde nur zufaellig matchen.
+    assert "Anlageberatung" in html
+    assert "Rückschaufehler" in html
+    # Die Platzhalter muessen als solche gekennzeichnet sein, nicht als echte Werte.
+    assert "Platzhalter" in html
+    # Nicht modellierte Effekte
+    assert "Dividenden" in html
+    assert "Inflation" in html
+
+
+def test_praemissen_seite_markiert_spaeter_verfuegbare_instrumente(tmp_path: Path):
+    # T2 hat in der ersten Zeile keinen Kurs -> muss als "erst ab" markiert sein,
+    # damit nachvollziehbar bleibt, dass die fruehen Jahre ein schmaleres
+    # Portfolio abbilden.
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("150"), "T2": Decimal("50")}),
+    ]
+    build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert "Instrumente und ab wann es sie gab" in html

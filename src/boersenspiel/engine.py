@@ -166,7 +166,39 @@ def simulate(
             return strategy.gewichte_fn(rows, i)
         return base_weights
 
+    def handelbare_gewichte(
+        weights: dict[str, Decimal], prices: dict[str, Decimal]
+    ) -> dict[str, Decimal]:
+        """Ziel-Gewichte anteilig auf die Instrumente umlegen, die in DIESER Zeile
+        einen Kurs haben.
+
+        Über eine lange Kurshistorie existiert ein großer Teil der Instrumente
+        anfangs schlicht noch nicht (Bitcoin vor 2009, Rivian vor dem IPO 2021,
+        die meisten ETFs am Anfang der 20-Jahres-Historie). Ihr Zielanteil lässt
+        sich nicht investieren. Ihn unangetastet stehen zu lassen hieße, einen
+        entsprechenden Teil des Depots dauerhaft unverzinst zu parken - zu Beginn
+        der Historie über 60% - und würde die Rendite der frühen Jahre praktisch
+        aussagelos machen. Stattdessen wird das Zielgewicht auf die tatsächlich
+        verfügbaren Instrumente hochskaliert: das Depot bleibt voll investiert, in
+        dem, was es zu diesem Zeitpunkt gab.
+
+        Die relativen Verhältnisse innerhalb der verfügbaren Instrumente bleiben
+        dabei erhalten - fehlt Topf B ein Instrument, wächst der Anteil der
+        übrigen Topf-B-Instrumente ebenso wie der von Topf A.
+
+        Hat kein einziges Instrument einen Kurs, bleiben die Gewichte unverändert;
+        das Kapital wird dann wie gehabt als ``pending_cash`` geparkt.
+        """
+        verfuegbar = {t: w for t, w in weights.items() if t in prices and w > 0}
+        summe = sum(verfuegbar.values(), Decimal(0))
+        if summe <= 0:
+            return weights
+        return {t: w / summe for t, w in verfuegbar.items()}
+
     positions: dict[str, _Position] = {t: _Position() for t in tickers}
+    # Instrumente, die bereits mindestens einmal einen Kurs hatten - waechst diese
+    # Menge, ist ein neues Instrument investierbar geworden (s. "neues_instrument").
+    handelbare_ticker: set[str] = set()
     # Kapitalanteil eines Instruments ohne Kurs in der ersten Zeile (z. B. vor
     # dessen Börsengang) - wird investiert, sobald erstmals ein Kurs vorliegt.
     pending_cash: dict[str, Decimal] = {t: Decimal(0) for t in tickers}
@@ -326,6 +358,24 @@ def simulate(
         diffs = {
             t: weights.get(t, Decimal(0)) * total_value - values.get(t, Decimal(0)) for t in tickers
         }
+        # Instrumente ohne Kurs in DIESER Zeile (typisch: das Instrument existiert
+        # noch nicht - Bitcoin vor 2009, Rivian vor dem IPO 2021, ...) sind nicht
+        # handelbar. Ihr Zielanteil wird als Cash geparkt, exakt wie beim
+        # Initialkauf (pending_cash/"delayed_initial_buy"), statt einfach
+        # uebersprungen zu werden.
+        #
+        # Das ist NOTWENDIG fuer die Werterhaltung, nicht bloss Kosmetik: die
+        # Verkaufserloese bzw. Kaufbetraege unten werden keinem Cash-Konto
+        # gutgeschrieben/entnommen - die Umschichtung ist allein dadurch
+        # summenneutral, dass sich die diffs zu genau dem vorhandenen Cash
+        # aufaddieren. Wird ein Instrument stattdessen stillschweigend
+        # uebersprungen, gilt das nicht mehr: die Verkaeufe der uebrigen
+        # Instrumente laufen weiter, der zugehoerige Kauf entfaellt, und der
+        # Erloes verschwindet ersatzlos aus dem Depot (bei langer Historie mit
+        # vielen noch nicht existierenden Instrumenten bis auf 0 EUR).
+        for t in tickers:
+            if prices.get(t) is None:
+                pending_cash[t] = weights.get(t, Decimal(0)) * total_value
         executed = False
         for t in tickers:
             diff = diffs[t]
@@ -512,7 +562,7 @@ def simulate(
                 last_price[t] = prices[t]
 
         if i == 0:
-            initial_weights = weights_at(0)
+            initial_weights = handelbare_gewichte(weights_at(0), prices)
             num_instruments = len(tickers)
             total_fees = gebuehr * num_instruments
             investable = strategy.startkapital - total_fees
@@ -547,14 +597,31 @@ def simulate(
             total_value = sum(values.values(), Decimal(0)) + total_cash()
             if total_value > 0:
                 ziel_topf = next(t for t in strategy.toepfe if t.name == strategy.ziel_topf)
-                if strategy.gewichte_fn is not None:
-                    current_weights = strategy.gewichte_fn(rows, i)
-                    ziel_gewicht_effektiv = sum(
-                        (current_weights.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
-                    )
-                else:
-                    current_weights = base_weights
-                    ziel_gewicht_effektiv = strategy.ziel_gewicht
+                current_weights = handelbare_gewichte(weights_at(i), prices)
+                # Die Schwelle vergleicht Ist gegen Ziel - beide muessen sich auf
+                # dieselbe (umgelegte) Zielverteilung beziehen, sonst schlaegt der
+                # Trigger dauerhaft an, solange Instrumente fehlen.
+                ziel_gewicht_effektiv = sum(
+                    (current_weights.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
+                )
+                # Ein Instrument, das erstmals einen Kurs hat (Boersengang, Start
+                # der verfuegbaren Historie), gehoert ab jetzt ins Zielportfolio.
+                # Das ist ein Erstkauf, kein Korrigieren von Drift - deshalb
+                # bewusst unabhaengig von opt.rebalancing, analog zum bisherigen
+                # "delayed_initial_buy" fuer geparktes Kapital.
+                # Ebenso muss noch nicht investiertes Kapital eingesetzt werden,
+                # sobald es ein Ziel dafuer gibt. Das passiert, wenn zeitweise KEIN
+                # Zielinstrument handelbar war (z. B. "Sell in May" startet im
+                # September 2006 defensiv, Topf A existiert aber erst ab 2008) -
+                # ueber den Topf-A-Trigger allein wuerde dieses Kapital nie wieder
+                # investiert, weil dessen Ist- und Zielgewicht dann beide 0 sind.
+                neue_instrumente = {t for t in tickers if t in prices} - handelbare_ticker
+                if neue_instrumente or total_cash() > 0:
+                    grund = "neues_instrument" if neue_instrumente else "kapitaleinsatz"
+                    if rebalance_to_targets(prices, row.date, grund, current_weights):
+                        last_rebalance_date = row.date
+                    values = current_values(prices)
+                    total_value = sum(values.values(), Decimal(0)) + total_cash()
                 ziel_topf_value = sum(
                     (values.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
                 )
@@ -593,6 +660,7 @@ def simulate(
         value_history.append(
             ValuePoint(row.date, total_value, values, ticker_weights, topf_values, topf_weights)
         )
+        handelbare_ticker.update(t for t in tickers if t in prices)
 
     tax_status = TaxStatus(
         year=current_tax_year,
