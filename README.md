@@ -10,6 +10,35 @@ deviates from that document in a few places (see
 weekly instead of daily price fetching, CSV persistence in the Git repo
 instead of a Google Sheet, output as a static dashboard on GitHub Pages.
 
+## The portfolio
+
+Every strategy and scenario draws from the same 17 instruments defined in
+`instruments.py`; which of them a given strategy actually holds, and at what
+weight, is decided separately in `strategies.py`. Two buckets recur in every
+strategy:
+
+- **Bucket A – Safety**: broad, low-volatility instruments — a global bond
+  ETF and physical gold. Always the smaller half of the barbell (20% or 30%,
+  depending on the strategy).
+- **Bucket B – Growth**: broad, diversified equity exposure — a global
+  equity ETF, a Nasdaq-100 ETF, a semiconductor-sector ETF, an
+  emerging-markets ETF, and Bitcoin. The larger half of the barbell (80%, or
+  60% in the strategy described next).
+
+One strategy, `Barbell 20/60/20 + Single-Stock Satellite`, adds a third
+bucket, **Bucket C – Single-Stock Satellite**: 10 equally-weighted individual
+stocks instead of broad ETFs. "Satellite" here follows the common
+core-satellite terminology from portfolio construction — a smaller,
+concentrated, higher-conviction (and higher-volatility) allocation held
+alongside a diversified "core", not a synonym for "additional" or "extra".
+The 20 percentage points for it come out of Bucket B, so the overall risk
+profile (80% risky / 20% safe) stays the same as in `Barbell 20/80` — only
+the growth side becomes more concentrated. The 10 stocks deliberately mix
+highly volatile growth/thematic names (Lumentum, BYD, SolarEdge, SMA Solar,
+Tesla, Palantir, Strategy/formerly MicroStrategy, Rivian) with two defensive
+blue chips (Coca-Cola, Roche) as a counterexample — a first pass, not an
+optimized or backtested selection.
+
 ## Architecture
 
 The project splits into two halves that only touch each other through a CSV
@@ -169,13 +198,6 @@ weekly idempotency and the same carry-forward note for missing prices.
   (`src/boersenspiel/sources/alphavantage.py`). Requires the
   `ALPHAVANTAGE_API_KEY` environment variable (see below). Ticker symbol
   mapping lives exclusively in this file.
-- **Used previously, still present in the repo:** `YfinanceStooqSource`
-  (`src/boersenspiel/sources/yfinance_stooq.py`, yfinance primary, Stooq CSV
-  as fallback) – replaced as the default source because yfinance repeatedly
-  failed against Yahoo's crumb/cookie authentication (empty responses for
-  all tickers, see Known limitations below). Remains in the repo as an
-  example of an interchangeable source, but is no longer called by
-  `run_fetch.py`.
 - **Alternative (Cowork/web search):** To avoid maintaining either an API-key
   limit or ticker symbol mappings, price fetching can instead run
   manually/via a Cowork scheduled task that determines prices via web search
@@ -189,29 +211,25 @@ without restructuring code.
 
 ### Setting up Alpha Vantage
 
-1. Get an API key from
-   [alphavantage.co](https://www.alphavantage.co/support/#api-key) (free
-   plan: 25 requests/day, max. 1 request/second – still sufficient for the
-   current 17 tickers fetched once a week, but with little headroom for
-   additional manual fetches on the same day).
-2. Store it as a GitHub Actions secret: Settings → Secrets and variables →
-   Actions → New repository secret → name `ALPHAVANTAGE_API_KEY`.
-3. Ticker symbols were verified via `SYMBOL_SEARCH` and partly deviate from
-   the obvious pattern: the Xetra suffix is `.DEX` (not `.DE`); EIMI trades
-   on Xetra under the local code `IBC3.DEX`; SEMI (iShares Global
-   Semiconductors) is not listed on Xetra, only via the Amsterdam listing
-   `SEMI.AMS` (also in EUR). BTC-EUR goes through the separate
-   `DIGITAL_CURRENCY_DAILY` endpoint. The 10 single stocks of the satellite
-   bucket run directly on their US ticker in USD except for SMA Solar
-   (`S92.DEX`, Xetra), including the two ADRs BYDDY (BYD) and RHHBY (Roche) -
-   a continuous EUR listing on the Frankfurt Stock Exchange/Xetra does not
-   exist for every stock (e.g. not for Coca-Cola). That's why
-   `AlphaVantageSource` converts these `USD_TICKERS` on every fetch using the
-   current `CURRENCY_EXCHANGE_RATE` (USD→EUR) - otherwise the
-   (currency-blind) engine would misinterpret USD amounts as EUR. If the
-   EUR/USD fetch fails, the affected tickers are marked `missing` for that
-   week (carry-forward applies) instead of storing an incorrectly converted
-   price.
+Get a free API key from
+[alphavantage.co](https://www.alphavantage.co/support/#api-key) (25
+requests/day, max. 1 request/second) and store it as a GitHub Actions
+secret: Settings → Secrets and variables → Actions → New repository secret →
+name `ALPHAVANTAGE_API_KEY`. That's the whole setup.
+
+The one non-obvious part is the ticker symbol mapping, verified via
+`SYMBOL_SEARCH`: the Xetra suffix is `.DEX` (not `.DE`); EIMI trades on
+Xetra under the local code `IBC3.DEX`; SEMI (iShares Global Semiconductors)
+is not listed on Xetra, only via the Amsterdam listing `SEMI.AMS` (also in
+EUR); BTC-EUR goes through the separate `DIGITAL_CURRENCY_DAILY` endpoint.
+The 10 single stocks of the satellite bucket run directly on their US ticker
+in USD except for SMA Solar (`S92.DEX`, Xetra), including the two ADRs
+BYDDY (BYD) and RHHBY (Roche) - a continuous EUR listing on the Frankfurt
+Stock Exchange/Xetra doesn't exist for every stock (e.g. not for Coca-Cola).
+`AlphaVantageSource` therefore converts these `USD_TICKERS` on every fetch
+using the current `CURRENCY_EXCHANGE_RATE` (USD→EUR); if that conversion
+fails, the affected tickers are marked `missing` for the week
+(carry-forward applies) instead of storing a wrongly converted price.
 
 ## Historical backfill
 
@@ -381,12 +399,6 @@ pytest -q
 
 ## Known limitations
 
-- **yfinance** (no longer the default source) is an unofficial library
-  against undocumented Yahoo endpoints. In the first production workflow run
-  (2026-08-17) it failed for all 7 tickers with
-  `Expecting value: line 1 column 1` – Yahoo now requires crumb/cookie
-  authentication that the pinned version (0.2.43) no longer supported.
-  Hence the switch to Alpha Vantage as the default source.
 - **Alpha Vantage free-tier limit:** 25 requests/day, max. 1 request/second.
   Still unproblematic for the current 17 tickers fetched once a week, but
   barely any headroom for additional manual fetches on the same day;
