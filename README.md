@@ -2,10 +2,9 @@
 
 **📊 Dashboard:** [s540d.github.io/Boersenspiel](https://s540d.github.io/Boersenspiel/)
 
-Virtual portfolio following a barbell strategy, based on the requirements
-document `Pflichtenheft_PortfolioProjekt_v2.md` (deliberately **not** part of
-this repository, see note below). The technical implementation intentionally
-deviates from that document in a few places (see
+Virtual portfolio following a barbell strategy, based on an original project
+requirements document from early planning. The technical implementation
+intentionally deviates from that document in a few places (see
 [Deviations from the requirements](#deviations-from-the-requirements) below):
 weekly instead of daily price fetching, CSV persistence in the Git repo
 instead of a Google Sheet, output as a static dashboard on GitHub Pages.
@@ -475,12 +474,3 @@ pytest -q
 Rebalancing threshold, order fees, and tax logic (26.375%, €1,000 tax-free
 allowance, loss carryforward) were carried over from the requirements
 document unchanged.
-
-> **Note on the requirements document:** `Pflichtenheft_PortfolioProjekt_v2.md`
-> is deliberately **not** checked into this repository (it lives elsewhere,
-> e.g. in Google Drive/Confluence from the original planning discussion) and
-> therefore can't be linked here. The table above and the modeling decisions
-> further up summarize the content relevant to the implementation; for
-> detailed questions about the exact wording (e.g. about the harvest
-> algorithm, see [#13](https://github.com/S540d/Boersenspiel/issues/13)),
-> the external document must be consulted.
