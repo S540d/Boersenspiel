@@ -15,7 +15,12 @@ Portfolios ist - dieselbe Umrechnung, die auch der laufende Live-Abruf
 Verbraucht ca. 18 Requests (16 nicht-Krypto-Ticker + 1x FX_WEEKLY + 1x
 Krypto) - passt in das taegliche Alpha-Vantage-Free-Tier-Limit von 25, sollte
 aber NICHT mehrfach am selben Tag laufen (das Limit gilt pro Tag und API-Key,
-nicht pro Skriptlauf).
+nicht pro Skriptlauf). BTC-EUR laeuft dabei ueber denselben einen FX_WEEKLY-
+Request wie die USD-Einzelaktien (kein zusaetzlicher Request) - siehe
+``fetch_crypto_weekly_history`` in ``sources/alphavantage.py`` (Issue #56:
+``DIGITAL_CURRENCY_WEEKLY`` liefert fuer ``market=EUR`` im Free-Tier nur ca.
+50 statt der vollen Historie, fuer ``market=USD`` dagegen die komplette
+verfuegbare Historie zurueck).
 
 ``--years`` ist nur eine untere Schranke, die an die Source durchgereicht wird
 (``_parse_weekly_close_series``/``fetch_crypto_weekly_history`` filtern die von
@@ -86,6 +91,13 @@ def collect_weekly_series(
     per_ticker: dict[str, dict[date, float]] = {}
     non_crypto = [t for t in tickers if t != "BTC-EUR"]
     usd_tickers_present = [t for t in non_crypto if t in USD_TICKERS]
+    crypto_present = "BTC-EUR" in tickers
+    # BTC-EUR wird ueber DIGITAL_CURRENCY_WEEKLY(market=USD) + FX_WEEKLY
+    # umgerechnet statt direkt ueber market=EUR abgerufen - Alpha Vantage
+    # liefert fuer den EUR-Markt im Free-Tier nur ca. 50 statt der vollen
+    # Historie (siehe Issue #56 / AlphaVantageSource.fetch_crypto_weekly_history).
+    # Es braucht deshalb denselben FX-Kurs wie die "echten" USD-Ticker.
+    fx_needed = bool(usd_tickers_present) or crypto_present
 
     erste_anfrage = True
 
@@ -102,10 +114,11 @@ def collect_weekly_series(
     # zweite Versuch fuer denselben Tag verloren (so geschehen beim ersten
     # Lauf, siehe Issue #6). Vorne kostet derselbe Fehlschlag genau 1 Request.
     fx_rates: dict[date, float] = {}
-    if usd_tickers_present:
+    if fx_needed:
         pace()
         print("  EUR/USD-Historie (FX_WEEKLY) ...", file=sys.stderr)
         fx_rates = source.fetch_fx_weekly_eur_per_usd(since)
+    fx_dates_sorted = sorted(fx_rates)
 
     for ticker in non_crypto:
         pace()
@@ -113,7 +126,6 @@ def collect_weekly_series(
         per_ticker[ticker] = source.fetch_weekly_history(ticker, since)
 
     if usd_tickers_present:
-        fx_dates_sorted = sorted(fx_rates)
         for ticker in usd_tickers_present:
             per_ticker[ticker] = {
                 d: usd_price * rate
@@ -121,10 +133,15 @@ def collect_weekly_series(
                 if (rate := _nearest_fx_rate(fx_rates, fx_dates_sorted, d)) is not None
             }
 
-    if "BTC-EUR" in tickers:
+    if crypto_present:
         pace()
-        print("  BTC-EUR ...", file=sys.stderr)
-        per_ticker["BTC-EUR"] = source.fetch_crypto_weekly_history(since)
+        print("  BTC-EUR (via BTC-USD + FX_WEEKLY) ...", file=sys.stderr)
+        btc_usd = source.fetch_crypto_weekly_history(since)
+        per_ticker["BTC-EUR"] = {
+            d: usd_price * rate
+            for d, usd_price in btc_usd.items()
+            if (rate := _nearest_fx_rate(fx_rates, fx_dates_sorted, d)) is not None
+        }
 
     return per_ticker
 

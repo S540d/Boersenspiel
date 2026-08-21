@@ -53,7 +53,7 @@ def test_collect_weekly_series_converts_usd_tickers_to_eur():
 
     assert result["EUNL"][date(2026, 8, 14)] == 85.0  # EUR-Ticker unveraendert
     assert result["LITE"][date(2026, 8, 14)] == pytest.approx(90.0)  # 100 USD * 0.90
-    assert result["BTC-EUR"][date(2026, 8, 14)] == 58000.0
+    assert result["BTC-EUR"][date(2026, 8, 14)] == pytest.approx(52200.0)  # 58000 USD * 0.90
 
 
 def test_collect_weekly_series_skips_fx_fetch_when_no_usd_tickers():
@@ -66,6 +66,20 @@ def test_collect_weekly_series_skips_fx_fetch_when_no_usd_tickers():
     result = bh.collect_weekly_series(source, ["EUNL"], since=date(2020, 1, 1))
 
     assert result["EUNL"][date(2026, 8, 14)] == 85.0
+
+
+def test_collect_weekly_series_fetches_fx_for_crypto_even_without_other_usd_tickers():
+    """BTC-EUR laeuft ueber DIGITAL_CURRENCY_WEEKLY(market=USD) + FX_WEEKLY
+    (Issue #56) - der FX-Abruf darf deshalb nicht (mehr) daran haengen, ob
+    daneben noch eine "echte" USD-Aktie im Ticker-Set ist."""
+    source = _FakeSource(
+        weekly={"EUNL": {date(2026, 8, 14): 85.0}},
+        fx={date(2026, 8, 14): 0.90},
+        crypto={date(2026, 8, 14): 58000.0},
+    )
+    result = bh.collect_weekly_series(source, ["EUNL", "BTC-EUR"], since=date(2020, 1, 1))
+
+    assert result["BTC-EUR"][date(2026, 8, 14)] == pytest.approx(52200.0)  # 58000 USD * 0.90
 
 
 def test_collect_weekly_series_forward_fills_fx_rate_for_missing_week():

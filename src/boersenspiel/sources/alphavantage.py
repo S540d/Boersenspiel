@@ -251,20 +251,34 @@ class AlphaVantageSource:
         return _parse_weekly_close_series(_extract_time_series(resp.json(), "USD/EUR (FX_WEEKLY)"), since)
 
     def fetch_crypto_weekly_history(self, since: date) -> dict[date, float]:
-        """Woechentliche BTC-EUR-Historie ab ``since``."""
+        """Woechentliche BTC-**USD**-Historie ab ``since`` (native Waehrung des
+        Symbols, analog zu ``fetch_weekly_history`` - Umrechnung nach EUR
+        erfolgt separat ueber ``fetch_fx_weekly_eur_per_usd``, siehe
+        ``scripts/backfill_history.py``).
+
+        Bewusst ``market=USD`` statt ``market=EUR``: Alpha Vantage liefert
+        ``DIGITAL_CURRENCY_WEEKLY`` fuer ``market=EUR`` im Free-Tier nur ca. 50
+        Wochen Historie zurueck (statt der vollen Historie seit 2010), fuer
+        ``market=USD`` dagegen die komplette verfuegbare Historie (Issue #56,
+        manuell mit dem Alpha-Vantage-MCP-Server verifiziert am 21.08.2026:
+        50 vs. 840 Wochen bei sonst identischer Anfrage) - derselbe Grund,
+        aus dem die Einzelaktien in ``USD_TICKERS`` schon ueber USD + FX_WEEKLY
+        laufen statt ueber eine (nicht fuer jeden Wert existierende)
+        EUR-Notierung.
+        """
         resp = requests.get(
             ALPHAVANTAGE_URL,
-            params={"function": "DIGITAL_CURRENCY_WEEKLY", "symbol": "BTC", "market": "EUR", "apikey": self.api_key},
+            params={"function": "DIGITAL_CURRENCY_WEEKLY", "symbol": "BTC", "market": "USD", "apikey": self.api_key},
             timeout=30,
         )
         resp.raise_for_status()
-        series = _extract_time_series(resp.json(), "BTC-EUR (DIGITAL_CURRENCY_WEEKLY)")
+        series = _extract_time_series(resp.json(), "BTC-USD (DIGITAL_CURRENCY_WEEKLY)")
         result: dict[date, float] = {}
         for date_str, values in series.items():
             d = date.fromisoformat(date_str)
             if d < since:
                 continue
-            close_key = next((k for k in values if k.startswith("4") and "EUR" in k), None) or next(
+            close_key = next((k for k in values if k.startswith("4") and "USD" in k), None) or next(
                 (k for k in values if k.startswith("4.")), None
             )
             if close_key is None:
