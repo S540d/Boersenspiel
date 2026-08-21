@@ -259,6 +259,122 @@ def test_missing_price_in_first_row_parks_capital_as_cash_and_invests_later():
     assert delayed_buys[0].ticker == "T2"
 
 
+# --- Paket A: Steuerkorrektheit (#37/#38/#39, siehe #46) --------------------
+
+
+def test_teilfreistellung_reduziert_steuerpflichtigen_gewinn_um_30_prozent():
+    # EUNL (Aktienfonds-ETF, 30% Teilfreistellung) vs. 4GLD (kein Fonds, 0%
+    # Teilfreistellung) - sonst exakt dieselben Kurse/Gewichte wie die
+    # SIMPLE_STRATEGY-Fixture oben, damit sich der Effekt isoliert nachrechnen
+    # lässt: derselbe Rebalance-Verkauf, der ohne Teilfreistellung einen
+    # Gewinn von 186,50 ergäbe (siehe test_simple_strategy_...), wird jetzt
+    # nur zu 70% (130,55) gegen den Freibetrag verrechnet.
+    strategy = Strategy(
+        name="Test-Teilfreistellung",
+        startkapital=Decimal("1002"),
+        toepfe=[
+            Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"EUNL": Decimal("1")}),
+            Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"4GLD": Decimal("1")}),
+        ],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("0.5"),
+        rebalancing_schwelle_pp=Decimal("10"),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"EUNL": Decimal("100"), "4GLD": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"EUNL": Decimal("200"), "4GLD": Decimal("50")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.tax_status.freibetrag_verbleibend == Decimal("869.45")
+    assert result.tax_status.kumulierte_steuer == Decimal("0")
+
+
+def test_vorabpauschale_verbraucht_freibetrag_ohne_verkauf():
+    # EUNL ist thesaurierend - am Jahresende (hier: letzte Zeile 2024, mit
+    # Optimierungen(steueroptimierung=False), um den Effekt vom Dezember-
+    # Harvest zu isolieren) greift die vereinfachte Vorabpauschale, obwohl
+    # keine einzige Position verkauft wird.
+    # Wert Jahresbeginn: 9,99 Einheiten * 100 = 999.
+    # Wert an der Harvest-Zeile: 9,99 * 150 = 1498,50 -> Wertsteigerung 499,50.
+    # Vorabpauschale = min(999 * 0,02 * 0,70, 499,50) = 13,986.
+    # Nach 30% Teilfreistellung steuerpflichtig: 13,986 * 0,7 = 9,7902.
+    strategy = Strategy(
+        name="Test-Vorabpauschale",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"EUNL": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(steueroptimierung=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"EUNL": Decimal("100")}),
+        PriceRow(date(2024, 12, 30), {"EUNL": Decimal("150")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.holdings["EUNL"] == Decimal("9.99")  # keine Trades ausser Initialkauf
+    assert result.tax_status.freibetrag_verbleibend == Decimal("990.2098")
+    assert result.tax_status.kumulierte_steuer == Decimal("0")
+
+
+def test_btc_gewinn_innerhalb_spekulationsfrist_landet_in_eigener_freigrenze():
+    # BTC-EUR (Spekulationsfrist 365 Tage) neben 4GLD (normale Abgeltungsteuer)
+    # - derselbe Rebalance-Verkauf wie in test_simple_strategy_... (Gewinn
+    # 186,50), aber nur 7 Tage Haltedauer: landet im getrennten
+    # Freigrenzen-Topf statt im Sparerpauschbetrag - dieser bleibt
+    # unangetastet bei 1000.
+    strategy = Strategy(
+        name="Test-BTC-innerhalb-Frist",
+        startkapital=Decimal("1002"),
+        toepfe=[
+            Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"BTC-EUR": Decimal("1")}),
+            Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"4GLD": Decimal("1")}),
+        ],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("0.5"),
+        rebalancing_schwelle_pp=Decimal("10"),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"BTC-EUR": Decimal("100"), "4GLD": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"BTC-EUR": Decimal("200"), "4GLD": Decimal("50")}),
+    ]
+    result = simulate(rows, strategy)
+
+    # Der BTC-Gewinn (186,50, unter der 1000€-Freigrenze) bleibt steuerfrei,
+    # verbraucht aber NICHT den Sparerpauschbetrag der Kapitalertraege.
+    assert result.tax_status.freibetrag_verbleibend == Decimal("1000")
+    assert result.tax_status.kumulierte_steuer == Decimal("0")
+
+
+def test_btc_gewinn_nach_ablauf_der_spekulationsfrist_ist_steuerfrei():
+    # Gleicher Rebalance-Mechanismus, aber die BTC-Position wird 367 Tage
+    # gehalten (> 365 Tage Spekulationsfrist) und der Gewinn faellt deutlich
+    # groesser aus (Kurssprung 100 -> 2000) - wuerde er (fehlerhaft) besteuert,
+    # sowohl die Freigrenze als auch der Sparerpauschbetrag wuerden deutlich
+    # sichtbare Steuer ausloesen. Stattdessen bleibt er komplett steuerfrei.
+    strategy = Strategy(
+        name="Test-BTC-ausserhalb-Frist",
+        startkapital=Decimal("1002"),
+        toepfe=[
+            Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"BTC-EUR": Decimal("1")}),
+            Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"4GLD": Decimal("1")}),
+        ],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("0.5"),
+        rebalancing_schwelle_pp=Decimal("10"),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"BTC-EUR": Decimal("100"), "4GLD": Decimal("100")}),
+        PriceRow(date(2025, 1, 2), {"BTC-EUR": Decimal("2000"), "4GLD": Decimal("100")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.tax_status.kumulierte_steuer == Decimal("0")
+    assert result.tax_status.freibetrag_verbleibend == Decimal("1000")
+
+
 def test_missing_price_in_later_row_values_with_last_known_price():
     # T2 fehlt in der mittleren Zeile - die Position darf nicht aus der Summe
     # herausfallen, sondern wird mit dem letzten bekannten Kurs bewertet.

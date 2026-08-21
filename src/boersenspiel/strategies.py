@@ -256,3 +256,24 @@ STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
 ORDERGEBUEHR = Decimal("1")  # Euro pro Trade (Kauf wie Verkauf)
 STEUERSATZ = Decimal("0.26375")  # 25% Kapitalertragsteuer + 5,5% Soli darauf
 SPARERPAUSCHBETRAG_PRO_JAHR = Decimal("1000")  # Euro, Reset zu Jahresbeginn
+
+# --- Vorabpauschale für thesaurierende Fonds (#39) --------------------------
+#
+# TODO(#39): Platzhalter-Vereinfachung. Der tatsächliche Basiszins wird vom
+# BMF jährlich neu bekanntgegeben (2020-2026 unterschiedliche Werte) und kann
+# ohne eine autoritative Quelle hier nicht verlässlich hinterlegt werden.
+# Bis echte historische Jahreswerte nachgetragen sind, rechnet die Simulation
+# mit einem konstanten Platzhalter-Basiszins für alle Jahre.
+VORABPAUSCHALE_BASISZINS_PLATZHALTER = Decimal("0.02")  # 2,0% p.a., Platzhalter
+VORABPAUSCHALE_FAKTOR = Decimal("0.70")  # gesetzlich fixierter Anteil des Basisertrags
+
+# --- Spekulationsfrist für private Veräußerungsgeschäfte, z. B. BTC (#37) ---
+#
+# § 23 Abs. 3 Satz 5 EStG: Freigrenze (nicht Freibetrag!) für Gewinne aus
+# privaten Veräußerungsgeschäften innerhalb der Spekulationsfrist - bleibt der
+# Jahresgewinn darunter, bleibt er komplett steuerfrei; wird er überschritten,
+# ist der GESAMTE Gewinn steuerpflichtig (kein Sockelbetrag wie beim
+# Sparerpauschbetrag). Vereinfachung: Besteuerung mit dem pauschalen
+# STEUERSATZ statt dem tatsächlich anzuwendenden persönlichen
+# Einkommensteuersatz (siehe #37-Diskussion).
+SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR = Decimal("1000")
