@@ -17,8 +17,20 @@ Krypto) - passt in das taegliche Alpha-Vantage-Free-Tier-Limit von 25, sollte
 aber NICHT mehrfach am selben Tag laufen (das Limit gilt pro Tag und API-Key,
 nicht pro Skriptlauf).
 
+``--years`` ist nur eine untere Schranke, die an die Source durchgereicht wird
+(``_parse_weekly_close_series``/``fetch_crypto_weekly_history`` filtern die von
+Alpha Vantage gelieferte Zeitreihe auf Kurse ab diesem Datum) - ein Wert, der
+weiter zurueckliegt als die tatsaechlich verfuegbare Historie eines Tickers,
+liefert einfach dessen gesamte verfuegbare Historie statt eines Fehlers. Der
+Default zielt deshalb bewusst auf "so weit wie moeglich" statt auf einen
+Zeitraum, der zur juengsten Position (Rivian, IPO November 2021) passt -
+aeltere Instrumente (ETFs, Einzelaktien wie Coca-Cola/Roche) haben oft
+15-20+ Jahre Historie bei Alpha Vantage. Fuer Ticker ohne Kurs in einer frueh
+liegenden Woche traegt ``history_store.record_week`` ohnehin "missing" statt
+eines erfundenen Werts ein.
+
 Nutzung:
-    python scripts/backfill_history.py --years 5
+    python scripts/backfill_history.py --years 20
 """
 
 from __future__ import annotations
@@ -150,7 +162,12 @@ def write_backfilled_history(per_ticker: dict[str, dict[date, float]], data_dir:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--years", type=int, default=5, help="Wie viele Jahre historischer Daten (Default: 5)")
+    parser.add_argument(
+        "--years",
+        type=int,
+        default=20,
+        help="Wie viele Jahre historischer Daten, nur untere Schranke (Default: 20 = so weit wie verfuegbar)",
+    )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Zielverzeichnis (Default: data/)")
     args = parser.parse_args()
 

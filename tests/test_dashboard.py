@@ -8,11 +8,20 @@ kommt aus ``engine.simulate()``).
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
-from boersenspiel.dashboard import _max_drawdown_pct, _slug, _volatilitaet_pct, build_dashboard
+from boersenspiel.dashboard import (
+    _downside_deviation,
+    _max_drawdown_pct,
+    _sharpe_ratio,
+    _slug,
+    _sortino_ratio,
+    _volatilitaet_pct,
+    _walk_forward_segmente,
+    build_dashboard,
+)
 from boersenspiel.history_store import FetchLogEntry, PriceRow
 from boersenspiel.strategies import Beitrag, Strategy, Topf
 
@@ -287,3 +296,96 @@ def test_holdings_table_ohne_fetch_log_zeigt_keine_eingefroren_markierung(tmp_pa
     detail_html = _detail_html(tmp_path, "a-verdoppler")
 
     assert "eingefroren" not in detail_html
+
+
+# --- Risikoadjustierte Kennzahlen: Sharpe & Sortino -------------------------------
+
+
+def test_sharpe_ratio_ist_null_bei_konstanter_reihe():
+    # Keine Streuung der Wochenrenditen -> Nenner 0 -> bewusst 0.0 statt Division durch 0.
+    assert _sharpe_ratio([1000.0, 1000.0, 1000.0]) == 0.0
+
+
+def test_sharpe_ratio_positiv_bei_positiver_ueberschussrendite():
+    assert _sharpe_ratio([100.0, 150.0, 200.0]) > 0.0
+
+
+def test_sortino_ratio_ist_null_ohne_verlustwochen():
+    # Nur Gewinnwochen -> keine Downside-Deviation -> bewusst 0.0 statt undefiniert.
+    assert _sortino_ratio([100.0, 150.0, 200.0]) == 0.0
+
+
+def test_sortino_ratio_positiv_trotz_verlustwoche_bei_positivem_gesamttrend():
+    assert _sortino_ratio([100.0, 200.0, 100.0, 150.0]) > 0.0
+
+
+def test_downside_deviation_ignoriert_streuung_nach_oben():
+    # Nur die Verlustwoche (-0.1) fliesst ein; wie stark die Gewinnwochen streuen, ist
+    # fuer die Downside-Deviation irrelevant - anders als bei der (Gesamt-)Volatilitaet.
+    assert _downside_deviation([0.1, 0.2, -0.1]) == _downside_deviation([0.5, 0.9, -0.1])
+
+
+def test_downside_deviation_ohne_verlustwochen_ist_null():
+    assert _downside_deviation([0.1, 0.2, 0.05]) == 0.0
+
+
+def test_summary_table_zeigt_sharpe_und_sortino_spalten(tmp_path: Path):
+    output = build_dashboard(_auf_und_ab_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert "Sharpe" in html
+    assert "Sortino" in html
+
+
+def test_sharpe_sortino_sind_nur_auf_startseite(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "Sharpe" not in detail_html
+    assert "Sortino" not in detail_html
+
+
+# --- Walk-Forward-Robustheit ueber Teilperioden -----------------------------------
+
+
+def _lange_rows(wochen: int = 33) -> list[PriceRow]:
+    """Genug Wochen fuer 3 Walk-Forward-Segmente (>= 10 Wochen/Segment); T1 schwankt
+    auf und ab statt monoton zu steigen, damit die Teilperioden unterschiedlich
+    ausfallen koennen."""
+    start = date(2024, 1, 1)
+    rows = []
+    preis = Decimal("100")
+    for i in range(wochen):
+        preis = preis * Decimal("1.05") if i % 3 else preis * Decimal("0.9")
+        rows.append(PriceRow(start + timedelta(weeks=i), {"T1": preis}))
+    return rows
+
+
+def test_walk_forward_segmente_leer_bei_zu_wenig_wochen():
+    # 10 Wochen reichen nicht fuer 2 Segmente à mindestens 10 Wochen.
+    assert _walk_forward_segmente(_lange_rows(10), ZWEI_STRATEGIEN[0]) == []
+
+
+def test_walk_forward_segmente_teilt_lange_historie_in_drei_perioden():
+    segmente = _walk_forward_segmente(_lange_rows(33), ZWEI_STRATEGIEN[0])
+
+    assert len(segmente) == 3
+    for segment in segmente:
+        assert "–" in segment["label"]
+        assert "rendite_label" in segment
+
+
+def test_build_dashboard_zeigt_walk_forward_abschnitt_bei_genug_historie(tmp_path: Path):
+    build_dashboard(_lange_rows(33), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "Robustheit über Teilperioden (Walk-Forward)" in detail_html
+    assert 'id="walk-chart"' in detail_html
+
+
+def test_build_dashboard_versteckt_walk_forward_abschnitt_bei_kurzer_historie(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "Robustheit über Teilperioden" not in detail_html
+    assert "walk-chart" not in detail_html

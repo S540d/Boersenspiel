@@ -22,7 +22,7 @@ pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # 
 
 python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
 python scripts/record_prices.py --date 2026-08-17 --prices '{"EUNL": 82.1, ...}'  # manueller Kurseintrag
-python scripts/backfill_history.py --years 5        # einmaliger historischer Backfill (ersetzt price_history.csv, ~18 API-Requests)
+python scripts/backfill_history.py --years 20       # einmaliger historischer Backfill (ersetzt price_history.csv, ~18 API-Requests)
 python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
 python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
 ```
@@ -260,6 +260,31 @@ inkrementell fortgeschrieben).
   eingefroren, aus `fetch_log.csv` via `read_fetch_log()`).
   `build_dashboard()` nimmt dafür optional `fetch_log` entgegen;
   `scripts/build_dashboard.py` übergibt `read_fetch_log()` standardmäßig.
+  Zwei weitere reine Anzeige-Ableitungen zur Fundiertheit von Invest-
+  Entscheidungen: `_sharpe_ratio()`/`_sortino_ratio()` ergänzen die
+  Übersichtstabelle um risikoadjustierte Rendite (annualisierte
+  Überrendite ÷ annualisierte Volatilität bzw. ÷ Downside-Deviation nur der
+  Verlustwochen, `_downside_deviation()`) — eine hohe Rendite bei ebenso
+  hoher Streuung ist kein besseres Ergebnis als eine niedrigere Rendite bei
+  wenig Risiko. `_RISIKOFREIER_ZINS_PLATZHALTER = 0.0` ist ein bewusster
+  Platzhalter nach demselben Muster wie
+  `VORABPAUSCHALE_BASISZINS_PLATZHALTER`, kein echter Referenzzins. Jede
+  Detailseite bekommt zusätzlich (sofern genug Kurshistorie vorliegt) den
+  Abschnitt "Robustheit über Teilperioden (Walk-Forward)"
+  (`_walk_forward_segmente()`): die Kurshistorie wird in bis zu drei
+  gleich große, aufeinanderfolgende Zeiträume geteilt (mindestens 10
+  Wochen je Segment, sonst entfällt der Abschnitt komplett — bei
+  `_rows()`-großen Test-Fixtures z. B.), und `engine.simulate()` läuft je
+  Segment unabhängig mit frischem Startkapital (keine fortgeführte
+  Position). Da die Regeln in `scenarios.py` nicht an Daten gefittete
+  Parameter haben, ist klassisches Train/Test-Splitting nicht anwendbar;
+  stattdessen macht dieser Abschnitt sichtbar, ob eine Strategie über
+  verschiedene Marktphasen hinweg ähnlich abschneidet oder ob die
+  Gesamtrendite nur aus einer einzelnen guten (oder schlechten) Teilperiode
+  stammt — relevant, weil alle Szenarien laut ihrer eigenen Beschreibung
+  "erster Ansatz, nicht optimiert/gebacktestet" auf einer einzigen, noch
+  kurzen Kurshistorie sind. Die Schwankungsbreite (größte minus kleinste
+  Perioden-Rendite) steht als Kennzahl über der Tabelle.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -311,7 +336,18 @@ Ticker-Abrufen, damit ein Fehlschlag einen statt 17 Requests kostet. Für den La
 Workflow `.github/workflows/backfill.yml` (nutzt das Repo-Secret, verlangt
 `confirm=REPLACE`, schreibt eine Plausibilitätsprüfung in die Job-Summary) -
 nicht am selben Tag wie den wöchentlichen Kursabruf starten (18 + 18
-Requests > Tageslimit 25).
+Requests > Tageslimit 25). `--years` ist nur eine untere Schranke, die
+`AlphaVantageSource.fetch_weekly_history()`/`fetch_crypto_weekly_history()`
+zum Filtern der von Alpha Vantage gelieferten Zeitreihe nutzen - ein Wert,
+der weiter zurückliegt als die tatsächlich verfügbare Historie eines
+Tickers, liefert einfach dessen komplette verfügbare Historie statt eines
+Fehlers. Default (Skript und Workflow-Input) ist deshalb bewusst 20 statt
+5: zielt auf "so weit wie möglich" statt auf einen Zeitraum, der
+zur jüngsten Satellit-Position passt (Rivian, IPO November 2021) - ältere
+Instrumente (ETFs, Coca-Cola, Roche) haben bei Alpha Vantage oft 15-20+
+Jahre Historie. Für Ticker ohne Kurs in einer früh liegenden Woche trägt
+`history_store.record_week()` ohnehin "missing" statt eines erfundenen
+Werts ein, dieselbe Lücken-Behandlung wie beim laufenden Live-Abruf.
 
 ### GitHub Actions (`.github/workflows/weekly-update.yml`)
 
@@ -362,7 +398,14 @@ gegen handgerechnete Kursreihen (konstant/monoton/auf-und-ab), die
 Konzentrationswarnung anhand einer Strategie mit einem einzelnen Topf (in
 dem der Topf-Trigger nie greift, weil der Topf immer 100% hält, während
 sich die Instrumente darin frei auseinanderentwickeln) sowie die
-Eingefroren-Markierung anhand eines übergebenen `fetch_log`.
+Eingefroren-Markierung anhand eines übergebenen `fetch_log`. Zusätzlich:
+Sharpe/Sortino gegen handgerechnete Grenzfälle (konstante Reihe → 0.0,
+nur Gewinnwochen → Sortino bewusst 0.0 statt undefiniert,
+`_downside_deviation()` ignoriert nachweislich Streuung nach oben) sowie
+`_walk_forward_segmente()` gegen eine lange synthetische Kursreihe (leer
+bei zu wenig Wochen, exakt drei Segmente bei ausreichender Historie) und
+End-to-End, dass der Detailseiten-Abschnitt "Robustheit über Teilperioden"
+nur bei genug Kurshistorie erscheint.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter

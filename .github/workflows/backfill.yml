@@ -15,9 +15,9 @@ on:
   workflow_dispatch:
     inputs:
       years:
-        description: "Wie viele Jahre Historie zurueck"
+        description: "Wie viele Jahre Historie zurueck (nur untere Schranke - laeuft immer bis zur aeltesten verfuegbaren Historie je Ticker)"
         required: true
-        default: "5"
+        default: "20"
       confirm:
         description: "Ersetzt data/price_history.csv KOMPLETT. Zum Bestaetigen 'REPLACE' eintippen."
         required: true
