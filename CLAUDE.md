@@ -162,6 +162,52 @@ inkrementell fortgeschrieben).
   überspringt den kompletten Dezember-Harvest-Block. Diese Schalter dienen
   dazu, den isolierten Renditebeitrag jedes Mechanismus messbar zu machen
   (#17) — siehe `dashboard._optimierungs_effekte()`.
+  **Steuerkorrekturen (#37/#38/#39, Paket A aus #46)**, alle über
+  `Instrument`-Felder in `instruments.py` gesteuert, nicht über
+  `Optimierungen` (das sind Modellfehler-Korrekturen, keine ein-/
+  ausschaltbaren Mechanismen):
+  - `Instrument.teilfreistellung` (#38): `process_realized_gain(gain,
+    ticker)` multipliziert Gewinn *und* Verlust vor der Verrechnung mit
+    `(1 - teilfreistellung)` — 30% für die vier Aktienfonds-ETFs (EUNL,
+    LYMS, SEMI, EIMI), 0% für Rentenfonds (EUNA), physisches Gold (4GLD),
+    Einzelaktien und BTC-EUR (kein Fondsprivileg).
+  - `Instrument.thesaurierend` (#39): `apply_vorabpauschale()` läuft bei
+    jeder Harvest-Zeile (`harvest_dates`, unabhängig von
+    `opt.steueroptimierung`, nur an `opt.besteuerung` gekoppelt) *vor* der
+    A/B-Entscheidung und wendet je thesaurierendem Instrument
+    `min(Wert_Jahresbeginn × VORABPAUSCHALE_BASISZINS_PLATZHALTER ×
+    VORABPAUSCHALE_FAKTOR, tatsächliche Wertsteigerung)` als zusätzlichen
+    Gewinn auf denselben Freibetrag-Topf an (inkl. Teilfreistellung) und
+    hebt die Kostenbasis um den vollen, unversteuerten Vorabpauschale-Betrag
+    an. `wert_jahresbeginn` wird am Ende jeder Zeile für das jeweils neue
+    Jahr aus den aktuellen `values` mitgeschrieben. **Bewusster Platzhalter:**
+    `VORABPAUSCHALE_BASISZINS_PLATZHALTER` in `strategies.py` ist ein
+    konstanter Ersatzwert, kein echter jährlicher BMF-Basiszins (siehe
+    TODO-Kommentar dort) — die Anwendung am Jahresende statt am 1. Werktag
+    des Folgejahres ist ebenfalls eine bewusste Vereinfachung der exakten
+    gesetzlichen Fälligkeit.
+  - `Instrument.spekulationsfrist_tage` (#37, nur BTC-EUR = 365): jede
+    `_Position` führt zusätzlich `kauf_tage_gewichtet` (stückzahlgewichtete
+    Summe der Kauf-Ordinaldaten, exakt analog zu `cost_total`/`avg_cost()`)
+    für ein vereinfachtes gewichtetes Kaufdatum
+    (`avg_kauf_tag_ordinal()`) statt echtem Per-Lot-Tracking. Bei jedem
+    Verkauf entscheidet `process_gain_for_sale()` anhand der Haltedauer
+    (Verkaufsdatum minus `avg_kauf_tag_ordinal()` vor dem Verkauf): über der
+    Frist steuerfrei (§ 23 EStG, berührt keinen Topf), sonst
+    `process_spekulationsgeschaeft()` — ein von Sparerpauschbetrag/
+    Verlustvortrag komplett getrennter Topf mit eigenem Verlustvortrag und
+    einer *Freigrenze* (§ 23 Abs. 3 Satz 5 EStG, `SPEKULATIONSFRIST_
+    FREIGRENZE_PRO_JAHR`) statt eines Freibetrags: unterhalb der Grenze
+    bleibt der GESAMTE Jahresgewinn steuerfrei, oberhalb wird der GESAMTE
+    Jahresgewinn steuerpflichtig (Kippgrenze, nicht Sockelbetrag) — als
+    Differenz `steuer(neuer Stand) - steuer(alter Stand)` pro Trade
+    berechnet, damit der rückwirkende Kipp-Effekt trotz zeilenweiser
+    Verarbeitung korrekt entsteht. `december_gewinnmitnahme()`/
+    `december_tax_loss_harvest()` schließen Instrumente mit gesetzter
+    Spekulationsfrist explizit aus ihren Kandidatenlisten aus, da beide
+    Maßnahmen ausschließlich den Abgeltungsteuer-Topf optimieren.
+    Vereinfachung: Besteuerung mit dem pauschalen `STEUERSATZ` statt dem
+    tatsächlich anzuwendenden persönlichen Einkommensteuersatz.
 - `dashboard.py` + `templates/` — reine Darstellungsschicht, rendert
   `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
   Strategie(n) aus `STRATEGIES`. Seit #31 zwei Seitentypen statt einer
@@ -281,6 +327,13 @@ Trades, keine `rebalance`-Trades, keine Dezember-Harvest-Trades, Steuerstatus
 bleibt bei den Defaultwerten), plus ein Test, dass ein explizit übergebenes
 `Optimierungen()` (alle Defaults) exakt dasselbe Ergebnis liefert wie gar
 keine Übergabe, und dass `Strategy.optimierungen` ohne Override greift.
+Eigener Abschnitt für die Steuerkorrekturen (#37/#38/#39): je ein von Hand
+nachgerechneter Test für Teilfreistellung (EUNL/4GLD-Rebalance, Freibetrag
+sinkt nur um 70% des Rohgewinns), Vorabpauschale (EUNL ohne jeden Verkauf,
+Freibetrag sinkt trotzdem am Jahresende) sowie BTC-Spekulationsfrist einmal
+innerhalb (Gewinn landet in der Freigrenze, Sparerpauschbetrag bleibt
+unangetastet) und einmal außerhalb der Frist (großer Gewinn bleibt komplett
+steuerfrei, andernfalls wäre eine deutliche Steuer sichtbar).
 `tests/test_history_store.py` prüft Wochen-Idempotenz, Carry-Forward und
 `read_fetch_log()`.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige

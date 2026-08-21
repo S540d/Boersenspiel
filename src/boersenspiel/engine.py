@@ -53,7 +53,32 @@ from datetime import date
 from decimal import Decimal
 
 from .history_store import PriceRow
-from .strategies import ORDERGEBUEHR, SPARERPAUSCHBETRAG_PRO_JAHR, STEUERSATZ, Optimierungen, Strategy
+from .instruments import INSTRUMENTS
+from .strategies import (
+    ORDERGEBUEHR,
+    SPARERPAUSCHBETRAG_PRO_JAHR,
+    SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR,
+    STEUERSATZ,
+    VORABPAUSCHALE_BASISZINS_PLATZHALTER,
+    VORABPAUSCHALE_FAKTOR,
+    Optimierungen,
+    Strategy,
+)
+
+
+def _teilfreistellung(ticker: str) -> Decimal:
+    instrument = INSTRUMENTS.get(ticker)
+    return instrument.teilfreistellung if instrument is not None else Decimal(0)
+
+
+def _thesaurierend(ticker: str) -> bool:
+    instrument = INSTRUMENTS.get(ticker)
+    return instrument.thesaurierend if instrument is not None else False
+
+
+def _spekulationsfrist_tage(ticker: str) -> int | None:
+    instrument = INSTRUMENTS.get(ticker)
+    return instrument.spekulationsfrist_tage if instrument is not None else None
 
 
 @dataclass
@@ -102,11 +127,20 @@ class SimulationResult:
 class _Position:
     units: Decimal = field(default_factory=lambda: Decimal(0))
     cost_total: Decimal = field(default_factory=lambda: Decimal(0))
+    # Stückzahl-gewichtete Summe der Kauf-Ordinaldaten - Grundlage für
+    # avg_kauf_tag_ordinal(), der vereinfachten Haltedauer-Näherung für die
+    # Spekulationsfrist (#37), analog zur Durchschnittskosten-Methode.
+    kauf_tage_gewichtet: Decimal = field(default_factory=lambda: Decimal(0))
 
     def avg_cost(self) -> Decimal:
         if self.units == 0:
             return Decimal(0)
         return self.cost_total / self.units
+
+    def avg_kauf_tag_ordinal(self) -> Decimal:
+        if self.units == 0:
+            return Decimal(0)
+        return self.kauf_tage_gewichtet / self.units
 
 
 def simulate(
@@ -152,11 +186,23 @@ def simulate(
     # realisierten Gewinne - Trigger und Zielgröße für den Tax-Loss-Harvest
     # (Maßnahme B), unabhängig von freibetrag_verbleibend.
     steuerpflichtige_gewinne_jahr = Decimal(0)
+    # Getrennter Topf für private Veräußerungsgeschäfte innerhalb der
+    # Spekulationsfrist (§ 23 EStG, z. B. BTC vor Ablauf eines Jahres) - bewusst
+    # unabhängig vom Sparerpauschbetrag/Verlustvortrag der Kapitalerträge (#37).
+    spek_verlustvortrag = Decimal(0)
+    spek_gewinn_jahr = Decimal(0)
+    # Portfoliowert je thesaurierendem Instrument zu Jahresbeginn - Grundlage
+    # für die vereinfachte Vorabpauschale (#39), s. apply_vorabpauschale().
+    wert_jahresbeginn: dict[str, Decimal] = {}
+    wert_jahresbeginn_jahr: int | None = None
 
-    def process_realized_gain(gain: Decimal) -> None:
+    def process_realized_gain(gain: Decimal, ticker: str) -> None:
         nonlocal freibetrag_verbleibend, verlustvortrag, kumulierte_steuer, steuerpflichtige_gewinne_jahr
         if not opt.besteuerung:
             return
+        # Teilfreistellung (30% für Aktienfonds-ETFs, § 20 InvStG, #38) gilt
+        # symmetrisch für Gewinn und Verlust - reduziert beide um denselben Anteil.
+        gain = gain * (1 - _teilfreistellung(ticker))
         if gain <= 0:
             verlustvortrag += -gain
             return
@@ -169,12 +215,63 @@ def simulate(
         kumulierte_steuer += steuerpflichtig * STEUERSATZ
         steuerpflichtige_gewinne_jahr += steuerpflichtig
 
+    def process_spekulationsgeschaeft(gain: Decimal) -> None:
+        """BTC & Co. innerhalb der Spekulationsfrist (#37): eigener
+        Freigrenzen-Topf getrennt vom Sparerpauschbetrag. Anders als der
+        Sparerpauschbetrag ist die Freigrenze nach § 23 Abs. 3 Satz 5 EStG
+        eine Kippgrenze - bleibt der Jahresgewinn darunter, bleibt er komplett
+        steuerfrei; wird sie überschritten, ist der GESAMTE Jahresgewinn
+        steuerpflichtig. Die Differenz aus Steuer-auf-neuen-Stand minus
+        Steuer-auf-alten-Stand bildet diesen rückwirkenden Effekt korrekt ab,
+        auch wenn Trades einzeln nacheinander verarbeitet werden. Vereinfachung:
+        Besteuerung mit dem pauschalen STEUERSATZ statt dem tatsächlich
+        anzuwendenden persönlichen Einkommensteuersatz."""
+        nonlocal spek_verlustvortrag, spek_gewinn_jahr, kumulierte_steuer
+        if not opt.besteuerung:
+            return
+        if gain <= 0:
+            spek_verlustvortrag += -gain
+            return
+        offset_verlust = min(gain, spek_verlustvortrag)
+        spek_verlustvortrag -= offset_verlust
+        rest = gain - offset_verlust
+        vorher = spek_gewinn_jahr
+        spek_gewinn_jahr += rest
+        steuer_vorher = (
+            vorher * STEUERSATZ if vorher > SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR else Decimal(0)
+        )
+        steuer_nachher = (
+            spek_gewinn_jahr * STEUERSATZ
+            if spek_gewinn_jahr > SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR
+            else Decimal(0)
+        )
+        kumulierte_steuer += steuer_nachher - steuer_vorher
+
+    def process_gain_for_sale(ticker: str, trade_date: date, avg_kauf_tag: Decimal, gain: Decimal) -> None:
+        """Routet den realisierten Gewinn/Verlust eines Verkaufs in den
+        richtigen Steuertopf: normale Abgeltungsteuer, oder - falls das
+        Instrument einer Spekulationsfrist unterliegt (#37) - entweder
+        komplett steuerfrei (Frist abgelaufen) oder in den getrennten
+        Freigrenzen-Topf. ``avg_kauf_tag`` ist das vor diesem Verkauf gültige
+        gewichtete Kaufdatum der Position (Durchschnittskosten-Näherung)."""
+        frist = _spekulationsfrist_tage(ticker)
+        if frist is None:
+            process_realized_gain(gain, ticker)
+            return
+        haltedauer_tage = Decimal(trade_date.toordinal()) - avg_kauf_tag
+        if haltedauer_tage > frist:
+            # Spekulationsfrist abgelaufen -> privat und steuerfrei, berührt
+            # weder Freibetrag/Verlustvortrag noch die Freigrenze.
+            return
+        process_spekulationsgeschaeft(gain)
+
     def reset_year_if_needed(year: int) -> None:
-        nonlocal current_tax_year, freibetrag_verbleibend, steuerpflichtige_gewinne_jahr
+        nonlocal current_tax_year, freibetrag_verbleibend, steuerpflichtige_gewinne_jahr, spek_gewinn_jahr
         if year != current_tax_year:
             current_tax_year = year
             freibetrag_verbleibend = SPARERPAUSCHBETRAG_PRO_JAHR
             steuerpflichtige_gewinne_jahr = Decimal(0)
+            spek_gewinn_jahr = Decimal(0)
 
     def total_cash() -> Decimal:
         return sum(pending_cash.values(), Decimal(0))
@@ -187,6 +284,37 @@ def simulate(
                 continue
             values[t] = positions[t].units * price
         return values
+
+    def apply_vorabpauschale(prices: dict[str, Decimal], trade_date: date) -> None:
+        """Vereinfachte jährliche Vorabpauschale für thesaurierende Fonds
+        (#39, Platzhalter-Basiszins). Wendet sie am Jahresende an (statt
+        exakt am 1. Werktag des Folgejahres) und verbraucht damit den
+        Sparerpauschbetrag DIESES Jahres anteilig, bevor die
+        Dezember-Harvest-Entscheidung (Maßnahme A/B) greift - bewusste
+        Vereinfachung der exakten gesetzlichen Fälligkeit, siehe
+        VORABPAUSCHALE_BASISZINS_PLATZHALTER. Die Deckelung auf die
+        tatsächliche Wertsteigerung nutzt den zu Jahresbeginn erfassten
+        Portfoliowert (wert_jahresbeginn) gegen den aktuellen Wert dieser
+        Zeile als Näherung für den Jahresendwert."""
+        pre_values = current_values(prices)
+        for t in tickers:
+            if not _thesaurierend(t):
+                continue
+            start_wert = wert_jahresbeginn.get(t)
+            pos = positions[t]
+            if not start_wert or pos.units <= 0:
+                continue
+            aktueller_wert = pre_values.get(t, Decimal(0))
+            wertsteigerung = max(Decimal(0), aktueller_wert - start_wert)
+            vorabpauschale = min(
+                start_wert * VORABPAUSCHALE_BASISZINS_PLATZHALTER * VORABPAUSCHALE_FAKTOR, wertsteigerung
+            )
+            if vorabpauschale <= 0:
+                continue
+            process_realized_gain(vorabpauschale, t)
+            # Die gesamte (nicht nur die versteuerte) Vorabpauschale hebt die
+            # Kostenbasis an - sie gilt als fiktiv reinvestierte Ausschüttung.
+            pos.cost_total += vorabpauschale
 
     def rebalance_to_targets(
         prices: dict[str, Decimal], trade_date: date, reason: str, weights: dict[str, Decimal]
@@ -211,20 +339,24 @@ def simulate(
                 if units_to_sell <= 0:
                     continue
                 proceeds = units_to_sell * price
+                avg_kauf_tag = pos.avg_kauf_tag_ordinal()
                 cost_removed = pos.avg_cost() * units_to_sell
+                tage_removed = avg_kauf_tag * units_to_sell
                 realized_gain = proceeds - cost_removed - gebuehr
                 pos.units -= units_to_sell
                 pos.cost_total -= cost_removed
+                pos.kauf_tage_gewichtet -= tage_removed
                 trades.append(
                     Trade(trade_date, t, "sell", units_to_sell, price, gebuehr, realized_gain, reason)
                 )
-                process_realized_gain(realized_gain)
+                process_gain_for_sale(t, trade_date, avg_kauf_tag, realized_gain)
                 executed = True
             else:
                 buy_value = diff
                 units_to_buy = buy_value / price
                 pos.units += units_to_buy
                 pos.cost_total += buy_value + gebuehr
+                pos.kauf_tage_gewichtet += units_to_buy * Decimal(trade_date.toordinal())
                 trades.append(
                     Trade(trade_date, t, "buy", units_to_buy, price, gebuehr, None, reason)
                 )
@@ -240,6 +372,11 @@ def simulate(
             price = prices.get(t)
             pos = positions[t]
             if price is None or pos.units <= 0:
+                continue
+            if _spekulationsfrist_tage(t) is not None:
+                # Unterliegt der Spekulationsfrist (#37), nicht dem
+                # Sparerpauschbetrag - diese Maßnahme optimiert ausschließlich
+                # den Abgeltungsteuer-Topf.
                 continue
             unrealized = pos.units * price - pos.cost_total
             if unrealized > 0:
@@ -264,19 +401,22 @@ def simulate(
                 continue
             proceeds = units_to_sell * price
             cost_removed = avg_cost * units_to_sell
+            tage_removed = pos.avg_kauf_tag_ordinal() * units_to_sell
             realized_gain = proceeds - cost_removed - gebuehr
             pos.units -= units_to_sell
             pos.cost_total -= cost_removed
+            pos.kauf_tage_gewichtet -= tage_removed
             trades.append(
                 Trade(trade_date, t, "sell", units_to_sell, price, gebuehr, realized_gain, "freibetrag_gewinnmitnahme")
             )
-            process_realized_gain(realized_gain)
+            process_realized_gain(realized_gain, t)
             executed = True
 
             # sofortiger Rückkauf zum selben Kurs, um die Marktexponierung zu
             # erhalten - hebt die Kostenbasis steuerfrei an.
             pos.units += units_to_sell
             pos.cost_total += proceeds + gebuehr
+            pos.kauf_tage_gewichtet += units_to_sell * Decimal(trade_date.toordinal())
             trades.append(
                 Trade(trade_date, t, "buy", units_to_sell, price, gebuehr, None, "freibetrag_gewinnmitnahme_rebuy")
             )
@@ -291,6 +431,11 @@ def simulate(
             price = prices.get(t)
             pos = positions[t]
             if price is None or pos.units <= 0:
+                continue
+            if _spekulationsfrist_tage(t) is not None:
+                # Unterliegt der Spekulationsfrist (#37), nicht dem
+                # Sparerpauschbetrag - diese Maßnahme optimiert ausschließlich
+                # den Abgeltungsteuer-Topf.
                 continue
             unrealized = pos.units * price - pos.cost_total
             if unrealized < 0:
@@ -321,19 +466,22 @@ def simulate(
             units_to_sell = min(units_needed, pos.units)
             proceeds = units_to_sell * price
             cost_removed = avg_cost * units_to_sell
+            tage_removed = pos.avg_kauf_tag_ordinal() * units_to_sell
             realized_gain = proceeds - cost_removed - gebuehr
             pos.units -= units_to_sell
             pos.cost_total -= cost_removed
+            pos.kauf_tage_gewichtet -= tage_removed
             trades.append(
                 Trade(trade_date, t, "sell", units_to_sell, price, gebuehr, realized_gain, "tax_loss_harvest")
             )
-            process_realized_gain(realized_gain)
+            process_realized_gain(realized_gain, t)
             harvested += -realized_gain
             executed = True
 
             # sofortiger Rückkauf zum selben Kurs, um die Marktexponierung zu erhalten
             pos.units += units_to_sell
             pos.cost_total += proceeds + gebuehr
+            pos.kauf_tage_gewichtet += units_to_sell * Decimal(trade_date.toordinal())
             trades.append(
                 Trade(trade_date, t, "buy", units_to_sell, price, gebuehr, None, "tax_loss_harvest_rebuy")
             )
@@ -379,6 +527,7 @@ def simulate(
                 units = buy_value / price
                 positions[t].units = units
                 positions[t].cost_total = buy_value
+                positions[t].kauf_tage_gewichtet = units * Decimal(row.date.toordinal())
                 trades.append(Trade(row.date, t, "buy", units, price, gebuehr, None, "initial_buy"))
         else:
             for t in tickers:
@@ -388,6 +537,7 @@ def simulate(
                     units = buy_value / price
                     positions[t].units += units
                     positions[t].cost_total += buy_value
+                    positions[t].kauf_tage_gewichtet += units * Decimal(row.date.toordinal())
                     trades.append(
                         Trade(row.date, t, "buy", units, price, Decimal(0), None, "delayed_initial_buy")
                     )
@@ -414,6 +564,9 @@ def simulate(
                     if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
                         last_rebalance_date = row.date
 
+        if opt.besteuerung and row.date in harvest_dates:
+            apply_vorabpauschale(prices, row.date)
+
         if opt.steueroptimierung and row.date in harvest_dates:
             if freibetrag_verbleibend > 0:
                 if december_gewinnmitnahme(prices, row.date):
@@ -424,6 +577,9 @@ def simulate(
 
         values = current_values(prices)
         total_value = sum(values.values(), Decimal(0)) + total_cash()
+        if wert_jahresbeginn_jahr != row.date.year:
+            wert_jahresbeginn = {t: values.get(t, Decimal(0)) for t in tickers if _thesaurierend(t)}
+            wert_jahresbeginn_jahr = row.date.year
         ticker_weights = {
             t: (values.get(t, Decimal(0)) / total_value if total_value > 0 else Decimal(0)) for t in tickers
         }

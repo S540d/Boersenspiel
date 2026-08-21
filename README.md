@@ -404,11 +404,39 @@ pytest -q
   already-taxed gain total, but builds up a loss carryforward that reduces
   future gains. The requirements document did not specify an exact algorithm
   here – this variant was confirmed during the planning discussion.
-- **Tax logic** unchanged from the requirements document: loss offsetting
-  before the tax-free allowance before tax (26.375%), tax-free allowance of
-  €1,000/year resetting at the calendar year boundary, one shared
-  loss/allowance pool, no advance lump-sum tax (Vorabpauschale), no partial
-  tax exemption (Teilfreistellung).
+- **Tax logic**, largely unchanged from the requirements document: loss
+  offsetting before the tax-free allowance before tax (26.375%), tax-free
+  allowance of €1,000/year resetting at the calendar year boundary, one
+  shared loss/allowance pool for capital-gains-taxed instruments. Three
+  corrections on top of the original spec (#37/#38/#39, tracked in #46):
+  - **Partial tax exemption (Teilfreistellung, #38):** realized gains and
+    losses on equity-fund ETFs (>51% equity allocation — EUNL, LYMS, SEMI,
+    EIMI) are reduced by the statutory 30% (§ 20 InvStG) before entering the
+    loss/allowance pool. Bond ETFs (EUNA), physical gold (4GLD), individual
+    stocks, and BTC-EUR (no fund privilege) get no exemption.
+  - **Advance lump-sum tax (Vorabpauschale, #39):** for instruments flagged
+    accumulating (thesaurierend), a simplified annual Vorabpauschale is
+    applied at each completed year's harvest date — capped at that year's
+    actual value increase — consuming part of that year's allowance before
+    the December harvest decision runs, and raising the position's cost
+    basis by the full (pre-exemption) amount. **Documented simplification:**
+    the base interest rate (Basiszins) is a constant placeholder
+    (`VORABPAUSCHALE_BASISZINS_PLATZHALTER` in `strategies.py`) rather than
+    the real, annually published BMF rate, and the timing (year-end instead
+    of the first business day of the following year) is approximated —
+    real historical Basiszins values are still needed to replace the
+    placeholder.
+  - **Crypto speculation period (Spekulationsfrist, #37):** BTC-EUR gains are
+    excluded from the capital-gains loss/allowance pool entirely. Instead, a
+    simplified average-purchase-date holding period (analogous to the
+    average-cost method already used for cost basis) decides per sale: held
+    over 365 days → completely tax-free (§ 23 EStG); held 365 days or less →
+    taxed via a separate, all-or-nothing €1,000/year exemption threshold
+    (Freigrenze, not an allowance — crossing it makes the *entire* year's
+    gain taxable, not just the excess), using the flat capital-gains rate as
+    a documented simplification for the actual personal income tax rate.
+    BTC-EUR is therefore also excluded from the December harvest measures,
+    which only ever optimize the capital-gains pool.
 
 ## Known limitations
 
