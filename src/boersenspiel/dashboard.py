@@ -20,8 +20,18 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .engine import SimulationResult, simulate
 from .history_store import FetchLogEntry, PriceRow
+from .instruments import INSTRUMENTS, TICKERS
 from .learnings import derive_learnings
-from .strategies import STRATEGIES, Strategy
+from .strategies import (
+    ORDERGEBUEHR,
+    SPARERPAUSCHBETRAG_PRO_JAHR,
+    SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR,
+    STEUERSATZ,
+    STRATEGIES,
+    VORABPAUSCHALE_BASISZINS_PLATZHALTER,
+    VORABPAUSCHALE_FAKTOR,
+    Strategy,
+)
 
 # Status-Werte in fetch_log.csv, bei denen der Kurs NICHT frisch abgerufen wurde
 # (siehe history_store.record_week) - Grundlage fuer die "eingefroren"-Markierung (#42).
@@ -378,6 +388,82 @@ def _build_strategy_view(
     }
 
 
+def _erste_kurse(rows: list[PriceRow]) -> dict[str, str]:
+    """Datum der ersten Kurszeile je Ticker - macht sichtbar, ab wann ein
+    Instrument in der Simulation überhaupt handelbar war."""
+    erste: dict[str, str] = {}
+    for row in rows:
+        for ticker in row.prices:
+            if ticker not in erste:
+                erste[ticker] = row.date.isoformat()
+    return erste
+
+
+def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy]) -> dict:
+    """Baut die Daten für die Prämissen-Seite.
+
+    Bewusst durchgehend aus den tatsächlich verwendeten Konstanten,
+    ``instruments.py`` und der Kurshistorie abgeleitet - nach demselben Prinzip
+    wie ``learnings.py``: nichts hier ist hinterlegter Text, der gegenüber dem
+    Code veralten könnte. Ändert sich z. B. ``ORDERGEBUEHR`` oder die
+    Teilfreistellung eines Instruments, ändert sich diese Seite mit.
+    """
+    erste = _erste_kurse(rows)
+    instrumente = []
+    for ticker in TICKERS:
+        inst = INSTRUMENTS[ticker]
+        instrumente.append(
+            {
+                "ticker": ticker,
+                "name": inst.name,
+                "isin": inst.isin or "–",
+                "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
+                "thesaurierend": "ja" if inst.thesaurierend else "nein",
+                "spekulationsfrist": (
+                    f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
+                ),
+                "erster_kurs": erste.get(ticker, "– (nie)"),
+                "fehlt_anfangs": erste.get(ticker) != rows[0].date.isoformat(),
+            }
+        )
+
+    strategie_liste = []
+    for s in strategies:
+        strategie_liste.append(
+            {
+                "name": s.name,
+                "id": _slug(s.name),
+                "startkapital": f"{s.startkapital:.2f}",
+                "schwelle": f"{s.rebalancing_schwelle_pp}",
+                "ziel_topf": s.ziel_topf,
+                "ziel_gewicht": f"{s.ziel_gewicht * 100:.0f}",
+                "dynamisch": "ja" if s.gewichte_fn is not None else "nein",
+                "toepfe": [
+                    {"name": t.name, "gewicht": f"{t.gewicht_gesamt * 100:.0f}"} for t in s.toepfe
+                ],
+            }
+        )
+
+    return {
+        "instrumente": instrumente,
+        "strategien": strategie_liste,
+        "zeitraum_von": rows[0].date.isoformat(),
+        "zeitraum_bis": rows[-1].date.isoformat(),
+        "wochen": len(rows),
+        "ordergebuehr": f"{ORDERGEBUEHR:.2f}",
+        "steuersatz": f"{STEUERSATZ * 100:.3f}".rstrip("0").rstrip("."),
+        "sparerpauschbetrag": f"{SPARERPAUSCHBETRAG_PRO_JAHR:.0f}",
+        "spek_freigrenze": f"{SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR:.0f}",
+        "vorabpauschale_basiszins": f"{VORABPAUSCHALE_BASISZINS_PLATZHALTER * 100:.1f}".replace(".", ","),
+        "vorabpauschale_faktor": f"{VORABPAUSCHALE_FAKTOR * 100:.0f}",
+        "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER * 100:.0f}",
+        "sma_kurz": _SMA_KURZ_WOCHEN,
+        "sma_lang": _SMA_LANG_WOCHEN,
+        "walk_forward_segmente": _WALK_FORWARD_SEGMENTE,
+        "walk_forward_min_wochen": _WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT,
+    }
+
+
 def build_dashboard(
     price_history: list[PriceRow],
     strategies: list[Strategy] | None = None,
@@ -434,5 +520,10 @@ def build_dashboard(
         detail_html = detail_template.render(s=view, **common_context)
         detail_path = output_path.parent / f"{view['id']}.html"
         detail_path.write_text(detail_html, encoding="utf-8")
+
+    praemissen_html = env.get_template("praemissen.html.j2").render(
+        **_praemissen_kontext(rows, strategies), **common_context
+    )
+    (output_path.parent / "praemissen.html").write_text(praemissen_html, encoding="utf-8")
 
     return output_path

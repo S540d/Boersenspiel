@@ -178,7 +178,8 @@ strategy always yields the identical result.
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Pure simulation function: (price history, strategy) → portfolio/tax state |
-| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, including key learnings and the cross-strategy return comparison overview at the top |
+| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions) |
+| `src/boersenspiel/templates/` | Jinja templates: `base.html.j2` (shared shell incl. the three-dot menu), `dashboard.html.j2`, `strategy_detail.html.j2`, `praemissen.html.j2` |
 | `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
 | `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
 | `scripts/record_prices.py` | Manual entry point for prices from another source (e.g. Cowork/web search) |
@@ -246,7 +247,7 @@ the historical `FX_WEEKLY` rate for the same week (forward-fill if no FX
 rate is available for a given week).
 
 ```bash
-python scripts/backfill_history.py --years 5   # default: 5 years back
+python scripts/backfill_history.py --years 20  # default: 20 years back (lower bound only)
 ```
 
 Uses roughly 18 requests once (16 non-crypto tickers + 1× `FX_WEEKLY` + 1×
@@ -387,6 +388,37 @@ pytest -q
 - **Rebalancing**, once triggered (deviation from the target bucket weight
   exceeds the threshold), brings **all** instruments back to their target
   weight, not just the triggering bucket.
+- **Rebalancing conserves portfolio value by construction.**
+  `rebalance_to_targets()` keeps no cash account: sale proceeds are never
+  credited anywhere, purchase amounts never withdrawn. The reshuffle is
+  value-neutral *only* because the `diffs` across **all** instruments add up
+  to exactly the available `pending_cash`. Silently skipping an instrument
+  breaks that invariant and makes money disappear — the sales still run
+  while the matching purchase is dropped.
+- **Instruments that did not exist yet** (`handelbare_gewichte()`): over a
+  20-year history a large share of the instruments has no price at the start
+  (Bitcoin before 2009, Rivian before its 2021 IPO, most of the ETFs early
+  on). Their target share is **redistributed proportionally across the
+  instruments that are actually tradeable**, rather than parked
+  uninvested — otherwise more than 60% of the portfolio would sit idle at
+  the start of the history and the returns of the early years would be
+  largely meaningless (measured: €89,408 final value when parking vs.
+  €125,893 when redistributing). Relative proportions *within* the available
+  instruments are preserved. Two events put capital to work, **both
+  deliberately independent of `opt.rebalancing`** (they are initial
+  purchases, not drift correction — otherwise `BUY_AND_HOLD` would never
+  hold an instrument that didn't exist when the simulation started):
+  `neues_instrument` once a ticker first has a price, and `kapitaleinsatz`
+  once parked cash has a tradeable target again. The latter is needed
+  because the rebalancing trigger only checks bucket A: if *no* target
+  instrument was tradeable for a while (e.g. "Sell in May" starts defensively
+  in September 2006, but bucket A only exists from 2008), bucket A's actual
+  and target weights are both 0 and the parked capital would never be
+  deployed. If no target instrument is tradeable at all, everything stays
+  parked — deliberately: "out of the market" with no defensive instrument
+  available *is* cash.
+- **Distributions and dividends are not modeled.** For distributing
+  instruments the simulation therefore misses part of the real return.
 - **December harvest:** On the last price row of a completed calendar year,
   exactly one of two mutually exclusive measures applies, depending on how
   the tax year has gone so far (see
@@ -440,6 +472,26 @@ pytest -q
 
 ## Known limitations
 
+- **Hindsight bias in instrument selection:** the 17 instruments were picked
+  when their price history was already known. A backtested return therefore
+  does not answer "what would I have earned?", only "how would these rules
+  have played out on these, retrospectively chosen, instruments?". The
+  scenario rules themselves are a first pass, neither optimized nor
+  backtested, and everything rests on a single historical price series — no
+  Monte Carlo, no confidence intervals. Differences of a few percentage
+  points between two strategies are not meaningful. The dashboard's
+  **Premises page** (`docs/praemissen.html`, reachable from the three-dot
+  menu on every page) spells this out for readers.
+- **Placeholder constants:** `VORABPAUSCHALE_BASISZINS_PLATZHALTER` (2.0%)
+  is not a real annual BMF base rate, and `_RISIKOFREIER_ZINS_PLATZHALTER`
+  (0%) used by the Sharpe/Sortino ratios is not a real reference rate. Taxes
+  use the flat withholding rate rather than a personal income tax rate, and
+  the simulated portfolio value itself is never reduced by tax — the tax
+  figures are tracking only.
+- **`BTC-EUR` history is far shorter than requested:** the 20-year backfill
+  yields only ~50 weeks (from 2025-09-14), so Bitcoin is first bought near
+  its high rather than across the full period — see
+  [#56](https://github.com/S540d/Boersenspiel/issues/56).
 - **Alpha Vantage free-tier limit:** 25 requests/day, max. 1 request/second.
   Still unproblematic for the current 17 tickers fetched once a week, but
   barely any headroom for additional manual fetches on the same day;

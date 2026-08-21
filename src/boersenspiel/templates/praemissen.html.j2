@@ -1,0 +1,213 @@
+{% extends "base.html.j2" %}
+{% block title %}Prämissen &amp; Annahmen – Barbell-Portfolio Dashboard{% endblock %}
+{% block meta_description %}Welche Annahmen, Konstanten und Vereinfachungen hinter den Zahlen des Barbell-Portfolio-Dashboards stehen.{% endblock %}
+{% block canonical %}https://s540d.github.io/Boersenspiel/praemissen.html{% endblock %}
+{% block header_extra %}<p class="back-link"><a href="index.html">&larr; Zur Übersicht</a></p>{% endblock %}
+{% block content %}
+  <section class="strategy" id="praemissen">
+    <h2>Prämissen &amp; Annahmen</h2>
+    <p class="hint">
+      Diese Seite sammelt, worauf die Zahlen im Dashboard beruhen, damit die
+      Ergebnisse zumindest prinzipiell nachvollziehbar sind. Alle Werte hier
+      werden bei jedem Build aus denselben Konstanten und derselben Kurshistorie
+      abgeleitet, die auch die Simulation benutzt &ndash; es sind keine
+      hinterlegten Texte, die gegenüber dem Code veralten könnten.
+    </p>
+
+    <h3>Das Wichtigste zuerst</h3>
+    <p class="hint">
+      Dies ist ein <strong>virtuelles Depot zu Lernzwecken, keine
+      Anlageberatung</strong> und keine Aussage darüber, wie sich diese
+      Strategien in Zukunft entwickeln. Drei Einschränkungen wiegen dabei
+      schwerer als jede Renditezahl auf der Übersichtsseite:
+    </p>
+    <ul class="hint">
+      <li>
+        <strong>Rückschaufehler bei der Instrumentenauswahl.</strong> Die
+        {{ instrumente|length }} Instrumente wurden ausgewählt, als ihre
+        Kursentwicklung bereits bekannt war. Eine rückgerechnete Rendite
+        beantwortet deshalb nicht die Frage „was hätte ich verdient?“, sondern
+        bestenfalls „wie hätten sich diese Regeln auf diese, im Nachhinein
+        ausgewählten Werte ausgewirkt?“.
+      </li>
+      <li>
+        <strong>Die Regeln sind nicht optimiert und nicht gebacktestet.</strong>
+        Schwellen, Zeitfenster und Quoten der Szenarien sind ein erster Ansatz,
+        keine an Daten angepassten Parameter. Der Abschnitt „Robustheit über
+        Teilperioden“ auf jeder Detailseite zeigt, wie stark eine Rendite
+        zwischen Zeiträumen schwankt.
+      </li>
+      <li>
+        <strong>Ein Depot, ein Kursverlauf.</strong> Alle Ergebnisse beruhen auf
+        genau einer historischen Kursreihe. Es gibt keine Monte-Carlo-Simulation
+        und keine Konfidenzintervalle &ndash; Unterschiede von wenigen
+        Prozentpunkten zwischen zwei Strategien sind damit nicht belastbar.
+      </li>
+    </ul>
+
+    <h3>Datenbasis</h3>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Zeitraum</div><div class="value">{{ zeitraum_von }} &ndash; {{ zeitraum_bis }}</div></div>
+      <div class="stat-tile"><div class="label">Kurszeilen</div><div class="value">{{ wochen }}</div></div>
+      <div class="stat-tile"><div class="label">Frequenz</div><div class="value">wöchentlich</div></div>
+      <div class="stat-tile"><div class="label">Währung</div><div class="value">EUR</div></div>
+    </div>
+    <p class="hint">
+      Grundlage ist ausschließlich <code>data/price_history.csv</code>: ein
+      Wochenschlusskurs je Instrument, in Euro. USD-notierte Werte werden beim
+      Abruf mit dem Wechselkurs derselben Woche umgerechnet. Es werden
+      <strong>nur Rohkurse gespeichert</strong> &ndash; alles Abgeleitete
+      (Positionswerte, Rebalancing, Steuer) wird bei jedem Build vollständig neu
+      berechnet. Gleiche Kurshistorie plus gleiche Strategie ergibt deshalb immer
+      dasselbe Ergebnis.
+    </p>
+    <p class="hint">
+      Konnte ein Kurs nicht abgerufen werden, wird der letzte bekannte Kurs
+      fortgeschrieben, statt eine Lücke zu lassen. Wo das zuletzt passiert ist,
+      steht als Spalte „Kursstatus“ in der Instrumententabelle jeder
+      Detailseite.
+    </p>
+
+    <h3>Instrumente und ab wann es sie gab</h3>
+    <p class="hint">
+      Ein großer Teil der Instrumente existierte am Anfang des Zeitraums noch
+      nicht. Ihr Zielanteil wird dann <strong>anteilig auf die tatsächlich
+      handelbaren Instrumente umgelegt</strong>, damit das Depot voll investiert
+      bleibt &ndash; in dem, was es zu diesem Zeitpunkt gab. Andernfalls läge zu
+      Beginn ein großer Teil des Kapitals unverzinst brach und die Rendite der
+      frühen Jahre wäre kaum aussagekräftig. Sobald ein Instrument erstmals einen
+      Kurs hat, wird es auf sein Zielgewicht gekauft (im Trade-Log als
+      <code>neues_instrument</code>). Die frühen Jahre bilden damit ein deutlich
+      schmaleres Portfolio ab als die späten &ndash; ⚠ markiert die betroffenen
+      Instrumente.
+    </p>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Spekulationsfrist</th></tr></thead>
+        <tbody>
+        {% for i in instrumente %}
+          <tr>
+            <td>{{ i.ticker }}</td>
+            <td class="text-left">{{ i.name }}</td>
+            <td class="text-left">{{ i.isin }}</td>
+            <td class="{{ 'warn' if i.fehlt_anfangs else '' }}">{{ i.erster_kurs }}{% if i.fehlt_anfangs %} &#9888;{% endif %}</td>
+            <td>{{ i.teilfreistellung }}</td>
+            <td>{{ i.thesaurierend }}</td>
+            <td>{{ i.spekulationsfrist }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Handelsregeln</h3>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Ordergebühr je Trade</div><div class="value">{{ ordergebuehr }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Kostenbasis</div><div class="value">Durchschnitt</div></div>
+      <div class="stat-tile"><div class="label">Spread / Slippage</div><div class="value">nicht modelliert</div></div>
+      <div class="stat-tile"><div class="label">Dividenden</div><div class="value">nicht modelliert</div></div>
+    </div>
+    <p class="hint">
+      Gekauft und verkauft wird zum Wochenschlusskurs, in beliebigen
+      Bruchstücken, ohne Geld-Brief-Spanne und ohne Teilausführung. Gebühren des
+      Erstkaufs werden vor der Aufteilung vom Startkapital abgezogen; spätere
+      Trades mindern beim Verkauf den realisierten Gewinn um die Gebühr und
+      schlagen sie beim Kauf auf die Kostenbasis. Die Kostenbasis läuft nach der
+      Durchschnittskosten-Methode, nicht nach FIFO. <strong>Ausschüttungen
+      werden nicht modelliert</strong> &ndash; bei ausschüttenden Instrumenten
+      fehlt der Simulation damit ein Teil der realen Rendite.
+    </p>
+    <p class="hint">
+      Rebalanciert wird nur, wenn der überwachte Topf um mehr als die Schwelle
+      der jeweiligen Strategie vom Zielgewicht abweicht; dann werden
+      <em>alle</em> Instrumente auf ihr Zielgewicht zurückgeführt. Der Auslöser
+      prüft also die Topf-Ebene, nicht die Konzentration einzelner Instrumente
+      innerhalb eines Topfs &ndash; darauf weist ⚠ in der Instrumententabelle der
+      Detailseiten hin.
+    </p>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th>Strategie</th><th>Startkapital &euro;</th><th>Rebalancing-Schwelle pp</th><th class="text-left">Überwachter Topf</th><th>Zielgewicht %</th><th>Zeitabhängige Gewichte</th></tr></thead>
+        <tbody>
+        {% for s in strategien %}
+          <tr>
+            <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
+            <td>{{ s.startkapital }}</td>
+            <td>{{ s.schwelle }}</td>
+            <td class="text-left">{{ s.ziel_topf }}</td>
+            <td>{{ s.ziel_gewicht }}</td>
+            <td>{{ s.dynamisch }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <h3>Steuerannahmen</h3>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Steuersatz</div><div class="value">{{ steuersatz }} %</div></div>
+      <div class="stat-tile"><div class="label">Sparerpauschbetrag / Jahr</div><div class="value">{{ sparerpauschbetrag }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Freigrenze § 23 EStG</div><div class="value">{{ spek_freigrenze }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Vorabpauschale-Basiszins</div><div class="value">{{ vorabpauschale_basiszins }} % (Platzhalter)</div></div>
+    </div>
+    <p class="hint">
+      Gerechnet wird mit dem pauschalen Abgeltungsteuersatz (Kapitalertragsteuer
+      plus Solidaritätszuschlag), <strong>nicht mit einem persönlichen
+      Einkommensteuersatz</strong>; Kirchensteuer bleibt außen vor. Der
+      Sparerpauschbetrag wird zu Jahresbeginn zurückgesetzt, nicht verbrauchte
+      Verluste werden als Verlustvortrag fortgeschrieben. Aktienfonds-ETFs
+      bekommen ihre Teilfreistellung auf Gewinn <em>und</em> Verlust angerechnet
+      (siehe Tabelle oben).
+    </p>
+    <p class="hint">
+      Für thesaurierende Fonds wird eine vereinfachte Vorabpauschale angesetzt:
+      Wert zu Jahresbeginn &times; {{ vorabpauschale_basiszins }} % &times;
+      {{ vorabpauschale_faktor }} %, gedeckelt auf die tatsächliche
+      Wertsteigerung. Der Basiszins ist ein <strong>fester Platzhalter, kein
+      echter jährlicher BMF-Basiszins</strong>, und die Pauschale wird am
+      Jahresende statt am ersten Werktag des Folgejahres angesetzt. Krypto
+      unterliegt der Spekulationsfrist statt der Abgeltungsteuer, mit eigenem
+      Verlustvortrag und einer Freigrenze (nicht einem Freibetrag: oberhalb der
+      Grenze ist der gesamte Jahresgewinn steuerpflichtig). Das Haltedauer-Datum
+      ist ein stückzahlgewichtetes Durchschnittskaufdatum, kein echtes
+      Per-Lot-Tracking.
+    </p>
+    <p class="hint">
+      Wichtig für die Interpretation: Die ausgewiesene Steuer ist reines
+      Tracking &ndash; <strong>der simulierte Depotwert selbst wird nirgends um
+      Steuer gemindert</strong>.
+    </p>
+
+    <h3>Kennzahlen auf der Übersicht</h3>
+    <p class="hint">
+      Volatilität ist die annualisierte Standardabweichung der Wochenrenditen
+      (&times; &radic;52), Max Drawdown der größte Rückgang vom bisherigen
+      Höchststand. Sharpe teilt die annualisierte Rendite durch die gesamte
+      Streuung, Sortino nur durch die Streuung der Verlustwochen. Beide rechnen
+      mit einem risikofreien Zins von <strong>{{ risikofreier_zins }} %</strong>
+      &ndash; ebenfalls ein bewusster Platzhalter, kein realer Referenzzins. Hat
+      eine Reihe gar keine Verlustwochen, wird Sortino als 0 ausgewiesen statt
+      als undefiniert.
+    </p>
+    <p class="hint">
+      Die gleitenden Durchschnitte auf den Detailseiten nähern die klassischen
+      50-/200-Tage-Linien mit {{ sma_kurz }} bzw. {{ sma_lang }} Wochen (5
+      Handelstage je Woche) an &ndash; auf Wochendaten, nicht auf Tagesdaten. Der
+      Walk-Forward-Abschnitt teilt die Historie in bis zu
+      {{ walk_forward_segmente }} gleich große Zeiträume und simuliert jeden
+      unabhängig mit frischem Startkapital; bei weniger als
+      {{ walk_forward_min_wochen }} Wochen je Segment entfällt er.
+    </p>
+
+    <h3>Was nicht modelliert wird</h3>
+    <ul class="hint">
+      <li>Ausschüttungen und Dividenden</li>
+      <li>Inflation &ndash; alle Beträge sind nominal</li>
+      <li>Geld-Brief-Spanne, Slippage, Teilausführungen, Handelsaussetzungen</li>
+      <li>Depot-, Ausgabeaufschlags- und Fondskosten (TER) &ndash; nur die Ordergebühr</li>
+      <li>Zinsen auf nicht investiertes Kapital</li>
+      <li>Kapitalmaßnahmen wie Splits oder Fusionen über den Kursabruf hinaus</li>
+      <li>Steuerliche Effekte über das Abgeltungsteuer- und § 23-Regime hinaus</li>
+    </ul>
+  </section>
+{% endblock %}

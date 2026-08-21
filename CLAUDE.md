@@ -252,10 +252,13 @@ inkrementell fortgeschrieben).
     tatsächlich anzuwendenden persönlichen Einkommensteuersatz.
 - `dashboard.py` + `templates/` — reine Darstellungsschicht, rendert
   `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
-  Strategie(n) aus `STRATEGIES`. Seit #31 zwei Seitentypen statt einer
+  Strategie(n) aus `STRATEGIES`. Seit #31 mehrere Seitentypen statt einer
   einzigen `index.html`: `templates/base.html.j2` definiert Kopf/Fuß/Styles
   einmal per Jinja-Vererbung (`{% extends %}` + Blocks `title`/
-  `header_extra`/`content`/`scripts`); `templates/dashboard.html.j2` (die
+  `header_extra`/`content`/`scripts`) und enthält das Drei-Punkt-Menü
+  (`<details class="menu">`, reines CSS/HTML ohne JS), über das von **jeder**
+  Seite die Übersicht und die Prämissen-Seite erreichbar sind;
+  `templates/dashboard.html.j2` (die
   Startseite `docs/index.html`) zeigt die strategieübergreifende
   Vergleichsübersicht ("Übersicht: Rendite im Vergleich" - Balkendiagramm +
   nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite) sowie
@@ -321,6 +324,21 @@ inkrementell fortgeschrieben).
   "erster Ansatz, nicht optimiert/gebacktestet" auf einer einzigen, noch
   kurzen Kurshistorie sind. Die Schwankungsbreite (größte minus kleinste
   Perioden-Rendite) steht als Kennzahl über der Tabelle.
+  `templates/praemissen.html.j2` (`docs/praemissen.html`, über das
+  Drei-Punkt-Menü von jeder Seite erreichbar) sammelt die Prämissen, auf
+  denen alle Zahlen beruhen — Datenbasis und Zeitraum, Instrumententabelle
+  mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
+  Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
+  nicht Modellierten (Dividenden, Inflation, Spread/Slippage, TER,
+  Zinsen auf Cash). Ganz oben stehen die drei Einschränkungen, die schwerer
+  wiegen als jede Renditezahl: Rückschaufehler bei der Instrumentenauswahl,
+  nicht optimierte/gebacktestete Regeln, und ein einziger Kursverlauf ohne
+  Konfidenzintervalle. `_praemissen_kontext()` leitet dafür **alles** aus
+  den tatsächlich verwendeten Konstanten (`strategies.py`), aus
+  `instruments.py` und aus der übergebenen Kurshistorie ab — nach demselben
+  Prinzip wie `learnings.py`: nichts auf der Seite ist hinterlegter Text,
+  der gegenüber dem Code veralten könnte. Beim Ergänzen deshalb keine
+  Zahl hart ins Template schreiben, sondern über den Kontext ziehen.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -441,7 +459,12 @@ nur Gewinnwochen → Sortino bewusst 0.0 statt undefiniert,
 `_walk_forward_segmente()` gegen eine lange synthetische Kursreihe (leer
 bei zu wenig Wochen, exakt drei Segmente bei ausreichender Historie) und
 End-to-End, dass der Detailseiten-Abschnitt "Robustheit über Teilperioden"
-nur bei genug Kurshistorie erscheint.
+nur bei genug Kurshistorie erscheint. Für die Prämissen-Seite: dass sie
+erzeugt und von Start- *und* Detailseite verlinkt wird, dass ihre Werte
+tatsächlich aus `ORDERGEBUEHR`/`SPARERPAUSCHBETRAG_PRO_JAHR`/`TICKERS` und
+der übergebenen Historie stammen (statt hart im Template zu stehen), und
+dass die wesentlichen Einschränkungen samt Platzhalter-Kennzeichnung
+benannt sind.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter
