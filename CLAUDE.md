@@ -464,6 +464,36 @@ Simulation bereits separat als Barertrag modelliert (`ausschuettend` /
 `DIVIDENDENRENDITE_PLATZHALTER`, #57) — sonst zählten sie doppelt. Liefert
 ein Symbol gar keinen `adjusted close`, bleibt es beim Nominalkurs.
 
+**Handgepflegte Ergänzungen (#63):** Der Backfill setzt
+`price_history.csv` komplett zurück (`_reset_data_files()`) — manuell
+nachgetragene Kurse wären damit bei jedem Lauf weg. Zwei Dateien werden
+deshalb **nur gelesen und von keinem Skript geschrieben**, und bei jedem
+Lauf neu eingemischt:
+
+- `data/manual_fx_usd_eur.csv` (`Date,EUR_pro_USD`) — gelesen von
+  `read_manual_fx()`, eingemischt **vor** der Währungsumrechnung. Das ist
+  der wirksamste Ort für Handarbeit: eine gepflegte Zeile macht die Woche
+  für alle neun USD-Ticker *und* für BTC-EUR umrechenbar, deckt also den
+  gesamten Bereich ab, den `FX_WEEKLY` vor November 2014 offenlässt.
+- `data/manual_prices.csv` (`Date,Ticker,Preis_EUR`, Langformat) — gelesen
+  von `read_manual_prices()`, eingemischt **ganz zum Schluss**. Die Werte
+  sind deshalb **immer schon in EUR** und laufen nicht mehr durch die
+  Umrechnung. Gedacht für Kurse, die Alpha Vantage überhaupt nicht liefert
+  (z. B. die früheste BTC-Historie) — nicht für USD-Kurse, die nur am
+  fehlenden Wechselkurs scheitern; die gehören in die FX-Datei.
+
+Beide Dateien erlauben `#`-Kommentarzeilen und dokumentieren sich damit
+selbst. Ein unbekannter Ticker in `manual_prices.csv` bricht den Lauf ab,
+statt still ignoriert zu werden. Handgepflegte Werte gewinnen gegen die
+API; verglichen wird auf **ISO-Wochen-Ebene** (`_ueberschreibe_iso_woche()`),
+nicht auf Datumsebene — sonst stünde ein manueller Freitagswert neben dem
+API-Donnerstagswert derselben Woche und welcher in die Zeile käme, wäre
+Zufall der Iterationsreihenfolge. Der Lauf gibt je Datei aus, wie viele
+Wochen ergänzt und wie viele ersetzt wurden; Einträge sollten wieder
+entfernt werden, sobald die API die Woche selbst liefert.
+`collect_weekly_series()` bleibt dateizugriffsfrei — die beiden Dicts
+kommen als Parameter herein, gelesen wird in `main()`.
+
 **Keine Rückwärts-Extrapolation des Wechselkurses (#61):**
 `_nearest_fx_rate()` fiel für Wochen *vor* Beginn der FX-Reihe auf den
 ältesten verfügbaren Kurs zurück — der aber jünger ist als das umzurechnende
@@ -605,7 +635,15 @@ Fake-`AlphaVantageSource`-Objekt; seit #61 zusätzlich, dass
 `_nearest_fx_rate()` **nicht** rückwärts extrapoliert (Datum vor Beginn der
 FX-Reihe → `None`, Forward-Fill danach unverändert) und dass
 `collect_weekly_series()` die betroffenen Wochen der USD-Ticker und von
-BTC-EUR fallen lässt statt sie falsch umzurechnen. Für die Splitbereinigung
+BTC-EUR fallen lässt statt sie falsch umzurechnen. Für die handgepflegten
+Ergänzungen (#63): Einlesen beider Dateien inkl. `#`-Kommentarzeilen und
+fehlender Datei, Abbruch bei unbekanntem Ticker, dass ein manueller
+FX-Kurs eine Woche vor Beginn der FX-Reihe für USD-Ticker *und* BTC
+umrechenbar macht, dass `manual_prices`-Werte **nicht** noch einmal
+umgerechnet werden, dass sie einen API-Wert derselben ISO-Woche ersetzen
+statt danebenzustehen, dass Ticker außerhalb der angefragten Liste
+ignoriert werden — und End-to-End, dass ein handgepflegter Kurs den
+kompletten Neuaufbau von `price_history.csv` übersteht. Für die Splitbereinigung
 (#61) in `tests/test_alphavantage.py`: dass `fetch_weekly_history()` den
 `TIME_SERIES_WEEKLY_ADJUSTED`-Endpunkt anfragt, dass eine nachgebaute
 TSLA-Reihe (5:1 und 3:1) ohne Phantom-Absturz herauskommt, dass ein

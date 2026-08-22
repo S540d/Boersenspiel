@@ -1,0 +1,24 @@
+# Handgepflegte EUR/USD-Wochenkurse. Wird NUR gelesen, von keinem Skript
+# geschrieben - ueberlebt damit jeden Lauf von scripts/backfill_history.py,
+# der price_history.csv ansonsten komplett neu aufbaut.
+#
+# Zweck: Alpha Vantages FX_WEEKLY liefert USD/EUR erst ab November 2014.
+# Fuer alles davor bleiben die neun USD-Ticker und BTC-EUR sonst leer (#61) -
+# der Backfill rechnet sie bewusst nicht mehr mit einem spaeteren Kurs um.
+# Ein hier eingetragener Kurs macht die betroffene Woche fuer ALLE zehn
+# Instrumente auf einmal umrechenbar. Das ist der wirksamste Ort fuer
+# Handarbeit - deutlich wirksamer als einzelne Kurse in manual_prices.csv.
+#
+# Spalten:
+#   Date         ISO-Datum der Woche (YYYY-MM-DD). Der Abgleich laeuft ueber
+#                die ISO-Kalenderwoche, der Wochentag muss also nicht exakt
+#                zu den Alpha-Vantage-Daten passen.
+#   EUR_pro_USD  Wie viele EUR ein USD kostet, also 1/(EUR/USD).
+#                Beispiel: EUR/USD = 1,2536  ->  EUR_pro_USD = 0,797702
+#
+# Handgepflegte Werte gewinnen gegen die API. Eintraege wieder entfernen,
+# sobald Alpha Vantage die Woche selbst liefert - der Lauf gibt aus, wie
+# viele Wochen ergaenzt und wie viele ersetzt wurden.
+#
+# Zeilen mit fuehrendem # werden uebersprungen.
+Date,EUR_pro_USD

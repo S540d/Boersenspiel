@@ -1,0 +1,30 @@
+# Handgepflegte Wochenschlusskurse. Wird NUR gelesen, von keinem Skript
+# geschrieben - ueberlebt damit jeden Lauf von scripts/backfill_history.py,
+# der price_history.csv ansonsten komplett neu aufbaut.
+#
+# Zweck: Kurse, die Alpha Vantage ueberhaupt nicht liefert - z. B. die frueheste
+# BTC-Historie. Fuer USD-Ticker, deren Kurse Alpha Vantage zwar hat, die aber
+# mangels Wechselkurs nicht umrechenbar sind, gehoert der Eintrag NICHT hierher,
+# sondern nach manual_fx_usd_eur.csv: eine FX-Zeile deckt dort alle zehn
+# betroffenen Instrumente einer Woche ab.
+#
+# Spalten:
+#   Date       ISO-Datum der Woche (YYYY-MM-DD). Der Abgleich laeuft ueber die
+#              ISO-Kalenderwoche, der Wochentag muss also nicht exakt zu den
+#              Alpha-Vantage-Daten passen.
+#   Ticker     Einer der Ticker aus instruments.py (EUNL, EUNA, 4GLD, LYMS,
+#              SEMI, EIMI, BTC-EUR, LITE, BYDDY, SEDG, S92, TSLA, PLTR, MSTR,
+#              RIVN, KO, RHHBY). Ein unbekannter Ticker bricht den Lauf ab.
+#   Preis_EUR  Schlusskurs in EUR. IMMER schon in EUR - diese Werte werden
+#              nach der Waehrungsumrechnung eingemischt und deshalb nicht
+#              noch einmal umgerechnet.
+#
+# Kurse muessen splitbereinigt sein, sonst entsteht derselbe Phantom-Absturz,
+# den die Bereinigung in sources/alphavantage.py gerade behebt (#61).
+#
+# Handgepflegte Werte gewinnen gegen die API. Eintraege wieder entfernen,
+# sobald Alpha Vantage die Woche selbst liefert - der Lauf gibt je Ticker aus,
+# wie viele Wochen ergaenzt und wie viele ersetzt wurden.
+#
+# Zeilen mit fuehrendem # werden uebersprungen.
+Date,Ticker,Preis_EUR
