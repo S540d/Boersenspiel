@@ -70,14 +70,19 @@ inkrementell fortgeschrieben).
   je **genau 25** Requests — das volle Alpha-Vantage-Tageslimit, kein Puffer.
   `tests/test_backfill_history.py` hält das als Test fest, damit ein
   18. Instrument nicht still beide Workflows unmöglich macht.
-  **Bekannter Nacharbeitsbedarf (#66):** `dashboard.html.j2` nennt fest
-  „17 Instrumenten" statt aus `len(TICKERS)`/den tatsächlich allokierten
-  abgeleitet; die Prämissen-Seite listet alle 24 Instrumente undifferenziert
-  in derselben Tabelle wie die 17 allokierten, ohne die 7 Datenreihen als
-  solche zu kennzeichnen; der Hindsight-Bias-Satz dort und in der README
-  trifft auf die 7 Datenreihen nicht zu (kein Rückschaufehler, sondern
-  bewusster neutraler Vergleichsmaßstab). Erst nach dem nächsten Backfill zu
-  beheben, wenn die 7 neuen Ticker echte Erstkurstage haben.
+  **Darstellung der 7 unallokierten Instrumente (#66, behoben):** Weder das
+  Dashboard noch die Prämissen-Seite noch die README nennen mehr eine feste
+  Instrumentenzahl. `dashboard._allokierte_ticker(strategies)` leitet die
+  Menge der tatsächlich einer Strategie/einem Szenario zugeordneten Ticker
+  generisch aus `Strategy.alle_ticker_gewichte()` ab; `dashboard.html.j2`
+  zeigt `{{ instrumente_anzahl }}` (aus `common_context`) statt hart „17".
+  `_praemissen_kontext()` trennt die Instrumententabelle dementsprechend in
+  `instrumente` (nur allokierte) und `nicht_allokierte_instrumente` — Letztere
+  bekommen einen eigenen Abschnitt „Datenreihen ohne Allokation" (nur
+  gerendert, wenn nicht leer), der auf #64 verweist und erklärt, dass
+  `engine.simulate()` sie nie handelt, weil sie in keinem Topf liegen. Der
+  Hindsight-Bias-Absatz (dort und in der README) bezieht sich jetzt explizit
+  nur noch auf die tatsächlich allokierten Instrumente.
 - `strategies.py` — austauschbare `Strategy`-Definitionen (Töpfe,
   Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
   Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
@@ -775,7 +780,13 @@ ersten vollständigen Zeitpunkt zu) sowie den Grenzfall, dass eine Strategie
 mit einem nie handelbaren Instrument die Historie unverändert zurückbekommt,
 und dass die geschätzte Nettorendite unter der Bruttorendite liegt, sobald
 über einen hand-konstruierten großen Rebalancing-Gewinn tatsächlich Steuer
-anfällt.
+anfällt. Für #66: `_allokierte_ticker()` gegen eine Fixture, die nur einen
+Ticker hält, unabhängig davon wie viele `instruments.py` insgesamt kennt;
+dass die Startseite die dynamische Instrumentenzahl statt der fest
+eingetragenen „17" zeigt; dass die Prämissen-Seite allokierte und nicht
+allokierte Instrumente in getrennte Tabellen/Abschnitte einsortiert; und
+dass der „Datenreihen ohne Allokation"-Abschnitt gar nicht erst gerendert
+wird, wenn eine Strategie ausnahmsweise alle Ticker hält.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter

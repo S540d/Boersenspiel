@@ -548,16 +548,22 @@ pytest -q
 
 ## Known limitations
 
-- **Hindsight bias in instrument selection:** the instruments were picked
-  when their price history was already known. A backtested return therefore
-  does not answer "what would I have earned?", only "how would these rules
-  have played out on these, retrospectively chosen, instruments?". The
+- **Hindsight bias in instrument selection:** the 17 instruments actually
+  allocated to a strategy or scenario were picked when their price history
+  was already known. A backtested return therefore does not answer "what
+  would I have earned?", only "how would these rules have played out on
+  these, retrospectively chosen, instruments?". This does *not* apply to the
+  7 additional data series tracked without ever being allocated to a
+  strategy (a broad equity/real-estate/commodity index and a money-market
+  fund, added purely as neutral benchmarks — see #64/#66) — they were picked
+  independent of their price performance, not chosen into a strategy. The
   scenario rules themselves are a first pass, neither optimized nor
   backtested, and everything rests on a single historical price series — no
   Monte Carlo, no confidence intervals. Differences of a few percentage
   points between two strategies are not meaningful. The dashboard's
   **Premises page** (`docs/praemissen.html`, reachable from the three-dot
-  menu on every page) spells this out for readers.
+  menu on every page) spells this out for readers, including a dedicated
+  section listing the unallocated data series separately.
 - **Placeholder constants:** `VORABPAUSCHALE_BASISZINS_PLATZHALTER` (2.0%)
   is not a real annual BMF base rate, and `_RISIKOFREIER_ZINS_PLATZHALTER`
   (0%) used by the Sharpe/Sortino ratios is not a real reference rate. Taxes

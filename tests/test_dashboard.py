@@ -13,6 +13,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from boersenspiel.dashboard import (
+    _allokierte_ticker,
     _BTC_FRUEHPHASE_ENDE,
     _BTC_TICKER,
     _build_strategy_view,
@@ -736,3 +737,58 @@ def test_netto_rendite_liegt_unter_der_bruttorendite_wenn_steuer_anfaellt():
     brutto = float(view["cagr_label"].replace(",", "."))
     netto = float(view["netto_cagr_label"].replace(",", "."))
     assert netto < brutto
+
+
+# --- #66: veraltete Instrumentenzahl, unallokierte Instrumente unerklaert ----------
+
+
+def test_allokierte_ticker_ist_die_vereinigung_ueber_alle_strategien():
+    # ZWEI_STRATEGIEN haelt beide nur "T1" - unabhaengig davon, wie viele
+    # Ticker instruments.py insgesamt kennt.
+    assert _allokierte_ticker(ZWEI_STRATEGIEN) == {"T1"}
+
+
+def test_build_dashboard_zeigt_dynamische_instrumentenzahl_statt_hartkodierter_17(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+    # ZWEI_STRATEGIEN allokiert genau 1 Ticker ("T1") - die feste "17" aus dem
+    # Template ist damit hier nicht mehr korrekt, dynamisch schon.
+    assert "denselben 1 Instrumenten" in html
+    assert "denselben 17 Instrumenten" not in html
+
+
+def test_praemissen_seite_trennt_allokierte_von_nicht_allokierten_instrumenten(tmp_path: Path):
+    # ZWEI_STRATEGIEN allokiert nur "T1" - alle "echten" TICKERS aus
+    # instruments.py landen deshalb in der neuen "Datenreihen ohne
+    # Allokation"-Sektion statt in der Haupttabelle.
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert "<h3>Datenreihen ohne Allokation</h3>" in html
+    vor_abschnitt, nach_abschnitt = html.split("<h3>Datenreihen ohne Allokation</h3>", 1)
+    assert "EUNL" not in vor_abschnitt.split("Instrumente und ab wann es sie gab", 1)[1]
+    assert "EUNL" in nach_abschnitt
+
+
+def test_praemissen_seite_versteckt_abschnitt_wenn_alles_allokiert_ist(tmp_path: Path):
+    # Eine Strategie, die ALLE TICKERS haelt -> keine unallokierten Instrumente
+    # -> der Abschnitt darf gar nicht erst gerendert werden.
+    alles_strategy = Strategy(
+        name="Alles",
+        startkapital=Decimal("1000"),
+        toepfe=[
+            Topf(
+                name="Topf",
+                gewicht_gesamt=Decimal("1"),
+                sub_gewichte={t: Decimal(1) / Decimal(len(TICKERS)) for t in TICKERS},
+            )
+        ],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    rows = [PriceRow(date(2024, 1, 1), {t: Decimal("100") for t in TICKERS})]
+    build_dashboard(rows, [alles_strategy], output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert "<h3>Datenreihen ohne Allokation</h3>" not in html

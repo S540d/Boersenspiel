@@ -39,6 +39,16 @@
         anteilige Umlegung auf früh existierende Instrumente (nächster Abschnitt)
         auch für die veröffentlichten Kennzahlen wirken zu lassen. Beides bleibt
         eine Vereinfachung, kein Beweis für Investierbarkeit zu jedem Zeitpunkt.
+        Der Rückschaufehler betrifft ausschließlich diese
+        {{ instrumente|length }} tatsächlich einer Strategie zugeordneten
+        Instrumente.
+        {% if nicht_allokierte_instrumente %}
+        Die {{ nicht_allokierte_instrumente|length }} zusätzlich erfassten
+        Datenreihen (Abschnitt „Datenreihen ohne Allokation" unten) sind kein
+        Rückschaufehler, weil sie unabhängig von ihrer Kursentwicklung als
+        neutraler Vergleichsmaßstab ergänzt wurden, nicht in eine Strategie
+        hinein ausgewählt.
+        {% endif %}
       </li>
       <li>
         <strong>Die Regeln sind nicht optimiert und nicht gebacktestet.</strong>
@@ -110,6 +120,46 @@
         </tbody>
       </table>
     </div>
+
+    {% if nicht_allokierte_instrumente %}
+    <h3>Datenreihen ohne Allokation</h3>
+    <p class="hint">
+      Die folgenden {{ nicht_allokierte_instrumente|length }} Instrumente
+      liegen bewusst in <strong>keinem Topf</strong> einer Strategie oder
+      eines Szenarios &ndash; <code>engine.simulate()</code> liest
+      ausschließlich die Ziel-Gewichte der Strategien und handelt deshalb
+      keine dieser Datenreihen, egal wie sich ihr Kurs entwickelt. Sie wurden
+      unabhängig von ihrer Kursentwicklung als neutraler Vergleichsmaßstab
+      (breite Indizes, Geldmarkt, Immobilien, Rohstoffe) aufgenommen, nicht
+      in eine Strategie hinein ausgewählt &ndash; siehe
+      <a href="https://github.com/S540d/Boersenspiel/issues/64">#64</a>. Erst
+      eine künftige Allokation (siehe
+      <a href="https://github.com/S540d/Boersenspiel/issues/63">#63</a>)
+      würde sie in die Simulation einbeziehen; bis dahin stehen Teilfreistellung/
+      Thesaurierungs-/Ausschüttungsstatus hier nur informativ und sind, anders
+      als bei den allokierten Instrumenten oben, noch nicht gegen die
+      Fondsprospekte verifiziert.
+    </p>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Spekulationsfrist</th></tr></thead>
+        <tbody>
+        {% for i in nicht_allokierte_instrumente %}
+          <tr>
+            <td>{{ i.ticker }}</td>
+            <td class="text-left">{{ i.name }}</td>
+            <td class="text-left">{{ i.isin }}</td>
+            <td class="{{ 'warn' if i.fehlt_anfangs else '' }}">{{ i.erster_kurs }}{% if i.fehlt_anfangs %} &#9888;{% endif %}</td>
+            <td>{{ i.teilfreistellung }}</td>
+            <td>{{ i.thesaurierend }}</td>
+            <td>{{ i.ausschuettend }}</td>
+            <td>{{ i.spekulationsfrist }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% endif %}
 
     <h3>Handelsregeln</h3>
     <div class="stat-row">

@@ -643,6 +643,19 @@ def _erste_kurse(rows: list[PriceRow]) -> dict[str, str]:
     return erste
 
 
+def _allokierte_ticker(strategies: list[Strategy]) -> set[str]:
+    """Menge aller Ticker, die in mindestens einer Strategie/einem Szenario
+    tatsächlich einem Topf zugeordnet sind (#66) - generisch aus
+    ``Strategy.alle_ticker_gewichte()`` abgeleitet statt hart als Zahl "17"
+    eingetragen, damit ein künftiger Instrumente- oder Strategiewechsel
+    Dashboard und Prämissen-Seite automatisch mitzieht. `instruments.TICKERS`
+    kann mehr Ticker enthalten als hier zurückkommen - die Differenz sind
+    bewusst nicht allokierte Datenreihen (siehe instruments.py-Kommentar zu
+    IUSA/XEON/EXSA/IBCL/IBCI/IQQ6/EXXY, #64/#65): Ticker, die
+    ``engine.simulate()`` nie handelt, weil sie in keinem Topf liegen."""
+    return {t for s in strategies for t in s.alle_ticker_gewichte()}
+
+
 def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views: list[dict]) -> dict:
     """Baut die Daten für die Prämissen-Seite.
 
@@ -660,24 +673,28 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
     #55)."""
     views_by_id = {v["id"]: v for v in views}
     erste = _erste_kurse(rows)
+    allokierte_ticker = _allokierte_ticker(strategies)
     instrumente = []
+    nicht_allokierte_instrumente = []
     for ticker in TICKERS:
         inst = INSTRUMENTS[ticker]
-        instrumente.append(
-            {
-                "ticker": ticker,
-                "name": inst.name,
-                "isin": inst.isin or "–",
-                "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
-                "thesaurierend": "ja" if inst.thesaurierend else "nein",
-                "ausschuettend": "ja" if inst.ausschuettend else "nein",
-                "spekulationsfrist": (
-                    f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
-                ),
-                "erster_kurs": erste.get(ticker, "– (nie)"),
-                "fehlt_anfangs": erste.get(ticker) != rows[0].date.isoformat(),
-            }
-        )
+        eintrag = {
+            "ticker": ticker,
+            "name": inst.name,
+            "isin": inst.isin or "–",
+            "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
+            "thesaurierend": "ja" if inst.thesaurierend else "nein",
+            "ausschuettend": "ja" if inst.ausschuettend else "nein",
+            "spekulationsfrist": (
+                f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
+            ),
+            "erster_kurs": erste.get(ticker, "– (nie)"),
+            "fehlt_anfangs": erste.get(ticker) != rows[0].date.isoformat(),
+        }
+        if ticker in allokierte_ticker:
+            instrumente.append(eintrag)
+        else:
+            nicht_allokierte_instrumente.append(eintrag)
 
     strategie_liste = []
     for s in strategies:
@@ -706,6 +723,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
 
     return {
         "instrumente": instrumente,
+        "nicht_allokierte_instrumente": nicht_allokierte_instrumente,
         "strategien": strategie_liste,
         "zeitraum_von": rows[0].date.isoformat(),
         "zeitraum_bis": rows[-1].date.isoformat(),
@@ -774,6 +792,10 @@ def build_dashboard(
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
         row_count=len(price_history),
         last_date=price_history[-1].date.isoformat(),
+        # #66: aus den tatsächlich allokierten Tickern abgeleitet statt hart
+        # eingetragen, damit die Zahl auf jeder Seite automatisch mit einem
+        # künftigen Instrumente-/Strategiewechsel mitzieht.
+        instrumente_anzahl=len(_allokierte_ticker(strategies)),
     )
 
     env = Environment(
