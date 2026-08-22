@@ -39,6 +39,14 @@ jobs:
         run: python scripts/build_dashboard.py
 
       - name: Kurshistorie committen
+        # continue-on-error (bewusst): ein Push-Race gegen einen zeitgleichen
+        # Merge auf main darf den bereits fertig gebauten Dashboard-Build
+        # nicht am Deploy hindern - sonst haengt eine unbeteiligte Pages-
+        # Aktualisierung an einem git-Konflikt in price_history.csv fest.
+        # record_week() ist wochen-idempotent (siehe history_store.py), ein
+        # verpasster Commit holt sich beim naechsten erfolgreichen Lauf von
+        # selbst nach, es geht also keine Kurswoche verloren.
+        continue-on-error: true
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
