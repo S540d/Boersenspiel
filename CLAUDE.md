@@ -70,6 +70,14 @@ inkrementell fortgeschrieben).
   je **genau 25** Requests — das volle Alpha-Vantage-Tageslimit, kein Puffer.
   `tests/test_backfill_history.py` hält das als Test fest, damit ein
   18. Instrument nicht still beide Workflows unmöglich macht.
+  **Bekannter Nacharbeitsbedarf (#66):** `dashboard.html.j2` nennt fest
+  „17 Instrumenten" statt aus `len(TICKERS)`/den tatsächlich allokierten
+  abgeleitet; die Prämissen-Seite listet alle 24 Instrumente undifferenziert
+  in derselben Tabelle wie die 17 allokierten, ohne die 7 Datenreihen als
+  solche zu kennzeichnen; der Hindsight-Bias-Satz dort und in der README
+  trifft auf die 7 Datenreihen nicht zu (kein Rückschaufehler, sondern
+  bewusster neutraler Vergleichsmaßstab). Erst nach dem nächsten Backfill zu
+  beheben, wenn die 7 neuen Ticker echte Erstkurstage haben.
 - `strategies.py` — austauschbare `Strategy`-Definitionen (Töpfe,
   Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
   Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
