@@ -28,7 +28,17 @@
         Kursentwicklung bereits bekannt war. Eine rückgerechnete Rendite
         beantwortet deshalb nicht die Frage „was hätte ich verdient?“, sondern
         bestenfalls „wie hätten sich diese Regeln auf diese, im Nachhinein
-        ausgewählten Werte ausgewirkt?“.
+        ausgewählten Werte ausgewirkt?“. Zwei Effekte werden deshalb bewusst aus
+        der Simulation herausgehalten (Owner-Entscheidung zu
+        <a href="https://github.com/S540d/Boersenspiel/issues/63">#63</a>, F4):
+        Bitcoin gilt vor {{ btc_fruehphase_ende }} als nicht handelbar, weil ein
+        deutscher Privatanleger vorher keinen realistischen EUR-Zugang zu
+        Bitcoin hatte; und jede Strategie/jedes Szenario startet ihre Simulation
+        erst dort, wo ihr komplettes Instrumentenset tatsächlich handelbar war -
+        siehe „Simulationsbeginn" in der Strategien-Tabelle unten -, statt die
+        anteilige Umlegung auf früh existierende Instrumente (nächster Abschnitt)
+        auch für die veröffentlichten Kennzahlen wirken zu lassen. Beides bleibt
+        eine Vereinfachung, kein Beweis für Investierbarkeit zu jedem Zeitpunkt.
       </li>
       <li>
         <strong>Die Regeln sind nicht optimiert und nicht gebacktestet.</strong>
@@ -128,25 +138,31 @@
       BTC-EUR zahlen ebenfalls keine Dividende.
     </p>
     <p class="hint">
-      Rebalanciert wird nur, wenn der überwachte Topf um mehr als die Schwelle
-      der jeweiligen Strategie vom Zielgewicht abweicht; dann werden
-      <em>alle</em> Instrumente auf ihr Zielgewicht zurückgeführt. Der Auslöser
-      prüft also die Topf-Ebene, nicht die Konzentration einzelner Instrumente
-      innerhalb eines Topfs &ndash; darauf weist ⚠ in der Instrumententabelle der
-      Detailseiten hin.
+      Rebalanciert wird, sobald IRGENDEIN Topf entweder um mehr als die
+      absolute Schwelle der jeweiligen Strategie in Prozentpunkten oder um
+      mehr als deren relative Schwelle vom eigenen Zielgewicht abweicht, je
+      nachdem was zuerst greift ("5/25-Regel", Marktstandard,
+      Owner-Entscheidung zu
+      <a href="https://github.com/S540d/Boersenspiel/issues/63">#63</a>, F5);
+      dann werden <em>alle</em> Instrumente auf ihr Zielgewicht zurückgeführt.
+      Der Auslöser prüft die Topf-Ebene für JEDEN Topf der Strategie, nicht
+      die Konzentration einzelner Instrumente innerhalb eines Topfs &ndash;
+      darauf weist ⚠ in der Instrumententabelle der Detailseiten hin.
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Strategie</th><th>Startkapital &euro;</th><th>Rebalancing-Schwelle pp</th><th class="text-left">Überwachter Topf</th><th>Zielgewicht %</th><th>Zeitabhängige Gewichte</th></tr></thead>
+        <thead><tr><th>Strategie</th><th>Startkapital &euro;</th><th>Schwelle pp (absolut)</th><th>Schwelle % (relativ)</th><th class="text-left">Überwachter Topf</th><th>Zielgewicht %</th><th>Zeitabhängige Gewichte</th><th>Simulationsbeginn</th></tr></thead>
         <tbody>
         {% for s in strategien %}
           <tr>
             <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
             <td>{{ s.startkapital }}</td>
             <td>{{ s.schwelle }}</td>
+            <td>{{ s.schwelle_relativ }}</td>
             <td class="text-left">{{ s.ziel_topf }}</td>
             <td>{{ s.ziel_gewicht }}</td>
             <td>{{ s.dynamisch }}</td>
+            <td>{{ s.sim_beginn }}</td>
           </tr>
         {% endfor %}
         </tbody>

@@ -49,6 +49,58 @@ _OPTIMIERUNGS_LABELS: dict[str, str] = {
     "besteuerung": "Besteuerung",
 }
 
+
+# --- F4 (#63): Rueckschaufehler mit Hebel ------------------------------------------
+#
+# Ein 2026 zusammengestelltes Instrumentenset rueckwirkend ab 2006 zu kaufen ist
+# Look-ahead-Bias, verschaerft durch handelbare_gewichte() (#55): solange nur ein
+# Teil der Zielinstrumente existiert, wird deren Gewicht anteilig auf die
+# VORHANDENEN umgelegt - trifft das ein extrem volatiles, frueh existierendes
+# Instrument wie Bitcoin, wird dessen effektive Zielquote fuer Jahre auf fast das
+# Doppelte hochskaliert. Owner-Entscheidung zu #63 (F4): zwei Massnahmen, beide rein
+# in der Darstellungsschicht (dashboard.py) angewandt, bevor rows an simulate()
+# gehen - engine.py bleibt unveraendert, die vorhandenen Engine-Tests (hand-
+# gerechnete Werte gegen die volle Testhistorie) sind davon nicht betroffen.
+_BTC_TICKER = "BTC-EUR"
+# Bitcoin ohne EUR-Handelsplatz mit Zugang fuer deutsche Privatanleger: Kraken
+# eroeffnete EUR-Paare erst 09/2013, echte Mainstream-Broker/Boersen-Anbindung
+# (Coinbase-EU-Rollout u.ae.) erst ab ca. 2017 - vor diesem Datum war Bitcoin fuer
+# einen deutschen Privatanleger ueber einen Broker faktisch nicht erreichbar
+# (Owner-Entscheidung). Bewusster Platzhalter nach demselben Muster wie
+# VORABPAUSCHALE_BASISZINS_PLATZHALTER, kein historisch belegtes Stichdatum.
+_BTC_FRUEHPHASE_ENDE = date(2017, 1, 1)
+
+
+def _ohne_btc_fruehphase(rows: list[PriceRow]) -> list[PriceRow]:
+    """Entfernt BTC-EUR-Kurse vor ``_BTC_FRUEHPHASE_ENDE`` aus den Zeilen - Bitcoin
+    gilt fuer die Simulation bis dahin als nicht handelbar, genau wie ein
+    Instrument, das seinen Boersengang noch nicht hatte. Nutzt damit denselben,
+    bereits vorhandenen Mechanismus (handelbare_gewichte() in engine.py) fuer
+    "noch nicht existierende" Instrumente, statt eine neue Sonderregel in die
+    Engine einzubauen."""
+    bereinigt = []
+    for row in rows:
+        if row.date < _BTC_FRUEHPHASE_ENDE and _BTC_TICKER in row.prices:
+            neue_prices = {t: p for t, p in row.prices.items() if t != _BTC_TICKER}
+            row = replace(row, prices=neue_prices)
+        bereinigt.append(row)
+    return bereinigt
+
+
+def _real_investierbarer_zeitraum(rows: list[PriceRow], strategy: Strategy) -> list[PriceRow]:
+    """Schneidet die Kurshistorie auf den Zeitraum zurecht, ab dem ALLE
+    Zielinstrumente dieser Strategie tatsaechlich einen Kurs haben - vorher
+    verlaesst sich handelbare_gewichte() auf die anteilige Umlegung (#55), was fuer
+    die veroeffentlichten Kennzahlen genau die Verzerrung erzeugt, die F4
+    beschreibt. Je Strategie unterschiedlich, weil unterschiedliche Strategien
+    unterschiedliche Instrumentensets haben. Betrifft nur die fuer die
+    Darstellung verwendeten rows, nicht die Rohdaten in price_history.csv."""
+    ziel_ticker = set(strategy.alle_ticker_gewichte())
+    for i, row in enumerate(rows):
+        if ziel_ticker <= set(row.prices):
+            return rows[i:]
+    return rows
+
 # Wochen-Naeherung der klassischen 50-/200-Tage-Durchschnitte (5 Handelstage/Woche),
 # fuer die wochenweise gefuehrte Kurshistorie - derselbe Ansatz wie beim Szenario
 # "Charttechnik: SMA-Crossover" (scenarios.SMA_KURZ_WOCHEN/SMA_LANG_WOCHEN), hier aber
@@ -346,21 +398,53 @@ def _rendite_pct(result: SimulationResult, strategy: Strategy) -> Decimal:
     return ((endwert - strategy.startkapital) / strategy.startkapital) * 100
 
 
-def _optimierungs_effekte(strategy: Strategy, rows: list[PriceRow], basis_rendite_pct: Decimal) -> list[dict]:
-    """Effekt jedes der vier Optimierungs-Schalter (#17) als Leave-one-out-Differenz:
-    Rendite mit allen Schaltern wie konfiguriert minus Rendite mit genau diesem einen
-    Schalter aus."""
+def _tage_zwischen(result: SimulationResult) -> int:
+    points = result.value_history
+    return (points[-1].date - points[0].date).days
+
+
+def _cagr_pct(rendite_pct: float, tage: int) -> float:
+    """Annualisierte Rendite (CAGR) aus der Gesamtrendite ueber ``tage`` Tage (F6b,
+    #63) - ueber viele Jahre ist eine Gesamtrendite wie "+52.558,53%" praktisch
+    unlesbar, waehrend eine annualisierte Zahl direkt geprueft werden kann. Dient
+    zugleich als Basis fuer die Leave-one-out-Differenzen (F6c): die Differenz
+    zweier CAGR-Werte bleibt eine sinnvolle Prozentpunkt-Angabe, auch wenn sich die
+    zugrundeliegenden Gesamtrenditen um Groessenordnungen unterscheiden (z. B. durch
+    eine einzelne dominante Position) - anders als die Differenz zweier
+    Gesamtrenditen, die dort in absurde Groessenordnungen laufen kann."""
+    if tage <= 0:
+        return 0.0
+    faktor = 1 + rendite_pct / 100
+    if faktor <= 0:
+        return -100.0
+    jahre = tage / 365.25
+    return (faktor ** (1 / jahre) - 1) * 100
+
+
+def _optimierungs_effekte(
+    strategy: Strategy, rows: list[PriceRow], basis_cagr_pct: float, tage: int
+) -> list[dict]:
+    """Effekt jedes der vier Optimierungs-Schalter (#17) als Leave-one-out-Differenz
+    auf CAGR-Basis (F6c, #63): CAGR mit allen Schaltern wie konfiguriert minus CAGR
+    mit genau diesem einen Schalter aus. Eine Differenz zweier Gesamtrenditen ist
+    hier keine sinnvolle Prozentpunkt-Angabe, sobald sich Basis- und Vergleichslauf
+    um Groessenordnungen unterscheiden (z. B. durch Rebalancing in eine dominante
+    Position wie Bitcoin) - CAGR bleibt in diesem Fall in einer plausiblen
+    Groessenordnung."""
     effekte = []
     for feld, label in _OPTIMIERUNGS_LABELS.items():
         variante = replace(strategy.optimierungen, **{feld: False})
-        ohne_rendite_pct = _rendite_pct(simulate(rows, strategy, variante), strategy)
-        delta_pp = basis_rendite_pct - ohne_rendite_pct
+        ohne_result = simulate(rows, strategy, variante)
+        ohne_rendite_pct = _rendite_pct(ohne_result, strategy)
+        ohne_cagr_pct = _cagr_pct(_f(ohne_rendite_pct), tage)
+        delta_pp = basis_cagr_pct - ohne_cagr_pct
         effekte.append(
             {
                 "name": label,
-                "delta_pp": _f(delta_pp),
+                "delta_pp": delta_pp,
                 "delta_label": f"{delta_pp:+.2f}",
                 "ohne_rendite_label": f"{ohne_rendite_pct:+.2f}",
+                "ohne_cagr_label": f"{ohne_cagr_pct:+.2f}",
             }
         )
     return effekte
@@ -410,9 +494,9 @@ def _build_strategy_view(
                 "abweichung_pp_label": f"{abweichung_pp:+.1f}",
                 # Warnung bei starker Abweichung eines EINZELNEN Instruments vom
                 # Zielgewicht (#41) - der Rebalancing-Trigger prueft nur die
-                # Topf-A-Abweichung, nicht die Konzentration innerhalb eines Topfs.
-                # Nutzt bewusst dieselbe Schwelle wie das Topf-Rebalancing statt einer
-                # neu erfundenen Zahl.
+                # Topf-Ebene je Topf (5/25-Regel, #63), nicht die Konzentration
+                # innerhalb eines Topfs. Nutzt bewusst dieselbe (absolute) Schwelle
+                # wie das Topf-Rebalancing statt einer neu erfundenen Zahl.
                 "konzentration_warnung": abs(abweichung_pp) > strategy.rebalancing_schwelle_pp,
                 "carry_forward_wochen": carry_forward_wochen,
             }
@@ -420,6 +504,21 @@ def _build_strategy_view(
 
     gewinn = last.total_value - strategy.startkapital
     rendite_pct = _rendite_pct(result, strategy)
+    tage = _tage_zwischen(result)
+    cagr_pct = _cagr_pct(_f(rendite_pct), tage)
+    # F6a (#63): geschaetzte Nettorendite neben der Bruttorendite. engine.py fuehrt
+    # kumulierte_steuer bewusst nur als Tracking-Groesse (siehe engine.py-Kommentar
+    # "reines Tracking") und zieht sie NICHT vom simulierten Depotwert ab - die
+    # Bruttorendite oben ist deshalb eine Vor-Steuer-Zahl. Diese Naeherung zieht die
+    # kumulierte Steuer einmalig am Ende vom Endwert ab, statt die Engine
+    # umzubauen: eine Vereinfachung, weil tatsaechliche Steuerzahlungen unterjaehrig
+    # und nicht als einmaliger Abzug am Simulationsende faellig werden.
+    if strategy.startkapital > 0:
+        netto_endwert = last.total_value - result.tax_status.kumulierte_steuer
+        netto_rendite_pct = (netto_endwert - strategy.startkapital) / strategy.startkapital * 100
+    else:
+        netto_rendite_pct = Decimal(0)
+    netto_cagr_pct = _cagr_pct(_f(netto_rendite_pct), tage)
     volatilitaet_pct = _volatilitaet_pct(total_values)
     max_drawdown_pct = _max_drawdown_pct(total_values)
     sharpe_ratio = _sharpe_ratio(total_values)
@@ -434,17 +533,21 @@ def _build_strategy_view(
     )
     zeitraum_presets = _zeitraum_presets(rows, strategy)
 
-    # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
+    # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie,
+    # auf CAGR-Basis (F6c, #63) - siehe _optimierungs_effekte() fuer die Begruendung.
     beitraege = []
     for beitrag in strategy.beitraege:
-        ohne_rendite_pct = _rendite_pct(simulate(rows, beitrag.ohne), beitrag.ohne)
-        delta_pp = rendite_pct - ohne_rendite_pct
+        ohne_result = simulate(rows, beitrag.ohne)
+        ohne_rendite_pct = _rendite_pct(ohne_result, beitrag.ohne)
+        ohne_cagr_pct = _cagr_pct(_f(ohne_rendite_pct), tage)
+        delta_pp = cagr_pct - ohne_cagr_pct
         beitraege.append(
             {
                 "name": beitrag.name,
-                "delta_pp": _f(delta_pp),
+                "delta_pp": delta_pp,
                 "delta_label": f"{delta_pp:+.2f}",
                 "ohne_rendite_label": f"{ohne_rendite_pct:+.2f}",
+                "ohne_cagr_label": f"{ohne_cagr_pct:+.2f}",
             }
         )
 
@@ -454,6 +557,10 @@ def _build_strategy_view(
         "beschreibung": strategy.beschreibung,
         "rendite_pct": _f(rendite_pct),
         "rendite_pct_label": f"{rendite_pct:+.2f}",
+        "cagr_pct": cagr_pct,
+        "cagr_label": f"{cagr_pct:+.2f}",
+        "netto_rendite_pct_label": f"{netto_rendite_pct:+.2f}",
+        "netto_cagr_label": f"{netto_cagr_pct:+.2f}",
         "gewinn_label": f"{gewinn:+.2f}",
         "volatilitaet_pct": volatilitaet_pct,
         "volatilitaet_label": f"{volatilitaet_pct:.2f}",
@@ -466,6 +573,8 @@ def _build_strategy_view(
         "cash_max_pct": cash_max_pct,
         "cash_max_label": f"{cash_max_pct:.1f}",
         "cash_max_datum": cash_max_datum or "–",
+        "sim_beginn": points[0].date.isoformat(),
+        "sim_ende": points[-1].date.isoformat(),
         "teil_von": strategy.teil_von,
         "labels_json": json.dumps(labels),
         "total_values": total_values,
@@ -494,7 +603,7 @@ def _build_strategy_view(
         "last_rebalance_date": result.last_rebalance_date.isoformat() if result.last_rebalance_date else "-",
         "last_harvest_date": result.last_harvest_date.isoformat() if result.last_harvest_date else "-",
         "beitraege": beitraege,
-        "optimierungs_effekte": _optimierungs_effekte(strategy, rows, rendite_pct),
+        "optimierungs_effekte": _optimierungs_effekte(strategy, rows, cagr_pct, tage),
         "walk_forward_segmente": walk_forward_segmente,
         "walk_forward_spread_label": f"{walk_forward_spread_pp:.2f}",
         "zeitraum_presets": zeitraum_presets,
@@ -580,6 +689,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 "id": slug,
                 "startkapital": f"{s.startkapital:.2f}",
                 "schwelle": f"{s.rebalancing_schwelle_pp}",
+                "schwelle_relativ": f"{s.rebalancing_schwelle_relativ * 100:.0f}",
                 "ziel_topf": s.ziel_topf,
                 "ziel_gewicht": f"{s.ziel_gewicht * 100:.0f}",
                 "dynamisch": "ja" if s.gewichte_fn is not None else "nein",
@@ -588,6 +698,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 ],
                 "cash_max_label": view.get("cash_max_label", "0.0"),
                 "cash_max_datum": view.get("cash_max_datum", "–"),
+                "sim_beginn": view.get("sim_beginn", "–"),
             }
         )
     cash_werte = [s["cash_max_label"] for s in strategie_liste]
@@ -612,6 +723,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "walk_forward_segmente": _WALK_FORWARD_SEGMENTE,
         "walk_forward_min_wochen": _WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT,
         "cash_ueberall_null": cash_ueberall_null,
+        "btc_fruehphase_ende": _BTC_FRUEHPHASE_ENDE.isoformat(),
     }
 
 
@@ -634,8 +746,21 @@ def build_dashboard(
     rows = sorted(price_history, key=lambda r: r.date)
     carry_forward = _carry_forward_streaks(rows, fetch_log or [])
 
-    views = [_build_strategy_view(s, simulate(rows, s), rows, carry_forward) for s in strategies]
-    summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
+    # F4 (#63): BTC-Fruehphase ausklammern, dann je Strategie erst dort simulieren,
+    # wo ihr komplettes Instrumentenset tatsaechlich handelbar war - siehe
+    # _ohne_btc_fruehphase()/_real_investierbarer_zeitraum(). carry_forward bleibt
+    # bewusst auf der vollen, unveraenderten Historie berechnet (betrifft nur die
+    # juengsten Wochen).
+    rows_ohne_btc_fruehphase = _ohne_btc_fruehphase(rows)
+    strategie_rows = {s.name: _real_investierbarer_zeitraum(rows_ohne_btc_fruehphase, s) for s in strategies}
+
+    views = [
+        _build_strategy_view(s, simulate(strategie_rows[s.name], s), strategie_rows[s.name], carry_forward)
+        for s in strategies
+    ]
+    # Sortierung nach CAGR statt Gesamtrendite (F6b, #63): CAGR ist die Leitkennzahl
+    # der Uebersichtstabelle, die Reihenfolge soll dazu konsistent sein.
+    summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
     learnings = derive_learnings(views)
     teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
 

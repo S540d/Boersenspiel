@@ -128,6 +128,7 @@ SELL_IN_MAY = Strategy(
     # Kleinere Schwelle als beim reinen Rebalancing, damit der saisonale
     # Regimewechsel (Mai <-> Oktober) zuverlässig eine Umschichtung auslöst.
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=sell_in_may_gewichte,
     beschreibung=(
         "Von Mai bis September (inklusive) 100% defensiv (Topf A), sonst normale "
@@ -165,7 +166,8 @@ BUY_AND_HOLD = Strategy(
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
-    rebalancing_schwelle_pp=Decimal("10"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=None,
     # Rebalancing bewusst über den Optimierungs-Schalter (#17) statt einer künstlich
     # unerreichbaren Schwelle abgeschaltet - "gar nicht rebalancieren" ist damit ehrlich
@@ -212,6 +214,7 @@ SANTA_CLAUS_RALLY = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=santa_claus_rally_gewichte,
     beschreibung=(
         "In Dezember und Januar Wachstumsquote auf 95% hochgefahren ('Santa Claus "
@@ -259,6 +262,7 @@ BUY_THE_DIP = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=buy_the_dip_gewichte,
     beschreibung=(
         "Liegt der MSCI-World-ETF mehr als 10% unter seinem 20-Wochen-Hoch, "
@@ -319,6 +323,7 @@ CUT_LOSSES = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=cut_losses_gewichte,
     beschreibung=(
         "Trailing-Stop je Wachstums-Instrument: fällt eines mehr als 15% unter sein "
@@ -407,6 +412,7 @@ def _weisheiten_strategy(name: str, weisheiten: tuple[Weisheit, ...], **kwargs) 
         ziel_topf=BARBELL_20_80.ziel_topf,
         ziel_gewicht=BARBELL_20_80.ziel_gewicht,
         rebalancing_schwelle_pp=Decimal("5"),
+        rebalancing_schwelle_relativ=Decimal("0.25"),
         gewichte_fn=kombinierte_weisheiten_gewichte(weisheiten),
         **kwargs,
     )
@@ -466,6 +472,7 @@ CHART_SMA_CROSSOVER = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=chart_sma_crossover_gewichte,
     beschreibung=(
         "Charttechnischer Trendindikator auf dem MSCI-World-ETF: liegt der 10-Wochen- "
@@ -504,6 +511,7 @@ CHART_SMA_CROSSOVER_KURZ = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=chart_sma_crossover_kurz_gewichte,
     beschreibung=(
         "Wie 'SMA-Crossover (10/40 Wochen)', aber mit kürzeren Fenstern (4/20 statt "
@@ -568,6 +576,7 @@ MOMENTUM_ROTATION = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=momentum_rotation_gewichte,
     beschreibung=(
         "Innerhalb des Wachstums-Topfs (80%) werden nur die 2 Instrumente mit der "
@@ -635,6 +644,7 @@ VOLATILITY_TARGET = Strategy(
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
     rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=volatility_target_gewichte,
     beschreibung=(
         "Die Wachstumsquote wird abhängig von der realisierten 12-Wochen-Volatilität "
@@ -672,7 +682,8 @@ COST_AVERAGE_ENTRY = Strategy(
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
     ziel_gewicht=BARBELL_20_80.ziel_gewicht,
-    rebalancing_schwelle_pp=Decimal("3"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=cost_average_gewichte,
     beschreibung=(
         "Statt das Startkapital sofort komplett zu investieren, wird die "

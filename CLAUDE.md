@@ -107,6 +107,28 @@ inkrementell fortgeschrieben).
   Simulationsmechanismen `engine.simulate()` für diese Strategie anwendet —
   `BUY_AND_HOLD` nutzt z. B. `Optimierungen(rebalancing=False)` statt einer
   künstlich unerreichbaren Rebalancing-Schwelle.
+  **Rebalancing-Trigger, "5/25-Regel je Topf" (#63, F5):** Optionales Feld
+  `Strategy.rebalancing_schwelle_relativ` (Decimal, Default `1` = 100%)
+  ergänzt `rebalancing_schwelle_pp` um eine relative Zusatzschwelle. Die
+  Engine rebalanciert, sobald IRGENDEIN Topf entweder um mehr als
+  `rebalancing_schwelle_pp` Prozentpunkte ABSOLUT vom eigenen (per
+  `handelbare_gewichte()` umgelegten) Zielgewicht abweicht, oder um mehr als
+  `rebalancing_schwelle_relativ` RELATIV zu diesem Zielgewicht — je nachdem,
+  welche der beiden Schwellen zuerst greift (Marktstandard-"5/25-Regel").
+  Vorher prüfte der Trigger ausschließlich `ziel_topf` (Topf A) mit einer
+  rein absoluten Schwelle; bei genau zwei komplementären Töpfen (A+B=100%)
+  ist die Abweichung von A immer exakt die von B, weshalb diese Änderung für
+  zweitöpfige Strategien/Szenarien allein wirkungslos bliebe — bei drei oder
+  mehr Töpfen (`BARBELL_20_60_20_SATELLIT`) kann seither aber ein einzelner
+  Topf unbemerkt driften, während Topf A zufällig im Band bleibt. Der
+  Default `rebalancing_schwelle_relativ=1` macht die relative Schwelle
+  faktisch wirkungslos (ein Zielgewicht kann nie um mehr als 100% seiner
+  selbst abweichen) — Strategien/Tests ohne explizit gesetzten Wert verhalten
+  sich deshalb exakt wie vor #63. Alle drei Produktivstrategien sowie alle
+  Szenarien in `scenarios.py` setzen explizit `rebalancing_schwelle_pp=5` und
+  `rebalancing_schwelle_relativ=Decimal("0.25")` (die kanonische 5/25-Regel,
+  Owner-Entscheidung zu #63) und ersetzen damit die vorherigen, uneinheitlich
+  gewählten Werte (10/15/3 Prozentpunkte je Strategie/Szenario).
 - `scenarios.py` — Auswertungs-Szenarien als gewöhnliche `Strategy`-Instanzen
   mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten — seit
   #30 bewusst fünf der bekanntesten ENGLISCHEN Börsenweisheiten statt
@@ -193,7 +215,17 @@ inkrementell fortgeschrieben).
   nach der Durchschnittskosten-Methode (kein FIFO/LIFO); Rebalancing bringt
   bei Auslösung *alle* Instrumente auf ihr Zielgewicht zurück, nicht nur den
   auslösenden Topf; alle Geld-/Stückzahl-Arithmetik nutzt `Decimal`, nie
-  `float`. **Werterhaltung beim Rebalancing (wichtig beim Ändern):**
+  `float`. **Rebalancing-Trigger (#63, F5):** prüft seit #63 JEDEN Topf der
+  Strategie (nicht mehr nur `strategy.ziel_topf`) gegen die "5/25-Regel" aus
+  `Strategy.rebalancing_schwelle_pp`/`rebalancing_schwelle_relativ` (siehe
+  `strategies.py`) — sobald ein Topf entweder die absolute oder die relative
+  Schwelle überschreitet, läuft ein vollständiges `rebalance_to_targets()`
+  auf alle Instrumente, wie zuvor. Die Filterung nach look-ahead-verzerrten
+  Frühphasen (F4, siehe `dashboard.py`) passiert bewusst NICHT hier, sondern
+  ausschließlich in der Darstellungsschicht, bevor `rows` an `simulate()`
+  übergeben werden — `engine.py` bleibt dadurch unverändert gegenüber den
+  bestehenden, gegen die volle Testhistorie hand-gerechneten Engine-Tests.
+  **Werterhaltung beim Rebalancing (wichtig beim Ändern):**
   `rebalance_to_targets()` führt kein Cash-Konto — Verkaufserlöse werden
   nirgends gutgeschrieben, Kaufbeträge nirgends entnommen. Die Umschichtung
   ist allein dadurch summenneutral, dass sich die `diffs` über *alle*
@@ -442,6 +474,66 @@ inkrementell fortgeschrieben).
   Seite ist hinterlegter Text, der gegenüber dem Code veralten könnte. Beim
   Ergänzen deshalb keine Zahl hart ins Template schreiben, sondern über den
   Kontext ziehen.
+  **Rückschaufehler mit Hebel (#63, F4):** `build_dashboard()` wendet vor
+  jedem `simulate()`-Aufruf zwei Korrekturen auf `rows` an, beide rein in
+  der Darstellungsschicht (Owner-Entscheidung zu #63) — `engine.py` bleibt
+  unverändert. `_ohne_btc_fruehphase()` entfernt BTC-EUR-Kurse vor einem
+  Stichtag (`_BTC_FRUEHPHASE_ENDE`, aktuell 2017-01-01 — Platzhalter nach
+  demselben Muster wie `VORABPAUSCHALE_BASISZINS_PLATZHALTER`, kein
+  historisch belegtes Datum, sondern die Owner-Einschätzung, ab wann ein
+  deutscher Privatanleger realistischen EUR-Zugang zu Bitcoin hatte) und
+  nutzt damit denselben, bereits vorhandenen Mechanismus wie ein Instrument
+  vor seinem Börsengang, statt eine neue Sonderregel einzubauen.
+  `_real_investierbarer_zeitraum()` schneidet die (bereits BTC-bereinigte)
+  Historie je Strategie/Szenario auf den Zeitraum zurecht, ab dem ALLE ihre
+  Zielinstrumente (`Strategy.alle_ticker_gewichte()`) tatsächlich einen Kurs
+  haben — vorher hätte sich `handelbare_gewichte()` in der Frühphase auf die
+  anteilige Umlegung auf wenige, früh existierende Instrumente verlassen
+  (#55), was für die veröffentlichten Kennzahlen genau die Verzerrung
+  erzeugt, die F4 beschreibt (ein 2026 zusammengestelltes Instrumentenset
+  rückwirkend ab 2006 zu kaufen ist Look-ahead-Bias, verschärft dadurch, dass
+  ein extrem volatiles, früh existierendes Instrument wie Bitcoin in der
+  Frühphase ein Vielfaches seines nominalen Zielgewichts hält). Beide
+  Funktionen werden je Strategie separat angewendet (unterschiedliche
+  Instrumentensets ergeben unterschiedliche Simulationsbeginn-Daten, z. B.
+  2021-08-15 für die zwei- und 2021-11-21 für die dreitöpfige
+  Barbell-Strategie, Stand der vollen 20-Jahres-Historie) und liefern die je
+  Strategie tatsächlich verwendeten `rows` zurück, die anschließend
+  überall weiterverwendet werden (Hauptsimulation, Zeitraum-Presets,
+  Walk-Forward, Optimierungs-/Beitrags-Effekte) — nicht nur für die
+  Startwert-Anzeige. `carry_forward` (#42) bleibt bewusst auf der vollen,
+  unveränderten Historie berechnet, da es nur die jüngsten Wochen betrifft.
+  Die Prämissen-Seite nennt den Stichtag sowie je Strategie den tatsächlichen
+  `sim_beginn` in der Handelsregeln-Tabelle.
+  **CAGR als Leitkennzahl (#63, F6b/c):** `_cagr_pct(rendite_pct, tage)`
+  liefert die annualisierte Rendite aus der Gesamtrendite über die
+  tatsächliche Simulationsdauer (`_tage_zwischen()`, Differenz aus erster und
+  letzter Kurszeile) — über viele Jahre ist eine Gesamtrendite wie
+  "+52.558,53%" praktisch unlesbar, eine annualisierte Zahl lässt sich
+  direkt prüfen. `cagr_pct`/`cagr_label` im Strategie-View sind seither die
+  Leit-, `rendite_pct`/`rendite_pct_label` die Nebenspalte der
+  Übersichtstabelle (dort jetzt nach CAGR statt Gesamtrendite sortiert) —
+  dieselbe Umstellung löst zugleich F6c: die Leave-one-out-Differenzen in
+  `_optimierungs_effekte()` und den `beitraege` (Börsenweisheiten) liefen
+  vorher auf Basis der Gesamtrendite, was bei stark unterschiedlichen
+  Größenordnungen zwischen Basis- und Vergleichslauf (z. B. wenn Rebalancing
+  eine dominante Position wiederholt auf ihr Zielgewicht zurückführt) keine
+  sinnvolle Prozentpunkt-Angabe mehr war; beide Abschnitte rechnen jetzt mit
+  CAGR-Differenzen, die auch bei Größenordnungsunterschieden plausibel
+  bleiben.
+  **Geschätzte Nettorendite (#63, F6a):** `engine.py` führt
+  `kumulierte_steuer` bewusst nur als Tracking-Größe und zieht sie nirgends
+  vom simulierten Depotwert ab (reines Tracking, siehe engine.py-Abschnitt
+  oben) — alle Rendite-/CAGR-Werte sind deshalb Bruttowerte (vor Steuer).
+  `_build_strategy_view()` ergänzt daneben eine geschätzte Nettorendite
+  (`netto_rendite_pct_label`/`netto_cagr_label`): Endwert minus kumulierte
+  Steuer, einmalig am Simulationsende abgezogen. Eine bewusste
+  Vereinfachung — reale Steuerzahlungen fallen unterjährig zu
+  unterschiedlichen Zeitpunkten an, nicht als einmaliger Abzug am Ende —,
+  aber ohne Umbau der Engine (die weiterhin nur Bruttowerte simuliert) die
+  einzige Möglichkeit, überhaupt eine Netto-Größenordnung auszuweisen. Beide
+  Werte stehen nebeneinander auf jeder Detailseite, mit Fußnote; die
+  Übersichtstabelle bleibt bei den (klar so beschrifteten) Bruttowerten.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
@@ -610,7 +702,14 @@ sinkt nur um 70% des Rohgewinns), Vorabpauschale (EUNL ohne jeden Verkauf,
 Freibetrag sinkt trotzdem am Jahresende) sowie BTC-Spekulationsfrist einmal
 innerhalb (Gewinn landet in der Freigrenze, Sparerpauschbetrag bleibt
 unangetastet) und einmal außerhalb der Frist (großer Gewinn bleibt komplett
-steuerfrei, andernfalls wäre eine deutliche Steuer sichtbar).
+steuerfrei, andernfalls wäre eine deutliche Steuer sichtbar). Eigener
+Abschnitt für die "5/25-Regel je Topf" (#63, F5): ein von Hand nachgerechneter
+Drei-Töpfe-Test, dass ein Topf abseits von `ziel_topf` allein ein Rebalancing
+auslöst (der alte, nur-ziel_topf-Trigger hätte hier nicht ausgelöst), sowie
+ein Test-Paar mit identischem Kursverlauf, das mit gesetztem
+`rebalancing_schwelle_relativ=0.25` ein Rebalancing über die relative Schwelle
+auslöst und mit dem Default (`1`, effektiv deaktiviert) exakt das Verhalten
+vor #63 reproduziert (kein Rebalancing).
 `tests/test_history_store.py` prüft Wochen-Idempotenz, Carry-Forward und
 `read_fetch_log()`.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
@@ -665,6 +764,18 @@ dass die wesentlichen Einschränkungen samt Platzhalter-Kennzeichnung
 benannt sind, sowie dass der Cash-Abschnitt für eine Strategie ohne jemals
 ungenutztes Kapital "0.0" und für eine Strategie mit durchgehend
 fehlendem Zielinstrument den korrekten Cash-Höchststand samt Datum zeigt.
+Für F4/F6 (#63): `_cagr_pct()` gegen handgerechnete Grenzfälle (eine exakte
+Verdopplung über vier Jahre ergibt 100% CAGR, Totalverlust ergibt -100%,
+`tage=0` ergibt 0%), dass die Übersichtstabelle sowohl die CAGR- als auch die
+Gesamtrendite-Spalte zeigt, `_ohne_btc_fruehphase()` gegen eine Zeile vor und
+eine ab dem Stichtag (nur BTC-EUR wird vor dem Stichtag entfernt, andere
+Ticker bleiben unangetastet), `_real_investierbarer_zeitraum()` gegen eine
+Historie mit einem zunächst fehlenden Instrument (schneidet exakt auf den
+ersten vollständigen Zeitpunkt zu) sowie den Grenzfall, dass eine Strategie
+mit einem nie handelbaren Instrument die Historie unverändert zurückbekommt,
+und dass die geschätzte Nettorendite unter der Bruttorendite liegt, sobald
+über einen hand-konstruierten großen Rebalancing-Gewinn tatsächlich Steuer
+anfällt.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter

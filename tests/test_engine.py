@@ -624,3 +624,95 @@ def test_erstkauf_mit_rebalancing_holt_weiterhin_alles_auf_zielgewicht():
     assert result.holdings["T2"] == Decimal("6")  # 600 / 100
     assert result.holdings["T3"] == Decimal("6")  # 300 / 50
     assert result.value_history[-1].total_value == Decimal("1500")
+
+
+# --- Rebalancing-Trigger: "5/25-Regel" je Topf (#63, F5) ---------------------------
+#
+# Vorher pruefte der Trigger ausschliesslich ziel_topf (Topf A) mit einer rein
+# absoluten Schwelle. Zwei Regressionstests dafuer, dass jetzt (a) JEDER Topf
+# geprueft wird, nicht nur ziel_topf, und (b) eine relative Zusatzschwelle
+# greift, die bei rebalancing_schwelle_relativ=1 (Default, unveraendertes
+# Altverhalten) wirkungslos bleibt.
+
+DREI_TOEPFE_STRATEGY = Strategy(
+    name="Test-Drei-Toepfe",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(name="TopfA", gewicht_gesamt=Decimal("0.4"), sub_gewichte={"A": Decimal("1")}),
+        Topf(name="TopfB", gewicht_gesamt=Decimal("0.4"), sub_gewichte={"B": Decimal("1")}),
+        Topf(name="TopfC", gewicht_gesamt=Decimal("0.2"), sub_gewichte={"C": Decimal("1")}),
+    ],
+    ziel_topf="TopfA",
+    ziel_gewicht=Decimal("0.4"),
+    rebalancing_schwelle_pp=Decimal("10"),
+    # rebalancing_schwelle_relativ bewusst NICHT gesetzt (Default 1) - dieser Test
+    # isoliert die "jeder Topf statt nur ziel_topf"-Aenderung von der neuen
+    # relativen Schwelle.
+)
+
+
+def test_5_25_regel_prueft_jeden_topf_nicht_nur_ziel_topf():
+    rows = [
+        # Initialkauf 1000 EUR (gebuehrenfrei) auf 40/40/20 -> A=400, B=400, C=200.
+        PriceRow(date(2024, 1, 1), {"A": Decimal("100"), "B": Decimal("100"), "C": Decimal("100")}),
+        # A unveraendert (400), B halbiert sich (200), C verdreifacht sich (600).
+        # Gesamt 1200. Ist-Gewichte: A=400/1200=33.33% (Abweichung von 40% Ziel nur
+        # 6.67pp, UNTER der 10pp-Schwelle - der alte, nur-ziel_topf-Trigger haette
+        # HIER NICHT ausgeloest). B=200/1200=16.67% (Abweichung 23.33pp) und
+        # C=600/1200=50% (Abweichung 30pp) liegen beide klar ueber 10pp.
+        PriceRow(date(2024, 1, 8), {"A": Decimal("100"), "B": Decimal("50"), "C": Decimal("300")}),
+    ]
+    result = simulate(rows, DREI_TOEPFE_STRATEGY, Optimierungen(**_OHNE_REIBUNG))
+
+    assert result.last_rebalance_date == date(2024, 1, 8)
+    # Nach dem Rebalancing wieder exakt auf den Zielgewichten: 1200 * 40/40/20%.
+    last = result.value_history[-1]
+    assert last.ticker_values["A"] == Decimal("480")
+    assert last.ticker_values["B"] == Decimal("480")
+    assert last.ticker_values["C"] == Decimal("240")
+
+
+KLEINER_TOPF_STRATEGY_BASIS = dict(
+    name="Test-Kleiner-Topf",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(name="TopfA", gewicht_gesamt=Decimal("0.1"), sub_gewichte={"A": Decimal("1")}),
+        Topf(name="TopfB", gewicht_gesamt=Decimal("0.9"), sub_gewichte={"B": Decimal("1")}),
+    ],
+    ziel_topf="TopfA",
+    ziel_gewicht=Decimal("0.1"),
+    rebalancing_schwelle_pp=Decimal("5"),
+)
+
+
+def _kleiner_topf_rows() -> list[PriceRow]:
+    return [
+        # Initialkauf 1000 EUR (gebuehrenfrei) auf 10/90 -> A=100 (1 Stk zu 100),
+        # B=900 (10 Stk zu 90).
+        PriceRow(date(2024, 1, 1), {"A": Decimal("100"), "B": Decimal("90")}),
+        # A steigt auf 130 (Wert 130), B faellt auf 87 (Wert 870) -> Gesamt 1000,
+        # ist_A=13%. Abweichung vom 10%-Ziel: 3pp - unter der absoluten 5pp-Schwelle,
+        # aber 3pp / 10% Ziel = 30% relative Abweichung.
+        PriceRow(date(2024, 1, 8), {"A": Decimal("130"), "B": Decimal("87")}),
+    ]
+
+
+def test_5_25_regel_relative_schwelle_loest_aus_wo_absolute_schwelle_nicht_reicht():
+    # rebalancing_schwelle_relativ=0.25 (25%, Marktstandard-Anteil): fuer den
+    # 10%-Topf ergibt das eine effektive Schwelle von min(5pp, 10%*25%=2.5pp) =
+    # 2.5pp - die 3pp-Abweichung oben liegt darueber.
+    strategy_mit_relativ = Strategy(
+        **KLEINER_TOPF_STRATEGY_BASIS, rebalancing_schwelle_relativ=Decimal("0.25")
+    )
+    result = simulate(_kleiner_topf_rows(), strategy_mit_relativ, Optimierungen(**_OHNE_REIBUNG))
+    assert result.last_rebalance_date == date(2024, 1, 8)
+
+
+def test_5_25_regel_relativ_default_aendert_altverhalten_nicht():
+    # Gegenprobe mit demselben Kursverlauf, aber OHNE gesetzte relative Schwelle
+    # (Default 1 = 100%, faktisch wirkungslos): effektive Schwelle bleibt bei den
+    # vollen 5pp absolut, die 3pp-Abweichung loest deshalb KEIN Rebalancing aus -
+    # exakt das Verhalten vor #63.
+    strategy_ohne_relativ = Strategy(**KLEINER_TOPF_STRATEGY_BASIS)
+    result = simulate(_kleiner_topf_rows(), strategy_ohne_relativ, Optimierungen(**_OHNE_REIBUNG))
+    assert result.last_rebalance_date is None

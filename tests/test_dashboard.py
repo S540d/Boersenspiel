@@ -13,9 +13,15 @@ from decimal import Decimal
 from pathlib import Path
 
 from boersenspiel.dashboard import (
+    _BTC_FRUEHPHASE_ENDE,
+    _BTC_TICKER,
+    _build_strategy_view,
+    _cagr_pct,
     _downside_deviation,
     _jahre_zurueck,
     _max_drawdown_pct,
+    _ohne_btc_fruehphase,
+    _real_investierbarer_zeitraum,
     _sharpe_ratio,
     _slug,
     _sortino_ratio,
@@ -616,3 +622,117 @@ def test_praemissen_seite_zeigt_cash_hoechststand_wenn_kein_zielinstrument_hande
     assert "hält aktuell nicht jede" in html
     assert "100.0" in html
     assert "2024-01-01" in html.split("Cash und ungenutztes Kapital", 1)[1]
+
+
+# --- F6b/c (#63): CAGR als Leitkennzahl -------------------------------------------
+
+
+def test_cagr_pct_verdoppelt_sich_ueber_ein_jahr_ergibt_100_prozent():
+    # Exakte Dezimalfaelle: 1461 Tage = 4 * 365,25 (exakt in float darstellbar) ->
+    # jahre=4. Ein Faktor von 16 (rendite_pct=1500%) verteilt sich gleichmaessig
+    # ueber vier Jahre auf 16**(1/4)=2, also CAGR=100%.
+    assert abs(_cagr_pct(1500.0, 1461) - 100.0) < 1e-9
+
+
+def test_cagr_pct_totalverlust_ist_minus_hundert_prozent():
+    assert _cagr_pct(-100.0, 365) == -100.0
+
+
+def test_cagr_pct_ohne_tage_ist_null():
+    assert _cagr_pct(50.0, 0) == 0.0
+
+
+def test_summary_table_sortiert_nach_cagr_und_zeigt_gesamtrendite_daneben(tmp_path: Path):
+    output = build_dashboard(_mehrjaehrige_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+    assert "CAGR % p.a." in html
+    assert "Gesamtrendite %" in html
+
+
+# --- F4 (#63): Rueckschaufehler mit Hebel ------------------------------------------
+
+
+def test_ohne_btc_fruehphase_entfernt_nur_btc_vor_dem_cutoff():
+    rows = [
+        PriceRow(
+            _BTC_FRUEHPHASE_ENDE - timedelta(weeks=1),
+            {_BTC_TICKER: Decimal("1"), "T1": Decimal("100")},
+        ),
+        PriceRow(
+            _BTC_FRUEHPHASE_ENDE,
+            {_BTC_TICKER: Decimal("2"), "T1": Decimal("100")},
+        ),
+    ]
+    bereinigt = _ohne_btc_fruehphase(rows)
+
+    assert _BTC_TICKER not in bereinigt[0].prices
+    assert bereinigt[0].prices["T1"] == Decimal("100")  # andere Ticker unangetastet
+    assert _BTC_TICKER in bereinigt[1].prices  # ab dem Cutoff-Datum wieder handelbar
+
+
+def test_real_investierbarer_zeitraum_schneidet_auf_vollstaendiges_instrumentenset_zu():
+    strategy = Strategy(
+        name="Zwei-Instrumente",
+        startkapital=Decimal("1000"),
+        toepfe=[
+            Topf(
+                name="Topf",
+                gewicht_gesamt=Decimal("1"),
+                sub_gewichte={"T1": Decimal("0.5"), "T2": Decimal("0.5")},
+            )
+        ],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),  # T2 fehlt noch
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("100"), "T2": Decimal("50")}),  # ab hier vollstaendig
+        PriceRow(date(2024, 1, 15), {"T1": Decimal("110"), "T2": Decimal("55")}),
+    ]
+    geschnitten = _real_investierbarer_zeitraum(rows, strategy)
+    assert [r.date for r in geschnitten] == [date(2024, 1, 8), date(2024, 1, 15)]
+
+
+def test_real_investierbarer_zeitraum_ohne_treffer_gibt_alle_rows_unveraendert():
+    strategy = Strategy(
+        name="Fehlt-immer",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T2": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    rows = [PriceRow(date(2024, 1, 1), {"T1": Decimal("100")})]  # T2 nie vorhanden
+    assert _real_investierbarer_zeitraum(rows, strategy) == rows
+
+
+# --- F6a (#63): geschaetzte Nettorendite --------------------------------------------
+
+GROSSER_GEWINN_STRATEGY = Strategy(
+    name="Grosser-Gewinn",
+    startkapital=Decimal("100000"),
+    toepfe=[
+        Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"T1": Decimal("1")}),
+        Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"T2": Decimal("1")}),
+    ],
+    ziel_topf="TopfX",
+    ziel_gewicht=Decimal("0.5"),
+    rebalancing_schwelle_pp=Decimal("1"),
+)
+
+
+def test_netto_rendite_liegt_unter_der_bruttorendite_wenn_steuer_anfaellt():
+    # T1 verzehnfacht sich -> das Rebalancing realisiert einen Gewinn weit über
+    # dem Sparerpauschbetrag (1000 EUR) -> kumulierte_steuer > 0.
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("1000"), "T2": Decimal("100")}),
+    ]
+    result = simulate(rows, GROSSER_GEWINN_STRATEGY)
+    assert result.tax_status.kumulierte_steuer > Decimal("0")
+
+    view = _build_strategy_view(GROSSER_GEWINN_STRATEGY, result, rows)
+    brutto = float(view["cagr_label"].replace(",", "."))
+    netto = float(view["netto_cagr_label"].replace(",", "."))
+    assert netto < brutto
