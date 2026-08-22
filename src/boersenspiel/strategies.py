@@ -94,6 +94,14 @@ class Strategy:
     # greifen. ``engine.simulate()`` übernimmt diese, sofern ihr nicht explizit eine
     # andere ``Optimierungen``-Instanz übergeben wird (siehe #17).
     optimierungen: Optimierungen = field(default_factory=Optimierungen)
+    # Optional: Name einer anderen Strategie/eines anderen Szenarios, dessen
+    # Unterszenario dieses hier ist (#30) - z. B. tragen die fünf einzelnen
+    # Börsenweisheiten-Szenarien den Namen von "Börsenweisheiten (alle fünf
+    # kombiniert)". Rein deklarativ fürs Dashboard (gruppierte
+    # Vergleichs-Charts, siehe ``dashboard._boersenweisheiten_gruppe()``) -
+    # ändert nichts an der Simulation selbst, jedes Unterszenario bleibt eine
+    # vollständig eigenständige ``Strategy``.
+    teil_von: str | None = None
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""
@@ -277,3 +285,17 @@ VORABPAUSCHALE_FAKTOR = Decimal("0.70")  # gesetzlich fixierter Anteil des Basis
 # STEUERSATZ statt dem tatsächlich anzuwendenden persönlichen
 # Einkommensteuersatz (siehe #37-Diskussion).
 SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR = Decimal("1000")
+
+# --- Dividendenrendite für ausschüttende Einzelaktien (#57) -----------------
+#
+# Bewusster Platzhalter nach demselben Muster wie
+# VORABPAUSCHALE_BASISZINS_PLATZHALTER: statt für jede der 10 Einzelaktien-
+# Satelliten eine echte historische Dividendenrendite zu recherchieren (manche
+# zahlen wie Coca-Cola/Roche seit Jahrzehnten, andere wie Tesla/Palantir/
+# Rivian/MSTR/BYD aktuell gar nichts), wird pauschal eine einheitliche
+# Dividendenrendite angenommen - Owner-Entscheidung in #57. Wirkt in
+# `engine.py` als jährlicher Bar-Ertrag (nicht nur Kostenbasis-Erhöhung wie
+# bei der Vorabpauschale), der über den bestehenden Cash-Parken-Mechanismus
+# automatisch reinvestiert wird und wie ein realer Kapitalertrag der
+# Abgeltungsteuer unterliegt.
+DIVIDENDENRENDITE_PLATZHALTER = Decimal("0.025")  # 2,5% p.a., Platzhalter

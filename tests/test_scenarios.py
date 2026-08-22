@@ -486,7 +486,7 @@ def test_ohne_buy_and_hold_enthalten_sich_alle_und_es_bleibt_normal():
     """Fallback-Pfad: ohne das Dauervotum von "Buy & Hold" gibt es in einer
     ruhigen Woche gar kein Votum -> unveraenderte Barbell-Verteilung."""
     ohne_buy_and_hold = next(
-        b.ohne for b in BOERSENWEISHEITEN.beitraege if b.name == "Hin und her macht Taschen leer"
+        b.ohne for b in BOERSENWEISHEITEN.beitraege if b.name == "Time in the market beats timing the market"
     )
     rows = _sample_rows()
     # Februar, zu wenig Historie fuer die beiden Rolling-Window-Regeln

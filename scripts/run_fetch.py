@@ -6,9 +6,8 @@ REST-API - zuverlässiger als das zuvor genutzte yfinance/Stooq-Scraping, das
 an Yahoos Crumb/Cookie-Authentifizierung scheiterte) und schreibt das Ergebnis
 über ``history_store.record_week`` in ``data/price_history.csv``. Benötigt die
 Umgebungsvariable ``ALPHAVANTAGE_API_KEY`` (als GitHub-Actions-Secret
-hinterlegt). Soll der Kursabruf stattdessen manuell/über Cowork laufen, wird
-dieses Script einfach nicht aufgerufen - siehe ``record_prices.py`` für den
-alternativen Weg mit identischem Ergebnisformat.
+hinterlegt). Läuft ausschließlich über GitHub Actions (siehe #51) - der
+frühere manuelle/Cowork-Weg über ``record_prices.py`` wurde gestrichen.
 """
 
 from __future__ import annotations

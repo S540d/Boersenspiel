@@ -20,10 +20,33 @@
       <div class="stat-tile"><div class="label">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
       <div class="stat-tile"><div class="label">Kumulierte Steuer</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
     </div>
+    {% if s.zeitraum_presets %}
+    <h3>Kennzahlen nach Betrachtungszeitraum</h3>
+    <p class="hint">
+      Jeder Zeitraum ist eine eigenständige Neu-Simulation mit frischem
+      Startkapital (kein fortgeführtes Depot) - analog zum Walk-Forward-
+      Abschnitt unten, nur mit festen statt gleich großen Perioden (#54).
+    </p>
+    <div class="zeitraum-switch" id="detail-zeitraum-switch">
+      {% for p in s.zeitraum_presets %}
+      <button type="button" data-preset="{{ p.id }}"{% if p.id == 'alle' %} class="active"{% endif %}>{{ p.label }}</button>
+      {% endfor %}
+    </div>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Rendite %</div><div class="value" id="zeitraum-rendite">{{ s.rendite_pct_label }}</div></div>
+      <div class="stat-tile"><div class="label">Volatilität % (ann.)</div><div class="value" id="zeitraum-volatilitaet">{{ s.volatilitaet_label }}</div></div>
+      <div class="stat-tile"><div class="label">Max Drawdown %</div><div class="value" id="zeitraum-max-drawdown">{{ s.max_drawdown_label }}</div></div>
+      <div class="stat-tile"><div class="label">Sharpe</div><div class="value" id="zeitraum-sharpe">{{ s.sharpe_label }}</div></div>
+      <div class="stat-tile"><div class="label">Sortino</div><div class="value" id="zeitraum-sortino">{{ s.sortino_label }}</div></div>
+    </div>
+    <div class="chart-box-large"><canvas id="zeitraum-chart"></canvas></div>
+    {% endif %}
     <p class="hint">
       Gleitende Durchschnitte des Wertverlaufs als Wochen-Näherung der klassischen
       50-/200-Tage-Linien (10 bzw. 40 Wochen à 5 Handelstage) - derselbe Ansatz wie
-      beim Szenario "Charttechnik: SMA-Crossover".
+      beim Szenario "Charttechnik: SMA-Crossover". Immer über die gesamte Historie,
+      unabhängig vom oben gewählten Betrachtungszeitraum, da die gleitenden
+      Durchschnitte selbst ausreichend Vorlauf brauchen.
     </p>
     <div class="chart-box-large"><canvas id="sma-chart"></canvas></div>
     <div class="charts">
@@ -156,6 +179,58 @@
     y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
   };
   const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
+
+  {% if s.zeitraum_presets %}
+  // Zeitraum-Presets (#54, Variante B): jeder Preset ist bereits fertig aus einer
+  // eigenen engine.simulate()-Neu-Simulation (frisches Startkapital, siehe
+  // dashboard._zeitraum_presets()) - der Umschalter wechselt nur, welcher bereits
+  // vorhandene Datensatz angezeigt wird (Chart UND Kennzahl-Kacheln), ohne neu zu
+  // rechnen.
+  {
+    const presets = {{ s.zeitraum_presets_json | safe }};
+    const byId = Object.fromEntries(presets.map((p) => [p.id, p]));
+    const switchEl = document.getElementById('detail-zeitraum-switch');
+    const zeitraumChart = new Chart(document.getElementById('zeitraum-chart'), {
+      type: 'line',
+      data: { labels: [], datasets: [{
+        label: 'Gesamtwert (€)',
+        data: [],
+        borderColor: colors.series1,
+        backgroundColor: colors.series1,
+        borderWidth: 2,
+        pointRadius: 0,
+        tension: 0.15,
+      }] },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, title: { display: true, text: 'Wertverlauf im gewählten Zeitraum', color: colors.text } },
+        scales: { x: commonScales.x, y: { ...commonScales.y, min: 0 } },
+      },
+    });
+    const tileIds = {
+      rendite: 'zeitraum-rendite', volatilitaet: 'zeitraum-volatilitaet',
+      maxDrawdown: 'zeitraum-max-drawdown', sharpe: 'zeitraum-sharpe', sortino: 'zeitraum-sortino',
+    };
+    const apply = (id) => {
+      const preset = byId[id];
+      if (!preset) return;
+      zeitraumChart.data.labels = preset.labels;
+      zeitraumChart.data.datasets[0].data = preset.total_values;
+      zeitraumChart.options.scales.y.suggestedMax = (preset.chart_max || 0) * 1.05;
+      zeitraumChart.update();
+      document.getElementById(tileIds.rendite).textContent = preset.rendite_label;
+      document.getElementById(tileIds.volatilitaet).textContent = preset.volatilitaet_label;
+      document.getElementById(tileIds.maxDrawdown).textContent = preset.max_drawdown_label;
+      document.getElementById(tileIds.sharpe).textContent = preset.sharpe_label;
+      document.getElementById(tileIds.sortino).textContent = preset.sortino_label;
+      switchEl.querySelectorAll('button').forEach((btn) => btn.classList.toggle('active', btn.dataset.preset === id));
+    };
+    switchEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => apply(btn.dataset.preset));
+    });
+    apply('alle');
+  }
+  {% endif %}
 
   new Chart(document.getElementById('sma-chart'), {
     type: 'line',

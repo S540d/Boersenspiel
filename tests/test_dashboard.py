@@ -14,14 +14,17 @@ from pathlib import Path
 
 from boersenspiel.dashboard import (
     _downside_deviation,
+    _jahre_zurueck,
     _max_drawdown_pct,
     _sharpe_ratio,
     _slug,
     _sortino_ratio,
     _volatilitaet_pct,
     _walk_forward_segmente,
+    _zeitraum_presets,
     build_dashboard,
 )
+from boersenspiel.engine import simulate
 from boersenspiel.history_store import FetchLogEntry, PriceRow
 from boersenspiel.instruments import TICKERS
 from boersenspiel.strategies import (
@@ -184,6 +187,46 @@ def test_build_dashboard_omits_beitrag_section_without_beitraege(tmp_path: Path)
     assert "beitrag-chart" not in detail_html
 
 
+# --- Unterszenario-Gruppen-Chart (Strategy.teil_von, #30) ------------------------------
+
+
+def _strategien_mit_unterszenarien() -> list[Strategy]:
+    """Eine Kombi-Strategie plus zwei 'Unterszenarien', die per ``teil_von`` auf
+    sie verweisen - analog zu den fünf Börsenweisheiten unter der kombinierten
+    Strategie in scenarios.py, aber mit einer trivialen Zwei-Strategien-
+    Fixture statt der echten Barbell-Instrumente."""
+    basis = dict(
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    return [
+        Strategy(name="Kombi", **basis),
+        Strategy(name="Kind A", teil_von="Kombi", **basis),
+        Strategy(name="Kind B", teil_von="Kombi", **basis),
+    ]
+
+
+def test_build_dashboard_gruppiert_unterszenarien_in_eigenem_chart(tmp_path: Path):
+    output = build_dashboard(_rows(), _strategien_mit_unterszenarien(), output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert "Kombi im Vergleich" in html
+    assert 'id="gruppen-chart-1"' in html
+    gruppen_chart_js = html.split("getElementById('gruppen-chart-1')", 1)[1].split("options:", 1)[0]
+    assert gruppen_chart_js.count("label:") == 3  # Kombi + Kind A + Kind B
+
+
+def test_build_dashboard_ohne_teil_von_zeigt_keine_gruppen_charts(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert "Kombi im Vergleich" not in html
+    assert "gruppen-chart" not in html
+
+
 # --- Risikokennzahlen: Volatilitaet & Max Drawdown (#40) ------------------------------
 
 
@@ -227,12 +270,17 @@ def test_summary_table_zeigt_volatilitaet_und_max_drawdown_spalten(tmp_path: Pat
     assert "Max Drawdown %" in html
 
 
-def test_risikokennzahlen_sind_nur_auf_startseite(tmp_path: Path):
+def test_risikokennzahlen_ausserhalb_des_zeitraum_abschnitts_nur_auf_startseite(tmp_path: Path):
     build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     detail_html = _detail_html(tmp_path, "a-verdoppler")
-    # Volatilitaet/Max Drawdown sind Teil der Vergleichsuebersicht (#40), nicht der
-    # Detailseite - dieselbe Trennung wie bei Wertverlauf-Chart vs. Kennzahl-Kacheln.
-    assert "Max Drawdown %" not in detail_html
+    # Volatilitaet/Max Drawdown sind fuer die GESAMTE Historie Teil der
+    # Vergleichsuebersicht (#40), nicht der Detailseite - seit #54 gibt es auf der
+    # Detailseite aber den eigenen "Kennzahlen nach Betrachtungszeitraum"-Abschnitt,
+    # der dieselben Kennzahlen fuer den jeweils gewaehlten Preset zeigt. Die Zeile
+    # kommt deshalb GENAU EINMAL vor (im neuen Zeitraum-Abschnitt), nicht zusaetzlich
+    # als statische Kennzahl-Kachel.
+    assert detail_html.count("Max Drawdown %") == 1
+    assert 'id="zeitraum-max-drawdown"' in detail_html
 
 
 # --- Klumpenrisiko-Warnung im Rebalancing (#41) ----------------------------------------
@@ -344,12 +392,16 @@ def test_summary_table_zeigt_sharpe_und_sortino_spalten(tmp_path: Path):
     assert "Sortino" in html
 
 
-def test_sharpe_sortino_sind_nur_auf_startseite(tmp_path: Path):
+def test_sharpe_sortino_ausserhalb_des_zeitraum_abschnitts_nur_auf_startseite(tmp_path: Path):
     build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     detail_html = _detail_html(tmp_path, "a-verdoppler")
-
-    assert "Sharpe" not in detail_html
-    assert "Sortino" not in detail_html
+    # Seit #54 zeigt der neue "Kennzahlen nach Betrachtungszeitraum"-Abschnitt auf
+    # der Detailseite Sharpe/Sortino fuer den gewaehlten Preset - als einzige
+    # Stelle, nicht zusaetzlich als statische Kachel (siehe Test oberhalb).
+    assert detail_html.count("Sharpe") == 1
+    assert detail_html.count("Sortino") == 1
+    assert 'id="zeitraum-sharpe"' in detail_html
+    assert 'id="zeitraum-sortino"' in detail_html
 
 
 # --- Walk-Forward-Robustheit ueber Teilperioden -----------------------------------
@@ -396,6 +448,77 @@ def test_build_dashboard_versteckt_walk_forward_abschnitt_bei_kurzer_historie(tm
 
     assert "Robustheit über Teilperioden" not in detail_html
     assert "walk-chart" not in detail_html
+
+
+# --- Zeitraum-Presets (#54, Variante B) -------------------------------------------
+
+
+def test_jahre_zurueck_normalfall():
+    assert _jahre_zurueck(date(2026, 8, 21), 3) == date(2023, 8, 21)
+
+
+def test_jahre_zurueck_faellt_bei_schaltjahr_auf_28_februar_zurueck():
+    # 2024 ist ein Schaltjahr, 2023 nicht - der 29.02.2024 minus 1 Jahr existiert
+    # nicht und faellt auf den 28.02.2023 zurueck statt eine Exception zu werfen.
+    assert _jahre_zurueck(date(2024, 2, 29), 1) == date(2023, 2, 28)
+
+
+def _mehrjaehrige_rows(wochen: int = 312) -> list[PriceRow]:
+    """Genug Wochen (>= 6 Jahre) fuer alle vier Zeitraum-Presets (1/3/5 Jahre,
+    gesamte Historie); T1 steigt linear, damit sich kuerzere gegenueber laengeren
+    Zeitraeumen mit einer klar unterscheidbaren Rendite abgrenzen."""
+    start = date(2020, 1, 1)
+    return [
+        PriceRow(start + timedelta(weeks=i), {"T1": Decimal("100") + Decimal(i)})
+        for i in range(wochen)
+    ]
+
+
+def test_zeitraum_presets_enthaelt_alle_presets_bei_genug_historie():
+    presets = _zeitraum_presets(_mehrjaehrige_rows(), ZWEI_STRATEGIEN[0])
+    assert [p["id"] for p in presets] == ["1j", "3j", "5j", "alle"]
+
+
+def test_zeitraum_presets_sind_frische_neu_simulationen_mit_unterschiedlicher_rendite():
+    rows = _mehrjaehrige_rows()
+    presets = _zeitraum_presets(rows, ZWEI_STRATEGIEN[0])
+    by_id = {p["id"]: p for p in presets}
+
+    # Kuerzerer Zeitraum auf einer monoton steigenden Kursreihe -> kleinere
+    # absolute Kursspanne -> niedrigere Rendite als bei der gesamten Historie.
+    assert by_id["1j"]["rendite_pct"] < by_id["alle"]["rendite_pct"]
+
+    # "alle" entspricht exakt einer normalen Simulation ueber die volle Historie.
+    voll_ergebnis = simulate(rows, ZWEI_STRATEGIEN[0])
+    assert by_id["alle"]["total_values"] == [float(vp.total_value) for vp in voll_ergebnis.value_history]
+
+
+def test_zeitraum_presets_leer_bei_leerer_historie_ist_unerreichbar_da_build_dashboard_das_verhindert():
+    # _zeitraum_presets() selbst geht von mindestens einer Zeile aus (wie
+    # engine.simulate()) - build_dashboard() weist eine leere Kurshistorie bereits
+    # vorher zurueck, siehe test_history_store.py/test_engine.py fuer den
+    # allgemeinen Leerfall.
+    presets = _zeitraum_presets(_rows(), ZWEI_STRATEGIEN[0])
+    assert len(presets) == 4
+
+
+def test_build_dashboard_zeigt_zeitraum_abschnitt_auf_detailseite(tmp_path: Path):
+    build_dashboard(_mehrjaehrige_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "Kennzahlen nach Betrachtungszeitraum" in detail_html
+    assert 'id="detail-zeitraum-switch"' in detail_html
+    assert 'id="zeitraum-chart"' in detail_html
+    for preset_id in ("1j", "3j", "5j", "alle"):
+        assert f'data-preset="{preset_id}"' in detail_html
+
+
+def test_build_dashboard_zeigt_zeitraum_umschalter_auf_startseite(tmp_path: Path):
+    output = build_dashboard(_mehrjaehrige_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert 'id="zeitraum-switch-1"' in html
+    assert "initZeitraumSwitch" in html
 
 
 # --- Praemissen-Seite -------------------------------------------------------------

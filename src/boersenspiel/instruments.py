@@ -30,6 +30,12 @@ class Instrument:
     # unterliegt - aktuell nur Kryptowährungen (365 Tage). None = normales
     # Abgeltungsteuer-Regime. Siehe #37.
     spekulationsfrist_tage: int | None = None
+    # True für Instrumente, die reale Bar-Ausschüttungen zahlen (Einzelaktien) -
+    # unterliegt in der Simulation der pauschalen Dividendenrendite-Annahme
+    # (`strategies.DIVIDENDENRENDITE_PLATZHALTER`, #57). Die 5 ETFs sind
+    # thesaurierend (keine Ausschüttung, siehe oben), 4GLD und BTC-EUR zahlen
+    # keine Dividende - bei allen dreien bleibt es beim Default False.
+    ausschuettend: bool = False
 
 
 # Teilfreistellungsquote für Aktienfonds-ETFs (>51% Aktienquote) nach § 20 InvStG.
@@ -79,16 +85,16 @@ INSTRUMENTS: dict[str, Instrument] = {
         # BARBELL_20_60_20_SATELLIT) - bewusst gemischt aus hoch-volatilen
         # Wachstumswerten und zwei defensiven Blue-Chips (Coca-Cola, Roche)
         # als Gegenbeispiel innerhalb desselben Topfs.
-        Instrument("LITE", "Lumentum Holdings (Optik/Photonik)", "US55024U1097"),
-        Instrument("BYDDY", "BYD Company (ADR, E-Autos)", "US05606L1008"),
-        Instrument("SEDG", "SolarEdge Technologies (Solar-Wechselrichter)", "US83417M1045"),
-        Instrument("S92", "SMA Solar Technology AG", "DE000A0DJ6J9"),
-        Instrument("TSLA", "Tesla", "US88160R1014"),
-        Instrument("PLTR", "Palantir Technologies", "US69608A1088"),
-        Instrument("MSTR", "Strategy Inc. (vormals MicroStrategy)", "US5949724083"),
-        Instrument("RIVN", "Rivian Automotive", "US76954A1034"),
-        Instrument("KO", "Coca-Cola (defensiver Blue Chip)", "US1912161007"),
-        Instrument("RHHBY", "Roche Holding (ADR, defensiver Blue Chip)", "US7711951043"),
+        Instrument("LITE", "Lumentum Holdings (Optik/Photonik)", "US55024U1097", ausschuettend=True),
+        Instrument("BYDDY", "BYD Company (ADR, E-Autos)", "US05606L1008", ausschuettend=True),
+        Instrument("SEDG", "SolarEdge Technologies (Solar-Wechselrichter)", "US83417M1045", ausschuettend=True),
+        Instrument("S92", "SMA Solar Technology AG", "DE000A0DJ6J9", ausschuettend=True),
+        Instrument("TSLA", "Tesla", "US88160R1014", ausschuettend=True),
+        Instrument("PLTR", "Palantir Technologies", "US69608A1088", ausschuettend=True),
+        Instrument("MSTR", "Strategy Inc. (vormals MicroStrategy)", "US5949724083", ausschuettend=True),
+        Instrument("RIVN", "Rivian Automotive", "US76954A1034", ausschuettend=True),
+        Instrument("KO", "Coca-Cola (defensiver Blue Chip)", "US1912161007", ausschuettend=True),
+        Instrument("RHHBY", "Roche Holding (ADR, defensiver Blue Chip)", "US7711951043", ausschuettend=True),
     ]
 }
 

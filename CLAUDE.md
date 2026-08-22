@@ -21,7 +21,6 @@ pytest tests/test_engine.py -q     # einzelne Testdatei
 pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # einzelner Test
 
 python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
-python scripts/record_prices.py --date 2026-08-17 --prices '{"EUNL": 82.1, ...}'  # manueller Kurseintrag
 python scripts/backfill_history.py --years 20       # einmaliger historischer Backfill (ersetzt price_history.csv, ~18 API-Requests)
 python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
 python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
@@ -82,27 +81,41 @@ inkrementell fortgeschrieben).
   `BUY_AND_HOLD` nutzt z. B. `Optimierungen(rebalancing=False)` statt einer
   künstlich unerreichbaren Rebalancing-Schwelle.
 - `scenarios.py` — Auswertungs-Szenarien als gewöhnliche `Strategy`-Instanzen
-  mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten —
-  "Sell in May and Go Away" (saisonal defensiv Mai–September), "Buy & Hold"
-  (nie aktiv rebalancieren), "Jahresendrallye" (Dez/Jan Wachstumsquote auf
-  95%), "Antizyklisch kaufen" (Wachstumsquote auf 95% nach >10% Rückgang vom
-  Rolling-Hoch) und "Verluste begrenzen" (Trailing-Stop je Wachstums-
-  Instrument, >15% Rückgang vom eigenen Rolling-Hoch schaltet nur dieses
-  Instrument auf 0%) sowie "Börsenweisheiten (alle fünf kombiniert)", das die
-  fünf zu einer Strategie zusammenfasst: jede Weisheit ist ein `Weisheit`-
-  Baustein, der in Phase 1 eine Wachstumsquote votiert (oder sich enthält,
-  wenn seine Bedingung diese Woche nicht greift) und/oder in Phase 2 als
-  Instrument-Overlay wirkt. Ziel-Quote ist das **arithmetische Mittel der
+  mit gesetztem `gewichte_fn`, in drei Kategorien: (1) Börsenweisheiten — seit
+  #30 bewusst fünf der bekanntesten ENGLISCHEN Börsenweisheiten statt
+  deutscher Sprüche/Übersetzungen als Grundlage, jeweils einzeln als eigenes
+  Szenario: "Sell in May and Go Away" (saisonal defensiv Mai–September), "Time
+  in the Market Beats Timing the Market" (nie aktiv rebalancieren — interner
+  Python-Bezeichner/Slug bleibt `BUY_AND_HOLD`, weil "Buy & Hold" selbst ein
+  etablierter englischer Fachbegriff ist), "Santa Claus Rally" (Dez/Jan
+  Wachstumsquote auf 95%), "Buy the Dip" (Wachstumsquote auf 95% nach >10%
+  Rückgang vom Rolling-Hoch) und "Cut Your Losses" (Trailing-Stop je
+  Wachstums-Instrument, >15% Rückgang vom eigenen Rolling-Hoch schaltet nur
+  dieses Instrument auf 0%) sowie "Börsenweisheiten (alle fünf kombiniert)",
+  das die fünf zu einer Strategie zusammenfasst: jede Weisheit ist ein
+  `Weisheit`-Baustein, der in Phase 1 eine Wachstumsquote votiert (oder sich
+  enthält, wenn seine Bedingung diese Woche nicht greift) und/oder in Phase 2
+  als Instrument-Overlay wirkt. Ziel-Quote ist das **arithmetische Mittel der
   abgegebenen Voten** — widersprüchliche Signale (Mai-Ausstieg vs. Dip-Kauf)
   heben sich damit teilweise auf, statt dass eine Regel die anderen
-  überstimmt; "Buy & Hold" votiert als einzige immer (für die normale Quote)
-  und wirkt so als dämpfender Anker — dieser Mechanismus-Unterschied zum
-  Solo-Szenario (dort schaltet "Buy & Hold" stattdessen komplett das
-  Rebalancing ab) steht seit #27 auch als `beschreibung` auf der
-  `BUY_AND_HOLD`-Detailseite, nachdem der Owner entschieden hat, dass die
-  Mechanik selbst unverändert bleibt. "Verluste begrenzen" ist die einzige
-  Overlay-Regel und läuft nach Phase 1. Der Einzeleffekt jedes Spruchs kommt
-  über `Strategy.beitraege` (Leave-one-out) ins Dashboard; (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
+  überstimmt; "Time in the market beats timing the market" votiert als
+  einzige immer (für die normale Quote) und wirkt so als dämpfender Anker —
+  dieser Mechanismus-Unterschied zum Solo-Szenario (dort schaltet
+  `BUY_AND_HOLD` stattdessen komplett das Rebalancing ab) steht seit #27 auch
+  als `beschreibung` auf der `BUY_AND_HOLD`-Detailseite, nachdem der Owner
+  entschieden hat, dass die Mechanik selbst unverändert bleibt. "Cut your
+  losses short, let your winners run" ist die einzige Overlay-Regel und läuft
+  nach Phase 1. Der Einzeleffekt jedes Spruchs kommt über `Strategy.beitraege`
+  (Leave-one-out) ins Dashboard. Die fünf einzelnen Weisheiten-Szenarien
+  tragen zusätzlich `Strategy.teil_von = BOERSENWEISHEITEN_NAME` (#30) - rein
+  deklarativ, ändert nichts an der Simulation, macht sie aber im Dashboard als
+  Unterszenarien der Kombi-Strategie erkennbar: `dashboard.
+  _teilszenario_gruppen()` gruppiert sie serverseitig für einen gemeinsamen
+  Vergleichs-Chart auf der Startseite (Kombi-Strategie + alle Unterszenarien
+  im selben Chart, statt verstreut zwischen allen übrigen Strategien/
+  Szenarien) - generisch über `teil_von`, nicht auf die Börsenweisheiten fest
+  verdrahtet, falls künftig weitere zusammengesetzte Strategien Unterszenarien
+  bekommen; (2) Charttechnik — SMA-Crossover (Golden/Death Cross,
   10/40 Wochen) auf dem MSCI-World-ETF, seit #28 zusätzlich als eigenes
   Szenario `CHART_SMA_CROSSOVER_KURZ` mit verkürztem Zeitraum (4/20 Wochen ≈
   21/100 Handelstage statt 50/200, gleiche 5-Handelstage/Woche-Näherung wie
@@ -272,9 +285,14 @@ inkrementell fortgeschrieben).
   `templates/dashboard.html.j2` (die
   Startseite `docs/index.html`) zeigt die strategieübergreifende
   Vergleichsübersicht ("Übersicht: Rendite im Vergleich" - Balkendiagramm +
-  nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite) sowie
-  je Strategie nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit
-  gemeinsamer Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
+  nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite),
+  darunter (#30) je Gruppe zusammengesetzter Strategien mit Unterszenarien
+  (aktuell: die Börsenweisheiten) einen eigenen "<Kombi-Name> im Vergleich"-
+  Abschnitt mit einem Mehrfach-Linienchart aus `_teilszenario_gruppen()`
+  (Kombi-Strategie + alle ihre `teil_von`-Unterszenarien im selben Chart,
+  gemeinsame Y-Achsen-Skalierung nur innerhalb der Gruppe), sowie je Strategie
+  nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit gemeinsamer
+  Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
   `templates/strategy_detail.html.j2` rendert für **jede** Strategie/jedes
   Szenario eine eigene `docs/<slug>.html` mit allem anderen (Kennzahl-
   Kacheln, Steuer-Stats, Topf-Gewichtung Ist/Ziel, Instrumententabelle) plus
@@ -335,13 +353,40 @@ inkrementell fortgeschrieben).
   "erster Ansatz, nicht optimiert/gebacktestet" auf einer einzigen, noch
   kurzen Kurshistorie sind. Die Schwankungsbreite (größte minus kleinste
   Perioden-Rendite) steht als Kennzahl über der Tabelle.
+  Zeitraum-Presets (`_zeitraum_presets()`, #54, "Variante B" aus der
+  Owner-Entscheidung gegenüber reinem Chart-Zuschneiden): da `docs/*.html`
+  statische, ohne Backend gebaute Seiten sind, kann ein Zeitraumfilter nicht
+  live neu simulieren — echte Steuer-/Rebalancing-Logik lässt sich nicht in
+  JS nachbauen. Stattdessen simuliert der Build je Strategie/Szenario vier
+  feste Presets (1/3/5 Jahre zurück ab dem letzten Kurstag via
+  `_jahre_zurueck()`, sowie "Gesamte Historie") jeweils VOLLSTÄNDIG NEU
+  (frisches Startkapital, analog `_walk_forward_segmente()`) inklusive
+  Rendite/Volatilität/Max-Drawdown/Sharpe/Sortino und eigenem
+  Wertverlauf-Chart. Auf der Startseite bekommt dafür jeder Wertverlauf-Chart
+  einen Zeitraum-Umschalter (reines Chart.js-Datenwechsel im Browser, `<script>`
+  `initZeitraumSwitch()`); auf der Detailseite ergänzt ein eigener Abschnitt
+  "Kennzahlen nach Betrachtungszeitraum" (eigener Chart + fünf Kennzahl-
+  Kacheln) denselben Umschalter — die bislang nur auf der Startseite
+  gezeigten Kennzahlen Volatilität/Max Drawdown/Sharpe/Sortino (#40/#41)
+  erscheinen dadurch jetzt auch auf der Detailseite, aber ausschließlich
+  innerhalb dieses neuen, periodenabhängigen Abschnitts (nicht als
+  zusätzliche statische Kachel, siehe die entsprechend angepassten Tests in
+  `tests/test_dashboard.py`). Die 50-/200-Tage-Näherung
+  (`sma-chart`) bleibt bewusst immer auf der vollen Historie, unabhängig vom
+  gewählten Preset, da die gleitenden Durchschnitte selbst ausreichend
+  Vorlauf brauchen. "Clientseitig einstellbar" bezieht sich auf die
+  Bedienung (Umschalten ohne weiteren Server-Request), nicht auf die
+  Berechnung, die vollständig beim Build passiert.
   `templates/praemissen.html.j2` (`docs/praemissen.html`, über das
   Drei-Punkt-Menü von jeder Seite erreichbar) sammelt die Prämissen, auf
   denen alle Zahlen beruhen — Datenbasis und Zeitraum, Instrumententabelle
   mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
   Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
-  nicht Modellierten (Dividenden, Inflation, Spread/Slippage, TER,
-  Zinsen auf Cash). Ein eigener Abschnitt "Cash und ungenutztes Kapital"
+  nicht Modellierten (unternehmensspezifische Dividendenhöhen — Einzelaktien
+  nutzen seit #57 einheitlich eine pauschale Platzhalter-Dividendenrendite,
+  siehe `strategies.DIVIDENDENRENDITE_PLATZHALTER` —, Inflation,
+  Spread/Slippage, TER, Zinsen auf Cash). Ein eigener Abschnitt "Cash und
+  ungenutztes Kapital"
   begründet, warum Strategien keine eigene Cash-Zielallokation kennen (Topf
   A übernimmt die Cash-Rolle, siehe README "No separate cash position",
   #35) und zeigt zusätzlich `_cash_anteil_max()` je Strategie/Szenario: den
@@ -378,11 +423,13 @@ inkrementell fortgeschrieben).
 
 Jede Quelle liefert nur `dict[ticker, PriceQuote]` an
 `history_store.record_week()` — Engine/Dashboard/Tests sind davon
-unabhängig. Um z. B. auf manuellen Kursabruf (Websuche/Cowork) umzustellen,
-statt `scripts/run_fetch.py` einfach `scripts/record_prices.py --date ...
---prices '{...}'` mit den ermittelten Kursen aufrufen; der
-GitHub-Actions-Cron-Schritt kann dafür deaktiviert werden, ohne den Rest des
-Systems anzufassen.
+unabhängig. Der frühere manuelle Weg über `scripts/record_prices.py`
+(Cowork/Websuche) wurde in #51 gestrichen: der Kursabruf läuft konsequent
+über GitHub Actions (`scripts/run_fetch.py`, `AlphaVantageSource`). Ein
+Wechsel der Kursquelle bedeutet seither, eine neue `PriceSource`-
+Implementierung in `sources/` zu ergänzen und `run_fetch.py` darauf
+umzustellen — nicht mehr, den automatisierten Abruf durch einen manuellen
+Prompt-/Agentenweg zu ersetzen.
 
 ### Historischer Backfill
 
@@ -469,7 +516,11 @@ Links auf `<slug>.html`) bleiben auf der Startseite, Kennzahl-Kacheln,
 Topf-Gewichtung, Instrumententabelle sowie die Beitrags-/Optimierungs-
 Effekte-Abschnitte erscheinen nur auf der jeweiligen `<slug>.html`; der
 Beitrags-Abschnitt wird dort weiterhin nur bei gesetztem `beitraege`
-gerendert. Seit #40/#41/#42 zusätzlich: Volatilität/Max-Drawdown-Funktionen
+gerendert. Seit #30 zusätzlich: `_teilszenario_gruppen()` gegen eine triviale
+Kombi-plus-zwei-Kinder-Fixture (Kombi-Strategie plus zwei `teil_von`-
+Unterszenarien) - der Gruppen-Chart auf der Startseite enthält alle drei als
+Datasets, und ohne gesetztes `teil_von` erscheint gar kein Gruppen-Abschnitt.
+Seit #40/#41/#42 zusätzlich: Volatilität/Max-Drawdown-Funktionen
 gegen handgerechnete Kursreihen (konstant/monoton/auf-und-ab), die
 Konzentrationswarnung anhand einer Strategie mit einem einzelnen Topf (in
 dem der Topf-Trigger nie greift, weil der Topf immer 100% hält, während
@@ -481,7 +532,20 @@ nur Gewinnwochen → Sortino bewusst 0.0 statt undefiniert,
 `_walk_forward_segmente()` gegen eine lange synthetische Kursreihe (leer
 bei zu wenig Wochen, exakt drei Segmente bei ausreichender Historie) und
 End-to-End, dass der Detailseiten-Abschnitt "Robustheit über Teilperioden"
-nur bei genug Kurshistorie erscheint. Für die Prämissen-Seite: dass sie
+nur bei genug Kurshistorie erscheint. Für die Zeitraum-Presets (#54):
+`_jahre_zurueck()` gegen den Normalfall sowie den Schaltjahr-Sonderfall
+(29.02. minus 1 Jahr fällt auf den 28.02. zurück), `_zeitraum_presets()`
+gegen eine mehrjährige synthetische Kursreihe (alle vier Presets vorhanden,
+kürzerer Zeitraum liefert eine andere Rendite als die volle Historie, der
+"alle"-Preset entspricht exakt einer normalen `engine.simulate()` über die
+komplette Historie) sowie End-to-End, dass Start- und Detailseite den neuen
+Umschalter/Abschnitt rendern. Die beiden älteren Tests, die Volatilität/Max
+Drawdown/Sharpe/Sortino als *ausschließlich* auf der Startseite vorkommend
+geprüft hatten, wurden dafür angepasst (`test_risikokennzahlen_
+ausserhalb_des_zeitraum_abschnitts_nur_auf_startseite`/`test_sharpe_
+sortino_ausserhalb_des_zeitraum_abschnitts_nur_auf_startseite`): diese
+Kennzahlen erscheinen auf der Detailseite jetzt genau einmal, aber nur
+innerhalb des neuen periodenabhängigen Abschnitts. Für die Prämissen-Seite: dass sie
 erzeugt und von Start- *und* Detailseite verlinkt wird, dass ihre Werte
 tatsächlich aus `ORDERGEBUEHR`/`SPARERPAUSCHBETRAG_PRO_JAHR`/`TICKERS` und
 der übergebenen Historie stammen (statt hart im Template zu stehen), und

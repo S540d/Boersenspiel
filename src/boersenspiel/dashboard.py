@@ -12,7 +12,7 @@ import json
 import re
 import statistics
 from dataclasses import replace
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from decimal import Decimal
 from pathlib import Path
 
@@ -23,6 +23,7 @@ from .history_store import FetchLogEntry, PriceRow
 from .instruments import INSTRUMENTS, TICKERS
 from .learnings import derive_learnings
 from .strategies import (
+    DIVIDENDENRENDITE_PLATZHALTER,
     ORDERGEBUEHR,
     SPARERPAUSCHBETRAG_PRO_JAHR,
     SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR,
@@ -203,6 +204,77 @@ def _walk_forward_segmente(rows: list[PriceRow], strategy: Strategy) -> list[dic
     return ergebnisse
 
 
+# --- Zeitraum-Presets (#54) --------------------------------------------------------
+#
+# Wunsch: Betrachtungszeitraum im Dashboard clientseitig einstellbar machen. Da
+# docs/*.html statische, bei jedem Build erzeugte Seiten ohne Backend sind (GitHub
+# Pages), kann ein Zeitraumfilter nicht "live" neu simulieren - echte Steuer-/
+# Rebalancing-Logik lässt sich nicht in JS nachbauen. Variante B (Owner-Entscheidung
+# in #54, gegenüber reinem Chart-Zuschneiden): feste Zeitraum-Presets (1/3/5 Jahre
+# sowie die gesamte Historie) werden beim Build je Strategie/Szenario VOLLSTÄNDIG
+# NEU simuliert (frisches Startkapital, keine fortgeführte Position - analog
+# ``_walk_forward_segmente()``), inklusive Rendite/Vola/Max-Drawdown/Sharpe/Sortino
+# UND eigenem Wertverlauf-Chart. Die Seite liefert damit für jeden Preset einen
+# fertigen Datensatz aus; ein Umschalter im Browser (reines JS, kein weiterer
+# Server-Request) wechselt nur, welcher bereits vorhandene Datensatz angezeigt wird -
+# "clientseitig einstellbar" im Sinne der Bedienung, nicht der Berechnung.
+_ZEITRAUM_PRESETS: list[tuple[str, int | None]] = [
+    ("1j", 1),
+    ("3j", 3),
+    ("5j", 5),
+    ("alle", None),
+]
+_ZEITRAUM_PRESET_LABELS: dict[str, str] = {
+    "1j": "1 Jahr",
+    "3j": "3 Jahre",
+    "5j": "5 Jahre",
+    "alle": "Gesamte Historie",
+}
+
+
+def _jahre_zurueck(stichtag: date, jahre: int) -> date:
+    """``stichtag`` minus ``jahre`` volle Jahre - faellt bei einem nicht
+    existierenden 29. Februar auf den 28. zurueck, statt eine Exception zu
+    werfen."""
+    try:
+        return stichtag.replace(year=stichtag.year - jahre)
+    except ValueError:
+        return stichtag.replace(year=stichtag.year - jahre, day=28)
+
+
+def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
+    letztes_datum = rows[-1].date
+    presets = []
+    for preset_id, jahre in _ZEITRAUM_PRESETS:
+        if jahre is None:
+            preset_rows = rows
+        else:
+            cutoff = _jahre_zurueck(letztes_datum, jahre)
+            preset_rows = [r for r in rows if r.date >= cutoff]
+        if len(preset_rows) < 1:
+            continue
+        result = simulate(preset_rows, strategy)
+        total_values = [_f(vp.total_value) for vp in result.value_history]
+        labels = [vp.date.isoformat() for vp in result.value_history]
+        rendite_pct = _rendite_pct(result, strategy)
+        presets.append(
+            {
+                "id": preset_id,
+                "label": _ZEITRAUM_PRESET_LABELS[preset_id],
+                "rendite_pct": _f(rendite_pct),
+                "rendite_label": f"{rendite_pct:+.2f}",
+                "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
+                "max_drawdown_label": f"{-_max_drawdown_pct(total_values):.2f}",
+                "sharpe_label": f"{_sharpe_ratio(total_values):.2f}",
+                "sortino_label": f"{_sortino_ratio(total_values):.2f}",
+                "labels": labels,
+                "total_values": total_values,
+                "chart_max": max(total_values) if total_values else 0.0,
+            }
+        )
+    return presets
+
+
 # --- Eingefrorene Kurse (#42) ------------------------------------------------------
 
 
@@ -231,6 +303,40 @@ _UMLAUT_TRANSLIT = str.maketrans({"ä": "ae", "ö": "oe", "ü": "ue", "ß": "ss"
 def _slug(name: str) -> str:
     normalisiert = name.lower().translate(_UMLAUT_TRANSLIT)
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", normalisiert)).strip("-")
+
+
+def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list[dict]:
+    """Gruppiert Unterszenarien (``Strategy.teil_von``, #30) je übergeordneter
+    Strategie für einen gemeinsamen Vergleichs-Chart auf der Startseite -
+    generisch für jede zusammengesetzte Strategie (aktuell: die fünf
+    einzelnen Börsenweisheiten-Szenarien unter "Börsenweisheiten (alle fünf
+    kombiniert)"), keine eigene Simulationslogik. Liefert nur Gruppen, deren
+    übergeordnete Strategie tatsächlich mitgerendert wird."""
+    views_by_id = {v["id"]: v for v in views}
+    kinder_je_eltern: dict[str, list[dict]] = {}
+    for s in strategies:
+        if s.teil_von is None:
+            continue
+        eltern_id = _slug(s.teil_von)
+        kind_id = _slug(s.name)
+        if eltern_id not in views_by_id or kind_id not in views_by_id:
+            continue
+        kinder_je_eltern.setdefault(s.teil_von, []).append(views_by_id[kind_id])
+
+    gruppen = []
+    for eltern_name, kinder in kinder_je_eltern.items():
+        eltern_view = views_by_id[_slug(eltern_name)]
+        mitglieder = [eltern_view] + kinder
+        alle_werte = [wert for m in mitglieder for wert in m["total_values"]]
+        gruppen.append(
+            {
+                "name": eltern_name,
+                "id": _slug(eltern_name),
+                "mitglieder": mitglieder,
+                "chart_max": max(alle_werte) if alle_werte else 0.0,
+            }
+        )
+    return gruppen
 
 
 def _rendite_pct(result: SimulationResult, strategy: Strategy) -> Decimal:
@@ -326,6 +432,7 @@ def _build_strategy_view(
         if walk_forward_segmente
         else 0.0
     )
+    zeitraum_presets = _zeitraum_presets(rows, strategy)
 
     # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie.
     beitraege = []
@@ -359,6 +466,7 @@ def _build_strategy_view(
         "cash_max_pct": cash_max_pct,
         "cash_max_label": f"{cash_max_pct:.1f}",
         "cash_max_datum": cash_max_datum or "–",
+        "teil_von": strategy.teil_von,
         "labels_json": json.dumps(labels),
         "total_values": total_values,
         "total_values_json": json.dumps(total_values),
@@ -389,6 +497,8 @@ def _build_strategy_view(
         "optimierungs_effekte": _optimierungs_effekte(strategy, rows, rendite_pct),
         "walk_forward_segmente": walk_forward_segmente,
         "walk_forward_spread_label": f"{walk_forward_spread_pp:.2f}",
+        "zeitraum_presets": zeitraum_presets,
+        "zeitraum_presets_json": json.dumps(zeitraum_presets),
     }
 
 
@@ -451,6 +561,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 "isin": inst.isin or "–",
                 "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
                 "thesaurierend": "ja" if inst.thesaurierend else "nein",
+                "ausschuettend": "ja" if inst.ausschuettend else "nein",
                 "spekulationsfrist": (
                     f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
                 ),
@@ -494,6 +605,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "spek_freigrenze": f"{SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR:.0f}",
         "vorabpauschale_basiszins": f"{VORABPAUSCHALE_BASISZINS_PLATZHALTER * 100:.1f}".replace(".", ","),
         "vorabpauschale_faktor": f"{VORABPAUSCHALE_FAKTOR * 100:.0f}",
+        "dividendenrendite": f"{DIVIDENDENRENDITE_PLATZHALTER * 100:.1f}".replace(".", ","),
         "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER * 100:.0f}",
         "sma_kurz": _SMA_KURZ_WOCHEN,
         "sma_lang": _SMA_LANG_WOCHEN,
@@ -525,6 +637,7 @@ def build_dashboard(
     views = [_build_strategy_view(s, simulate(rows, s), rows, carry_forward) for s in strategies]
     summary = sorted(views, key=lambda v: v["rendite_pct"], reverse=True)
     learnings = derive_learnings(views)
+    teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
 
     # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
     # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
@@ -549,6 +662,7 @@ def build_dashboard(
         summary=summary,
         learnings=learnings,
         wert_chart_max=wert_chart_max,
+        teilszenario_gruppen=teilszenario_gruppen,
         **common_context,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)

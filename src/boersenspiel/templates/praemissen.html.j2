@@ -83,7 +83,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Spekulationsfrist</th></tr></thead>
+        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Spekulationsfrist</th></tr></thead>
         <tbody>
         {% for i in instrumente %}
           <tr>
@@ -93,6 +93,7 @@
             <td class="{{ 'warn' if i.fehlt_anfangs else '' }}">{{ i.erster_kurs }}{% if i.fehlt_anfangs %} &#9888;{% endif %}</td>
             <td>{{ i.teilfreistellung }}</td>
             <td>{{ i.thesaurierend }}</td>
+            <td>{{ i.ausschuettend }}</td>
             <td>{{ i.spekulationsfrist }}</td>
           </tr>
         {% endfor %}
@@ -105,7 +106,7 @@
       <div class="stat-tile"><div class="label">Ordergebühr je Trade</div><div class="value">{{ ordergebuehr }} &euro;</div></div>
       <div class="stat-tile"><div class="label">Kostenbasis</div><div class="value">Durchschnitt</div></div>
       <div class="stat-tile"><div class="label">Spread / Slippage</div><div class="value">nicht modelliert</div></div>
-      <div class="stat-tile"><div class="label">Dividenden</div><div class="value">nicht modelliert</div></div>
+      <div class="stat-tile"><div class="label">Dividendenrendite Einzelaktien</div><div class="value">{{ dividendenrendite }} % (Platzhalter)</div></div>
     </div>
     <p class="hint">
       Gekauft und verkauft wird zum Wochenschlusskurs, in beliebigen
@@ -113,9 +114,18 @@
       Erstkaufs werden vor der Aufteilung vom Startkapital abgezogen; spätere
       Trades mindern beim Verkauf den realisierten Gewinn um die Gebühr und
       schlagen sie beim Kauf auf die Kostenbasis. Die Kostenbasis läuft nach der
-      Durchschnittskosten-Methode, nicht nach FIFO. <strong>Ausschüttungen
-      werden nicht modelliert</strong> &ndash; bei ausschüttenden Instrumenten
-      fehlt der Simulation damit ein Teil der realen Rendite.
+      Durchschnittskosten-Methode, nicht nach FIFO. Für die 10 Einzelaktien-
+      Satelliten wird einmal jährlich eine <strong>pauschale
+      Dividendenrendite von {{ dividendenrendite }} %</strong> auf den
+      Portfoliowert zu Jahresbeginn angesetzt (Owner-Entscheidung, siehe
+      <a href="https://github.com/S540d/Boersenspiel/issues/57">#57</a>) -
+      ein einheitlicher Platzhalter, keine recherchierte, unternehmens-
+      spezifische Dividendenhistorie (manche der 10 Aktien zahlen real gar
+      keine Dividende). Die Dividende wird als echtes zusätzliches Cash
+      gutgeschrieben, automatisch reinvestiert und wie ein realer
+      Kapitalertrag versteuert. Die 5 ETFs sind thesaurierend (siehe Tabelle
+      oben) und schütten korrekt nichts aus; 4GLD (physisches Gold) und
+      BTC-EUR zahlen ebenfalls keine Dividende.
     </p>
     <p class="hint">
       Rebalanciert wird nur, wenn der überwachte Topf um mehr als die Schwelle
@@ -244,7 +254,11 @@
 
     <h3>Was nicht modelliert wird</h3>
     <ul class="hint">
-      <li>Ausschüttungen und Dividenden</li>
+      <li>
+        Unternehmensspezifische Dividendenhöhen &ndash; Einzelaktien nutzen
+        einheitlich die pauschale {{ dividendenrendite }}%-Platzhalter-Rendite
+        oben statt recherchierter, individueller Ausschüttungshistorien
+      </li>
       <li>Inflation &ndash; alle Beträge sind nominal</li>
       <li>Geld-Brief-Spanne, Slippage, Teilausführungen, Handelsaussetzungen</li>
       <li>Depot-, Ausgabeaufschlags- und Fondskosten (TER) &ndash; nur die Ordergebühr</li>
