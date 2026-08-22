@@ -229,7 +229,7 @@ class AlphaVantageSource:
         fuer .DEX/.AMS-Symbole, sonst USD - Umrechnung erfolgt separat, siehe
         ``fetch_fx_weekly_eur_per_usd``).
 
-        Nutzt ``TIME_SERIES_WEEKLY_ADJUSTED`` statt ``TIME_SERIES_WEEKLY`` (#61).
+        Nutzt ``TIME_SERIES_WEEKLY_ADJUSTED`` statt ``TIME_SERIES_WEEKLY`` (#62).
         Der unbereinigte Endpunkt liefert den nominalen Schlusskurs: bei jedem
         Aktiensplit faellt die Kursreihe um den Split-Faktor, ohne dass ein
         Anleger etwas verloren haette. In der 20-Jahres-Historie betraf das

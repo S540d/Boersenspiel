@@ -431,7 +431,7 @@ def test_error_message_is_truncated_for_huge_payloads():
     assert len(str(exc.value)) < 1000
 
 
-# --- Splitbereinigung des Backfills (#61) -------------------------------------
+# --- Splitbereinigung des Backfills (#62) -------------------------------------
 #
 # TIME_SERIES_WEEKLY liefert nominale Schlusskurse: jeder Aktiensplit sieht dort
 # wie ein Kurssturz aus (TSLA 5:1 2020, MSTR 10:1 2024, KO 2:1 2012, ...).

@@ -4,7 +4,7 @@
 # scripts/backfill_history.py, der price_history.csv komplett neu aufbaut.
 #
 # Zweck: Alpha Vantages FX_WEEKLY liefert USD/EUR erst ab 2014-11-21. Fuer
-# alles davor bleiben die neun USD-Ticker und BTC-EUR sonst leer (#61) - der
+# alles davor bleiben die neun USD-Ticker und BTC-EUR sonst leer (#62) - der
 # Backfill rechnet sie bewusst nicht mehr mit einem spaeteren Kurs um. Diese
 # Datei schliesst genau diese Luecke, in TAEGLICHER Aufloesung, damit jeder
 # Wochenschlusskurs mit dem Kurs SEINES Handelstags umgerechnet wird statt

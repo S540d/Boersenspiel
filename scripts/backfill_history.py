@@ -34,7 +34,7 @@ aeltere Instrumente (ETFs, Einzelaktien wie Coca-Cola/Roche) haben oft
 liegenden Woche traegt ``history_store.record_week`` ohnehin "missing" statt
 eines erfundenen Werts ein.
 
-Handgepflegte Ergaenzungen (#63): Der Lauf setzt ``price_history.csv``
+Handgepflegte Ergaenzungen (#62): Der Lauf setzt ``price_history.csv``
 komplett zurueck - manuell nachgetragene Kurse waeren damit weg. Deshalb
 gibt es zwei Dateien, die NUR gelesen und von keinem Skript geschrieben
 werden, und deren Inhalt bei jedem Lauf neu eingemischt wird:
@@ -71,7 +71,7 @@ from boersenspiel.sources.alphavantage import USD_TICKERS, AlphaVantageSource
 
 _REQUEST_INTERVAL_SECONDS = 1.1
 
-# Handgepflegte Ergaenzungsdateien (#63). Werden von KEINEM Skript geschrieben -
+# Handgepflegte Ergaenzungsdateien (#62). Werden von KEINEM Skript geschrieben -
 # nur gelesen. Damit ueberlebt manuell recherchiertes Material jeden weiteren
 # Backfill-Lauf, der price_history.csv ansonsten komplett neu aufbaut.
 MANUAL_PRICES_FILE = "manual_prices.csv"
@@ -98,7 +98,7 @@ def read_manual_fx(data_dir: Path) -> dict[date, float]:
     """EUR/USD-Kurse aus ``data/manual_fx_usd_eur.csv``.
 
     Spalten: ``Date,EUR_pro_USD``. Deckt den Zeitraum ab, den Alpha Vantages
-    ``FX_WEEKLY`` nicht liefert (vor dem 21.11.2014, siehe #61). Ein einziger
+    ``FX_WEEKLY`` nicht liefert (vor dem 21.11.2014, siehe #62). Ein einziger
     Wechselkurs macht dort die Umrechnung aller neun USD-Ticker UND von
     BTC-EUR moeglich - deshalb ist das der wirksamste Ort fuer Handarbeit,
     nicht die Kurse selbst.
@@ -182,7 +182,7 @@ def _nearest_fx_rate(rates: dict[date, float], sorted_dates: list[date], target:
     """Naechstgelegener FX-Kurs an oder VOR ``target`` (Forward-Fill der letzten
     bekannten Woche), sonst ``None``.
 
-    Bewusst KEINE Rueckwaerts-Extrapolation (#61). Vorher fiel diese Funktion
+    Bewusst KEINE Rueckwaerts-Extrapolation (#62). Vorher fiel diese Funktion
     fuer Wochen vor Beginn der FX-Reihe auf ``rates[sorted_dates[0]]`` zurueck,
     also auf den aeltesten VERFUEGBAREN Kurs - der aber juenger ist als das
     umzurechnende Datum. Alpha Vantages ``FX_WEEKLY`` liefert USD/EUR erst ab
@@ -245,7 +245,7 @@ def collect_weekly_series(
     kommen deshalb als Parameter herein (gelesen wird in ``main()`` ueber
     ``read_manual_fx`` / ``read_manual_prices``).
 
-    Reihenfolge der Ergaenzungen ist bedeutsam (#63):
+    Reihenfolge der Ergaenzungen ist bedeutsam (#62):
 
     1. ``manual_fx`` wird VOR der Umrechnung eingemischt - damit werden die
        von Alpha Vantage gelieferten USD-Kurse der Fruehphase ueberhaupt erst
@@ -296,7 +296,7 @@ def collect_weekly_series(
     for beginn, ende in _fx_luecken(fx_dates_sorted, since):
         # Sichtbar machen, wo die FX-Abdeckung Loecher hat - dort bleiben die
         # USD-Ticker und BTC ohne Kurs, statt mit einem Kurs aus einer anderen
-        # Zeit falsch umgerechnet zu werden (#61).
+        # Zeit falsch umgerechnet zu werden (#62).
         print(
             f"  WARNUNG: keine EUR/USD-Kurse fuer {beginn} bis {ende}. "
             f"Fuer diese Wochen bleiben {betroffen} ohne Kurs. "
@@ -328,7 +328,7 @@ def collect_weekly_series(
         }
 
     # Handgepflegte Kurse ganz zum Schluss: sie sind bereits in EUR und duerfen
-    # deshalb nicht mehr durch die Waehrungsumrechnung laufen (#63).
+    # deshalb nicht mehr durch die Waehrungsumrechnung laufen (#62).
     for ticker, series in (manual_prices or {}).items():
         if ticker not in tickers:
             continue

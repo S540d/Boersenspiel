@@ -541,7 +541,7 @@ def test_missing_price_in_later_row_values_with_last_known_price():
     assert values == [Decimal("998"), Decimal("998"), Decimal("998")]
 
 
-# --- Erstkauf darf kein verdecktes Rebalancing sein (#61) ---------------------
+# --- Erstkauf darf kein verdecktes Rebalancing sein (#62) ---------------------
 
 # Drei Instrumente, T3 kommt erst spaeter an den Markt. Die Gewichte sind
 # bewusst ungleich (40/40/20), damit sich ein Erstkauf "nur T3 dazukaufen" von

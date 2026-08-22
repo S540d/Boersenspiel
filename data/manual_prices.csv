@@ -20,7 +20,7 @@
 #              noch einmal umgerechnet.
 #
 # Kurse muessen splitbereinigt sein, sonst entsteht derselbe Phantom-Absturz,
-# den die Bereinigung in sources/alphavantage.py gerade behebt (#61).
+# den die Bereinigung in sources/alphavantage.py gerade behebt (#62).
 #
 # Handgepflegte Werte gewinnen gegen die API. Eintraege wieder entfernen,
 # sobald Alpha Vantage die Woche selbst liefert - der Lauf gibt je Ticker aus,

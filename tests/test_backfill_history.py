@@ -199,7 +199,7 @@ def test_a_failing_fx_fetch_costs_no_ticker_requests():
     assert source.weekly_history_calls == []
 
 
-# --- Keine Rueckwaerts-Extrapolation des Wechselkurses (#61) ------------------
+# --- Keine Rueckwaerts-Extrapolation des Wechselkurses (#62) ------------------
 
 
 def test_nearest_fx_rate_does_not_extrapolate_backwards():
@@ -237,7 +237,7 @@ def test_collect_weekly_series_drops_usd_weeks_before_the_fx_history_starts():
     assert result["BTC-EUR"][date(2026, 8, 14)] == pytest.approx(52200.0)
 
 
-# --- Handgepflegte Ergaenzungsdateien (#63) -----------------------------------
+# --- Handgepflegte Ergaenzungsdateien (#62) -----------------------------------
 #
 # Der Backfill setzt price_history.csv komplett zurueck. Manuell recherchierte
 # Kurse (frueheste BTC-Historie) und Wechselkurse (EUR/USD vor November 2014,

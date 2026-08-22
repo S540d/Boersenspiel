@@ -452,7 +452,7 @@ def simulate(
         neue: set[str],
         prices: dict[str, Decimal],
     ) -> dict[str, Decimal]:
-        """Ziel-Gewichte fuer einen Erstkauf OHNE Rebalancing (#61).
+        """Ziel-Gewichte fuer einen Erstkauf OHNE Rebalancing (#62).
 
         Bei ``opt.rebalancing=False`` soll ein neu handelbares Instrument
         gekauft und geparktes Cash eingesetzt werden - aber der uebrige
@@ -693,7 +693,7 @@ def simulate(
                 # ueber den Topf-A-Trigger allein wuerde dieses Kapital nie wieder
                 # investiert, weil dessen Ist- und Zielgewicht dann beide 0 sind.
                 #
-                # WICHTIG (#61): Der Erstkauf darf nur das NEUE Instrument
+                # WICHTIG (#62): Der Erstkauf darf nur das NEUE Instrument
                 # finanzieren, nicht den gesamten Bestand auf die Zielgewichte
                 # zurueckholen. Sonst rebalanciert eine Strategie mit
                 # opt.rebalancing=False bei jedem Boersengang doch das komplette

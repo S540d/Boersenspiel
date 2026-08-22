@@ -196,7 +196,7 @@ inkrementell fortgeschrieben).
   Simulationsbeginn noch nicht gab): `neues_instrument`, sobald ein Ticker
   erstmals einen Kurs hat, und `kapitaleinsatz`, sobald geparktes Cash
   wieder ein handelbares Ziel hat. **Aber nur der Erstkauf selbst ist von
-  `opt.rebalancing` unabhängig, nicht der übrige Bestand (#61):** bei
+  `opt.rebalancing` unabhängig, nicht der übrige Bestand (#62):** bei
   ausgeschaltetem Rebalancing baut `erstkauf_gewichte()` eine Zielverteilung,
   in der das neue Instrument sein reguläres Zielgewicht bekommt und der
   gesamte Rest die *aktuellen* Marktwert-Verhältnisse behält (nur proportional
@@ -451,7 +451,7 @@ Request pro Ticker) und schreibt über `history_store.record_week()`
 werden mit dem historischen `FX_WEEKLY`-Kurs derselben Woche umgerechnet
 (Forward-Fill bei fehlender Woche).
 
-**Splitbereinigung (#61):** Der Backfill lief bis dahin über
+**Splitbereinigung (#62):** Der Backfill lief bis dahin über
 `TIME_SERIES_WEEKLY`, also über *nominale* Schlusskurse. Jeder Aktiensplit
 sieht dort wie ein Kurssturz aus — in der 20-Jahres-Historie betraf das fünf
 der zehn Satelliten-Aktien mit Phantom-Wochenverlusten bis -91% (TSLA 5:1
@@ -464,7 +464,7 @@ Simulation bereits separat als Barertrag modelliert (`ausschuettend` /
 `DIVIDENDENRENDITE_PLATZHALTER`, #57) — sonst zählten sie doppelt. Liefert
 ein Symbol gar keinen `adjusted close`, bleibt es beim Nominalkurs.
 
-**Handgepflegte Ergänzungen (#63):** Der Backfill setzt
+**Handgepflegte Ergänzungen (#62):** Der Backfill setzt
 `price_history.csv` komplett zurück (`_reset_data_files()`) — manuell
 nachgetragene Kurse wären damit bei jedem Lauf weg. Zwei Dateien werden
 deshalb **nur gelesen und von keinem Skript geschrieben**, und bei jedem
@@ -504,7 +504,7 @@ entfernt werden, sobald die API die Woche selbst liefert.
 `collect_weekly_series()` bleibt dateizugriffsfrei — die beiden Dicts
 kommen als Parameter herein, gelesen wird in `main()`.
 
-**Keine Rückwärts-Extrapolation des Wechselkurses (#61):**
+**Keine Rückwärts-Extrapolation des Wechselkurses (#62):**
 `_nearest_fx_rate()` fiel für Wochen *vor* Beginn der FX-Reihe auf den
 ältesten verfügbaren Kurs zurück — der aber jünger ist als das umzurechnende
 Datum. Alpha Vantages `FX_WEEKLY` liefert USD/EUR erst ab **November 2014**;
@@ -648,12 +648,12 @@ summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
 mit allen 17 Instrumenten. `tests/test_backfill_history.py` prüft
 `scripts/backfill_history.py` (USD/EUR-Umrechnung inkl. Forward-Fill,
 ISO-Wochen-Gruppierung, Carry-Forward fehlender Ticker) gegen ein
-Fake-`AlphaVantageSource`-Objekt; seit #61 zusätzlich, dass
+Fake-`AlphaVantageSource`-Objekt; seit #62 zusätzlich, dass
 `_nearest_fx_rate()` **nicht** rückwärts extrapoliert (Datum vor Beginn der
 FX-Reihe → `None`, Forward-Fill danach unverändert) und dass
 `collect_weekly_series()` die betroffenen Wochen der USD-Ticker und von
 BTC-EUR fallen lässt statt sie falsch umzurechnen. Für die handgepflegten
-Ergänzungen (#63): Einlesen beider Dateien inkl. `#`-Kommentarzeilen und
+Ergänzungen (#62): Einlesen beider Dateien inkl. `#`-Kommentarzeilen und
 fehlender Datei, Abbruch bei unbekanntem Ticker, dass ein manueller
 FX-Kurs eine Woche vor Beginn der FX-Reihe für USD-Ticker *und* BTC
 umrechenbar macht, dass `manual_prices`-Werte **nicht** noch einmal
@@ -661,13 +661,13 @@ umgerechnet werden, dass sie einen API-Wert derselben ISO-Woche ersetzen
 statt danebenzustehen, dass Ticker außerhalb der angefragten Liste
 ignoriert werden — und End-to-End, dass ein handgepflegter Kurs den
 kompletten Neuaufbau von `price_history.csv` übersteht. Für die Splitbereinigung
-(#61) in `tests/test_alphavantage.py`: dass `fetch_weekly_history()` den
+(#62) in `tests/test_alphavantage.py`: dass `fetch_weekly_history()` den
 `TIME_SERIES_WEEKLY_ADJUSTED`-Endpunkt anfragt, dass eine nachgebaute
 TSLA-Reihe (5:1 und 3:1) ohne Phantom-Absturz herauskommt, dass ein
 dividendengroßer Faktorsprung eben **nicht** als Split gewertet wird (sonst
 zählte die separat modellierte Dividende doppelt), und dass ein Symbol ohne
 `adjusted close` unverändert beim Nominalkurs bleibt. Für den Erstkauf ohne
-Rebalancing (#61) in `tests/test_engine.py`: eine Drei-Instrumente-Strategie
+Rebalancing (#62) in `tests/test_engine.py`: eine Drei-Instrumente-Strategie
 mit ungleichen Zielgewichten (40/40/20), bei der das dritte Instrument erst
 später an den Markt kommt — mit `rebalancing=False` bleibt das
 Wertverhältnis des Altbestands (2:1) exakt erhalten und nur das neue
