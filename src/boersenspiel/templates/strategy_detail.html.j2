@@ -15,11 +15,22 @@
       <div class="stat-tile"><div class="label">Letzter Dez.-Harvest</div><div class="value">{{ s.last_harvest_date }}</div></div>
     </div>
     <div class="stat-row">
+      <div class="stat-tile"><div class="label">Bruttorendite % (CAGR p.a.)</div><div class="value">{{ s.cagr_label }}</div></div>
+      <div class="stat-tile"><div class="label">Geschätzte Nettorendite % (CAGR p.a.)</div><div class="value">{{ s.netto_cagr_label }}</div></div>
       <div class="stat-tile"><div class="label">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value">{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
       <div class="stat-tile"><div class="label">Freibetrag verbleibend</div><div class="value">{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
       <div class="stat-tile"><div class="label">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Kumulierte Steuer</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Kumulierte Steuer (nur nachrichtlich)</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
     </div>
+    <p class="hint">
+      Alle Rendite- und Wertangaben auf dieser Seite sind
+      <strong>Bruttowerte (vor Steuer)</strong> &ndash; die kumulierte Steuer
+      wird nachrichtlich mitgeführt, aber nirgends vom simulierten Depotwert
+      abgezogen. Die "Geschätzte Nettorendite" oben zieht die kumulierte
+      Steuer einmalig vom Endwert ab, um eine grobe Größenordnung zu geben;
+      real fallen Steuern unterjährig zu unterschiedlichen Zeitpunkten an,
+      nicht als einmaliger Abzug am Ende (#63, F6a).
+    </p>
     {% if s.zeitraum_presets %}
     <h3>Kennzahlen nach Betrachtungszeitraum</h3>
     <p class="hint">
@@ -33,7 +44,7 @@
       {% endfor %}
     </div>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Rendite %</div><div class="value" id="zeitraum-rendite">{{ s.rendite_pct_label }}</div></div>
+      <div class="stat-tile"><div class="label">Rendite % (brutto, im Zeitraum)</div><div class="value" id="zeitraum-rendite">{{ s.rendite_pct_label }}</div></div>
       <div class="stat-tile"><div class="label">Volatilität % (ann.)</div><div class="value" id="zeitraum-volatilitaet">{{ s.volatilitaet_label }}</div></div>
       <div class="stat-tile"><div class="label">Max Drawdown %</div><div class="value" id="zeitraum-max-drawdown">{{ s.max_drawdown_label }}</div></div>
       <div class="stat-tile"><div class="label">Sharpe</div><div class="value" id="zeitraum-sharpe">{{ s.sharpe_label }}</div></div>
@@ -56,20 +67,25 @@
     <div class="beitraege">
       <h3>Effekt der einzelnen Börsenweisheiten</h3>
       <p class="hint">
-        Leave-one-out: Rendite dieser Strategie minus Rendite derselben Strategie
-        <em>ohne</em> den jeweiligen Spruch. Positiv = der Spruch hat Rendite gebracht,
-        negativ = er hat gekostet. Die Regeln beeinflussen sich gegenseitig, die
-        Einzelbeiträge summieren sich deshalb nicht exakt zur Gesamtrendite.
+        Leave-one-out: CAGR (annualisierte Rendite) dieser Strategie minus CAGR
+        derselben Strategie <em>ohne</em> den jeweiligen Spruch. Positiv = der Spruch
+        hat Rendite gebracht, negativ = er hat gekostet. Auf CAGR- statt
+        Gesamtrendite-Basis, weil die Differenz zweier Gesamtrenditen keine sinnvolle
+        Prozentpunkt-Angabe mehr ist, sobald sich Basis- und Vergleichslauf um
+        Größenordnungen unterscheiden (#63). Die Regeln beeinflussen sich
+        gegenseitig, die Einzelbeiträge summieren sich deshalb nicht exakt zum
+        Gesamt-CAGR.
       </p>
       <div class="chart-box"><canvas id="beitrag-chart"></canvas></div>
       <div class="overflow-x">
         <table>
-          <thead><tr><th>Börsenweisheit</th><th>Effekt (Prozentpunkte)</th><th>Rendite ohne diesen Spruch %</th></tr></thead>
+          <thead><tr><th>Börsenweisheit</th><th>Effekt (CAGR-Prozentpunkte p.a.)</th><th>CAGR ohne diesen Spruch % p.a.</th><th>Gesamtrendite ohne diesen Spruch %</th></tr></thead>
           <tbody>
           {% for b in s.beitraege %}
             <tr>
               <td>{{ b.name }}</td>
               <td class="{{ 'positive' if b.delta_pp >= 0 else 'negative' }}">{{ b.delta_label }}</td>
+              <td>{{ b.ohne_cagr_label }}</td>
               <td>{{ b.ohne_rendite_label }}</td>
             </tr>
           {% endfor %}
@@ -81,20 +97,26 @@
     <div class="beitraege">
       <h3>Effekt der Optimierungs-Schalter</h3>
       <p class="hint">
-        Leave-one-out je Mechanismus: Rendite dieser Strategie minus Rendite derselben
-        Strategie mit genau diesem einen Mechanismus ausgeschaltet (Dezember-Harvest,
-        Rebalancing, Ordergebühren, Besteuerung). Positiv = der Mechanismus hat Rendite
-        gebracht, negativ = er hat gekostet.
+        Leave-one-out je Mechanismus: CAGR (annualisierte Rendite) dieser Strategie
+        minus CAGR derselben Strategie mit genau diesem einen Mechanismus
+        ausgeschaltet (Dezember-Harvest, Rebalancing, Ordergebühren, Besteuerung).
+        Positiv = der Mechanismus hat Rendite gebracht, negativ = er hat gekostet.
+        Auf CAGR- statt Gesamtrendite-Basis, weil die Differenz zweier
+        Gesamtrenditen keine sinnvolle Prozentpunkt-Angabe mehr ist, sobald sich
+        Basis- und Vergleichslauf um Größenordnungen unterscheiden - etwa wenn
+        Rebalancing eine dominante Position wie Bitcoin immer wieder auf ihr
+        Zielgewicht zurückführt (#63).
       </p>
       <div class="chart-box"><canvas id="opt-chart"></canvas></div>
       <div class="overflow-x">
         <table>
-          <thead><tr><th>Mechanismus</th><th>Effekt (Prozentpunkte)</th><th>Rendite ohne diesen Mechanismus %</th></tr></thead>
+          <thead><tr><th>Mechanismus</th><th>Effekt (CAGR-Prozentpunkte p.a.)</th><th>CAGR ohne diesen Mechanismus % p.a.</th><th>Gesamtrendite ohne diesen Mechanismus %</th></tr></thead>
           <tbody>
           {% for o in s.optimierungs_effekte %}
             <tr>
               <td>{{ o.name }}</td>
               <td class="{{ 'positive' if o.delta_pp >= 0 else 'negative' }}">{{ o.delta_label }}</td>
+              <td>{{ o.ohne_cagr_label }}</td>
               <td>{{ o.ohne_rendite_label }}</td>
             </tr>
           {% endfor %}
@@ -134,9 +156,10 @@
       "Abw. pp" ist die Abweichung des Ist- vom Ziel-Gewicht dieses Instruments in
       Prozentpunkten; ⚠ markiert eine Abweichung über der Rebalancing-Schwelle dieser
       Strategie ({{ s.rebalancing_schwelle_pp }} pp) - der Rebalancing-Trigger selbst
-      prüft nur die Abweichung von Topf A, nicht die Konzentration einzelner
-      Instrumente innerhalb eines Topfs. "Kursstatus" zeigt, wenn der zuletzt
-      verwendete Kurs mangels frischem Abruf fortgeschrieben statt neu ermittelt wurde.
+      prüft die Abweichung jedes Topfs (5/25-Regel, #63), nicht die Konzentration
+      einzelner Instrumente innerhalb eines Topfs. "Kursstatus" zeigt, wenn der
+      zuletzt verwendete Kurs mangels frischem Abruf fortgeschrieben statt neu
+      ermittelt wurde.
     </p>
     <div class="overflow-x">
       <table>
@@ -279,7 +302,7 @@
     data: {
       labels: {{ s.beitraege | map(attribute='name') | list | tojson }},
       datasets: [{
-        label: 'Effekt (Prozentpunkte)',
+        label: 'Effekt (CAGR-Prozentpunkte p.a.)',
         data: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }},
         backgroundColor: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
       }],
@@ -287,7 +310,7 @@
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Renditebeitrag je Börsenweisheit (Prozentpunkte)', color: colors.text } },
+      plugins: { legend: { display: false }, title: { display: true, text: 'CAGR-Beitrag je Börsenweisheit (Prozentpunkte p.a.)', color: colors.text } },
       scales: {
         x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
         y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
@@ -301,7 +324,7 @@
     data: {
       labels: {{ s.optimierungs_effekte | map(attribute='name') | list | tojson }},
       datasets: [{
-        label: 'Effekt (Prozentpunkte)',
+        label: 'Effekt (CAGR-Prozentpunkte p.a.)',
         data: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }},
         backgroundColor: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
       }],
@@ -309,7 +332,7 @@
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Renditebeitrag je Optimierungs-Schalter (Prozentpunkte)', color: colors.text } },
+      plugins: { legend: { display: false }, title: { display: true, text: 'CAGR-Beitrag je Optimierungs-Schalter (Prozentpunkte p.a.)', color: colors.text } },
       scales: {
         x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
         y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },

@@ -673,14 +673,7 @@ def simulate(
             values = current_values(prices)
             total_value = sum(values.values(), Decimal(0)) + total_cash()
             if total_value > 0:
-                ziel_topf = next(t for t in strategy.toepfe if t.name == strategy.ziel_topf)
                 current_weights = handelbare_gewichte(weights_at(i), prices)
-                # Die Schwelle vergleicht Ist gegen Ziel - beide muessen sich auf
-                # dieselbe (umgelegte) Zielverteilung beziehen, sonst schlaegt der
-                # Trigger dauerhaft an, solange Instrumente fehlen.
-                ziel_gewicht_effektiv = sum(
-                    (current_weights.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
-                )
                 # Ein Instrument, das erstmals einen Kurs hat (Boersengang, Start
                 # der verfuegbaren Historie), gehoert ab jetzt ins Zielportfolio.
                 # Das ist ein Erstkauf, kein Korrigieren von Drift - deshalb
@@ -713,14 +706,33 @@ def simulate(
                         last_rebalance_date = row.date
                     values = current_values(prices)
                     total_value = sum(values.values(), Decimal(0)) + total_cash()
-                ziel_topf_value = sum(
-                    (values.get(t, Decimal(0)) for t in ziel_topf.sub_gewichte), Decimal(0)
-                )
-                ist_gewicht = ziel_topf_value / total_value
-                abweichung_pp = abs(ist_gewicht - ziel_gewicht_effektiv) * 100
-                if opt.rebalancing and abweichung_pp > strategy.rebalancing_schwelle_pp:
-                    if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
-                        last_rebalance_date = row.date
+                # Rebalancing-Trigger (#63, F5): "5/25-Regel" je Topf statt nur fuer
+                # ziel_topf - rebalanciert wird, sobald IRGENDEIN Topf entweder um mehr
+                # als rebalancing_schwelle_pp Prozentpunkte ABSOLUT vom eigenen
+                # (umgelegten) Zielgewicht abweicht, oder um mehr als
+                # rebalancing_schwelle_relativ RELATIV zu diesem Zielgewicht - je
+                # nachdem, welche der beiden Schwellen zuerst greift (Marktstandard).
+                # Vorher wurde ausschliesslich ziel_topf (Topf A) geprueft: mit nur
+                # zwei komplementaeren Toepfen (A+B=100%) ist die Abweichung von A immer
+                # exakt die von B, bei drei oder mehr Toepfen (z. B. dem
+                # Einzelaktien-Satellit) kann ein einzelner Topf aber unbemerkt driften,
+                # waehrend Topf A zufaellig im Band bleibt.
+                if opt.rebalancing:
+                    for topf in strategy.toepfe:
+                        topf_ziel_effektiv = sum(
+                            (current_weights.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0)
+                        )
+                        topf_ist_wert = sum((values.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0))
+                        topf_ist_gewicht = topf_ist_wert / total_value
+                        abweichung_pp = abs(topf_ist_gewicht - topf_ziel_effektiv) * 100
+                        schwelle_pp = strategy.rebalancing_schwelle_pp
+                        if topf_ziel_effektiv > 0:
+                            relativ_schwelle_pp = topf_ziel_effektiv * 100 * strategy.rebalancing_schwelle_relativ
+                            schwelle_pp = min(schwelle_pp, relativ_schwelle_pp)
+                        if abweichung_pp > schwelle_pp:
+                            if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
+                                last_rebalance_date = row.date
+                            break
 
         if row.date in harvest_dates:
             apply_dividende()

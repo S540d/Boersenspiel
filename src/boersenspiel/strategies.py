@@ -73,6 +73,16 @@ class Strategy:
     ziel_topf: str  # Name des Topfs, dessen Gewicht am Gesamtdepot überwacht wird (Rebalancing-Trigger)
     ziel_gewicht: Decimal  # Zielgewicht dieses Topfs, z. B. Decimal("0.20")
     rebalancing_schwelle_pp: Decimal  # Abweichung in Prozentpunkten, ab der rebalanciert wird
+    # Relative Zusatzschwelle zur "5/25-Regel" (#63, F5): rebalanciert wird, sobald EIN
+    # Topf entweder um mehr als rebalancing_schwelle_pp Prozentpunkte ABSOLUT vom
+    # eigenen (umgelegten) Zielgewicht abweicht ODER um mehr als diesen Anteil RELATIV
+    # zu seinem Zielgewicht (z. B. 0.25 = 25%, Marktstandard-"5/25-Regel") - je nachdem,
+    # welche der beiden Schwellen zuerst greift. Default 1 (100% relativ) macht die
+    # relative Schwelle faktisch wirkungslos (ein Zielgewicht kann nie um mehr als 100%
+    # seiner selbst abweichen), sodass Strategien/Tests ohne explizit gesetzten Wert
+    # sich weiterhin exakt wie vor #63 verhalten (nur die absolute Schwelle zählt).
+    # Produktivstrategien setzen hier bewusst 0.25.
+    rebalancing_schwelle_relativ: Decimal = Decimal("1")
     # Optional: macht die Ziel-Gewichte zeitabhängig statt konstant (z. B. saisonale
     # Regeln oder charttechnische Signale wie "Sell in May" / SMA-Crossover). Bekommt
     # die komplette (chronologisch sortierte) Kurshistorie plus den Index der aktuellen
@@ -146,11 +156,13 @@ BARBELL_20_80 = Strategy(
     ],
     ziel_topf="Topf A - Sicherheit",
     ziel_gewicht=Decimal("0.20"),
-    rebalancing_schwelle_pp=Decimal("10"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     beschreibung=(
         "20% Sicherheit (breite Anleihen/Gold-ETFs), 80% Wachstum (breite Aktien-ETFs "
-        "plus Bitcoin). Rebalancing auf die Zielgewichte, sobald der Sicherheits-Topf "
-        "um mehr als 10 Prozentpunkte abweicht."
+        "plus Bitcoin). Rebalancing auf die Zielgewichte, sobald EIN Topf um mehr als "
+        "5 Prozentpunkte absolut oder 25% relativ vom eigenen Zielgewicht abweicht "
+        "(5/25-Regel, marktüblich)."
     ),
 )
 
@@ -182,11 +194,11 @@ BARBELL_30_70 = Strategy(
     ],
     ziel_topf="Topf A - Sicherheit",
     ziel_gewicht=Decimal("0.30"),
-    rebalancing_schwelle_pp=Decimal("15"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     beschreibung=(
         "Defensivere Variante des Barbell-Ansatzes: 30% Sicherheit statt 20%, dafür "
-        "70% Wachstum. Größere Rebalancing-Schwelle (15 statt 10 Prozentpunkte), weil "
-        "der breitere Sicherheits-Topf natürlicherweise stärker schwankt."
+        "70% Wachstum. Rebalancing-Trigger wie bei Barbell 20/80 (5/25-Regel je Topf)."
     ),
 )
 
@@ -246,7 +258,8 @@ BARBELL_20_60_20_SATELLIT = Strategy(
     ],
     ziel_topf="Topf A - Sicherheit",
     ziel_gewicht=Decimal("0.20"),
-    rebalancing_schwelle_pp=Decimal("10"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
     beschreibung=(
         "Wie Barbell 20/80, aber der Wachstums-Topf sinkt von 80% auf 60% zugunsten "
         "eines dritten, gleichgewichteten Topfs aus 10 Einzelaktien (20%) - das "

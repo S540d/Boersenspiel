@@ -44,25 +44,32 @@
   <section class="strategy" id="uebersicht">
     <h2>Übersicht: Rendite im Vergleich</h2>
     <p class="hint">
-      Volatilität (annualisierte Standardabweichung der Wochenrenditen) und Max
-      Drawdown (größter Wertverlust vom bisherigen Höchststand) stehen bewusst neben
-      der Rendite: eine hohe Rendite bei konzentrierten oder ungetesteten Regeln
-      (z. B. Chartsignale) kann mit entsprechend höherem Risiko erkauft sein, das die
-      Rendite allein nicht zeigt. Sharpe- und Sortino-Ratio fassen das in eine
-      Rendite-pro-Risiko-Kennzahl: Sharpe teilt die annualisierte Rendite durch die
-      gesamte Streuung, Sortino nur durch die Streuung der Verlustwochen (Streuung
-      nach oben zählt dort nicht als Risiko). Höher ist besser; negativ heißt, das
-      eingegangene Risiko hat sich nicht gelohnt. Ein risikofreier Zins von 0% ist
-      dabei ein bewusster Platzhalter, kein realer Referenzzins.
+      CAGR (annualisierte Rendite, "% p.a.") ist die Leitkennzahl: über viele Jahre
+      ist eine Gesamtrendite kaum lesbar und schlecht zwischen unterschiedlich langen
+      Zeiträumen vergleichbar, eine jährliche Rate ist es. Die Gesamtrendite steht
+      als Nebenspalte daneben. Volatilität (annualisierte Standardabweichung der
+      Wochenrenditen) und Max Drawdown (größter Wertverlust vom bisherigen
+      Höchststand) stehen bewusst ebenfalls neben der Rendite: eine hohe Rendite bei
+      konzentrierten oder ungetesteten Regeln (z. B. Chartsignale) kann mit
+      entsprechend höherem Risiko erkauft sein, das die Rendite allein nicht zeigt.
+      Sharpe- und Sortino-Ratio fassen das in eine Rendite-pro-Risiko-Kennzahl:
+      Sharpe teilt die annualisierte Rendite durch die gesamte Streuung, Sortino nur
+      durch die Streuung der Verlustwochen (Streuung nach oben zählt dort nicht als
+      Risiko). Höher ist besser; negativ heißt, das eingegangene Risiko hat sich
+      nicht gelohnt. Ein risikofreier Zins von 0% ist dabei ein bewusster
+      Platzhalter, kein realer Referenzzins. Alle Renditewerte hier sind
+      Bruttowerte (vor Steuer) - die geschätzte Nettorendite je Strategie
+      steht auf der jeweiligen Detailseite.
     </p>
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <div class="overflow-x">
       <table class="summary-table">
-        <thead><tr><th>Strategie / Szenario</th><th>Rendite %</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Sharpe</th><th>Sortino</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
+        <thead><tr><th>Strategie / Szenario</th><th>CAGR % p.a. (brutto)</th><th>Gesamtrendite % (brutto)</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Sharpe</th><th>Sortino</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
         <tbody>
         {% for s in summary %}
           <tr>
             <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
+            <td class="{{ 'positive' if s.cagr_pct >= 0 else 'negative' }}">{{ s.cagr_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
             <td>{{ s.volatilitaet_label }}</td>
             <td class="{{ 'negative' if s.max_drawdown_pct else '' }}">{{ s.max_drawdown_label }}</td>
@@ -136,15 +143,15 @@
     data: {
       labels: {{ summary | map(attribute='name') | list | tojson }},
       datasets: [{
-        label: 'Rendite %',
-        data: {{ summary | map(attribute='rendite_pct') | list | tojson }},
-        backgroundColor: {{ summary | map(attribute='rendite_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+        label: 'CAGR % p.a.',
+        data: {{ summary | map(attribute='cagr_pct') | list | tojson }},
+        backgroundColor: {{ summary | map(attribute='cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
       }],
     },
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Rendite seit Simulationsbeginn (%)', color: colors.text } },
+      plugins: { legend: { display: false }, title: { display: true, text: 'Annualisierte Rendite (CAGR, % p.a.)', color: colors.text } },
       scales: {
         x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
         y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
