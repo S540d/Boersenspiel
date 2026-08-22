@@ -12,10 +12,14 @@ EUR umgerechnet, damit die Historie waehrungskonsistent zum Rest des
 Portfolios ist - dieselbe Umrechnung, die auch der laufende Live-Abruf
 (``run_fetch.py``) fuer diese Ticker vornimmt.
 
-Verbraucht ca. 18 Requests (16 nicht-Krypto-Ticker + 1x FX_WEEKLY + 1x
-Krypto) - passt in das taegliche Alpha-Vantage-Free-Tier-Limit von 25, sollte
-aber NICHT mehrfach am selben Tag laufen (das Limit gilt pro Tag und API-Key,
-nicht pro Skriptlauf). BTC-EUR laeuft dabei ueber denselben einen FX_WEEKLY-
+Verbraucht 25 Requests (23 nicht-Krypto-Ticker + 1x FX_WEEKLY + 1x Krypto) -
+das ist GENAU das taegliche Alpha-Vantage-Free-Tier-Limit, seit #64 die sieben
+zusaetzlichen Datenreihen dazugekommen sind. Es gibt damit keinen Puffer mehr:
+ein Re-Run nach einem Netzwerkfehler, ein Debug-Abruf oder der Wochenabruf am
+selben Tag reissen das Limit (es gilt pro Tag und API-Key, nicht pro
+Skriptlauf). Ein nicht aufloesbares Ticker-Symbol bricht den Lauf ab, ohne die
+bereits verbrauchten Requests zurueckzugeben - Symbole deshalb vorher pruefen
+(SYMBOL_SEARCH). Der Regressionstest dazu steht in tests/test_backfill_history.py. BTC-EUR laeuft dabei ueber denselben einen FX_WEEKLY-
 Request wie die USD-Einzelaktien (kein zusaetzlicher Request) - siehe
 ``fetch_crypto_weekly_history`` in ``sources/alphavantage.py`` (Issue #56:
 ``DIGITAL_CURRENCY_WEEKLY`` liefert fuer ``market=EUR`` im Free-Tier nur ca.
