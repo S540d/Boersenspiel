@@ -372,3 +372,45 @@ def test_manual_prices_fuer_nicht_angefragte_ticker_werden_ignoriert():
         manual_prices={"TSLA": {date(2010, 7, 9): 1.16}},
     )
     assert "TSLA" not in result
+
+
+def test_fx_luecken_findet_loecher_mittendrin():
+    """Sobald manual_fx_usd_eur.csv die Fruehphase abdeckt, beginnt die
+    FX-Reihe 2006 - eine reine Beginn-Pruefung wuerde ein Loch zwischen dem
+    Ende der handgepflegten Daten und dem Beginn der API-Abdeckung dann nicht
+    mehr sehen. Genau das passiert, wenn Alpha Vantages FX_WEEKLY-Fenster mit
+    der Zeit nach vorne wandert."""
+    dates = [date(2006, 1, 2), date(2006, 1, 9), date(2014, 11, 21), date(2014, 11, 28)]
+    assert bh._fx_luecken(dates, since=date(2006, 1, 1)) == [(date(2006, 1, 9), date(2014, 11, 21))]
+
+
+def test_fx_luecken_meldet_lueckenlose_reihe_nicht():
+    dates = [date(2026, 8, 7), date(2026, 8, 14), date(2026, 8, 21)]
+    assert bh._fx_luecken(dates, since=date(2026, 8, 1)) == []
+
+
+def test_fx_luecken_meldet_weiterhin_einen_zu_spaeten_beginn():
+    dates = [date(2014, 11, 21), date(2014, 11, 28)]
+    assert bh._fx_luecken(dates, since=date(2006, 1, 1)) == [(date(2006, 1, 1), date(2014, 11, 21))]
+
+
+def test_fx_luecken_toleriert_einzelne_ausgefallene_wochen():
+    # Feiertagswoche ohne Kurs ist kein Abdeckungsloch.
+    dates = [date(2026, 8, 7), date(2026, 8, 21)]
+    assert bh._fx_luecken(dates, since=date(2026, 8, 1)) == []
+
+
+def test_mitgelieferte_fx_datei_deckt_die_luecke_bis_zum_api_beginn():
+    """Regressionsschutz fuer die eingecheckte data/manual_fx_usd_eur.csv:
+    sie muss den Zeitraum vor dem Beginn von FX_WEEKLY (2014-11-21) ohne
+    eigene Loecher abdecken."""
+    fx = bh.read_manual_fx(Path(__file__).resolve().parents[1] / "data")
+    assert fx, "manual_fx_usd_eur.csv sollte die EZB-Referenzkurse enthalten"
+    ds = sorted(fx)
+    assert ds[0] <= date(2006, 9, 1)  # aelteste Zeile in price_history.csv
+    assert ds[-1] >= date(2014, 11, 14)
+    assert bh._fx_luecken(ds, since=ds[0]) == []
+    # Kehrwert-Konvention: 1 USD kostet deutlich weniger als 1 EUR im Juli 2008
+    # (EUR/USD-Hoch 1,599) und etwa 0,79 EUR im Juli 2010.
+    assert fx[date(2008, 7, 15)] == pytest.approx(0.625391, abs=1e-6)
+    assert fx[date(2010, 7, 9)] == pytest.approx(0.791327, abs=1e-6)

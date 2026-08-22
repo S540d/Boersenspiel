@@ -95,13 +95,18 @@ def _read_csv_rows(path: Path) -> list[dict[str, str]]:
 
 
 def read_manual_fx(data_dir: Path) -> dict[date, float]:
-    """Handgepflegte EUR/USD-Wochenkurse aus ``data/manual_fx_usd_eur.csv``.
+    """EUR/USD-Kurse aus ``data/manual_fx_usd_eur.csv``.
 
     Spalten: ``Date,EUR_pro_USD``. Deckt den Zeitraum ab, den Alpha Vantages
-    ``FX_WEEKLY`` nicht liefert (vor November 2014, siehe #61). Ein einziger
-    gepflegter Wechselkurs macht dort die Umrechnung aller neun USD-Ticker
-    UND von BTC-EUR moeglich - deshalb ist das der wirksamste Ort fuer
-    Handarbeit, nicht die Kurse selbst.
+    ``FX_WEEKLY`` nicht liefert (vor dem 21.11.2014, siehe #61). Ein einziger
+    Wechselkurs macht dort die Umrechnung aller neun USD-Ticker UND von
+    BTC-EUR moeglich - deshalb ist das der wirksamste Ort fuer Handarbeit,
+    nicht die Kurse selbst.
+
+    Eingecheckt sind die offiziellen EZB-Referenzkurse in TAEGLICHER
+    Aufloesung (2006-01-02 bis 2014-11-14), damit jeder Wochenschlusskurs mit
+    dem Kurs seines eigenen Handelstags umgerechnet wird statt mit dem einer
+    benachbarten Woche. Die Datei traegt ihre Herkunft im Kopf.
     """
     rates: dict[date, float] = {}
     for row in _read_csv_rows(data_dir / MANUAL_FX_FILE):
@@ -197,6 +202,35 @@ def _nearest_fx_rate(rates: dict[date, float], sorted_dates: list[date], target:
     return rates[candidates[-1]] if candidates else None
 
 
+# Ab dieser Luecke zwischen zwei aufeinanderfolgenden FX-Kursen fehlt mehr als
+# eine ausgefallene Woche (Feiertage, einzelne Ausreisser) und es wird gewarnt.
+_FX_LUECKE_TAGE = 14
+
+
+def _fx_luecken(sorted_dates: list[date], since: date) -> list[tuple[date, date]]:
+    """Zeitraeume ohne EUR/USD-Abdeckung ab ``since``.
+
+    Prueft bewusst nicht nur den Beginn der Reihe, sondern auch Loecher
+    MITTENDRIN. Sobald ``manual_fx_usd_eur.csv`` die Fruehphase abdeckt, faengt
+    eine reine Beginn-Pruefung naemlich nichts mehr ab: die Reihe startet dann
+    2006, und ein Loch zwischen dem Ende der handgepflegten Daten und dem
+    Beginn der API-Abdeckung bliebe unbemerkt - genau das passiert, wenn Alpha
+    Vantages FX_WEEKLY-Fenster mit der Zeit nach vorne wandert.
+    """
+    if not sorted_dates:
+        return [(since, date.today())]
+    luecken: list[tuple[date, date]] = []
+    # Auch am Anfang mit Toleranz pruefen: ``since`` ist ein gerechnetes Datum
+    # (heute minus N Jahre) und faellt selten auf einen Handelstag - ein bis
+    # zwei Tage Versatz sind der Normalfall, kein Abdeckungsloch.
+    if (sorted_dates[0] - since).days > _FX_LUECKE_TAGE:
+        luecken.append((since, sorted_dates[0]))
+    for vorher, nachher in zip(sorted_dates, sorted_dates[1:]):
+        if (nachher - vorher).days > _FX_LUECKE_TAGE:
+            luecken.append((vorher, nachher))
+    return luecken
+
+
 def collect_weekly_series(
     source: AlphaVantageSource,
     tickers: list[str],
@@ -252,19 +286,21 @@ def collect_weekly_series(
     if manual_fx:
         fx_rates, ersetzt, gefuellt = _ueberschreibe_iso_woche(fx_rates, manual_fx)
         print(
-            f"  {MANUAL_FX_FILE}: {gefuellt} Wochen ergaenzt, {ersetzt} ersetzt",
+            f"  {MANUAL_FX_FILE}: {gefuellt} Eintraege ergaenzt, {ersetzt} ersetzt",
             file=sys.stderr,
         )
     fx_dates_sorted = sorted(fx_rates)
-    if fx_dates_sorted and fx_dates_sorted[0] > since:
-        # Sichtbar machen, dass die FX-Reihe kuerzer ist als der angefragte
-        # Zeitraum - alles davor bleibt fuer USD-Ticker und BTC leer (#61).
+    betroffen = (
+        f"{sorted(usd_tickers_present)}{' und BTC-EUR' if crypto_present else ''}"
+    )
+    for beginn, ende in _fx_luecken(fx_dates_sorted, since):
+        # Sichtbar machen, wo die FX-Abdeckung Loecher hat - dort bleiben die
+        # USD-Ticker und BTC ohne Kurs, statt mit einem Kurs aus einer anderen
+        # Zeit falsch umgerechnet zu werden (#61).
         print(
-            f"  WARNUNG: FX_WEEKLY (USD/EUR) beginnt erst am {fx_dates_sorted[0]}, "
-            f"angefragt ab {since}. Fuer alle Wochen davor bleiben die USD-Ticker "
-            f"{sorted(usd_tickers_present)}"
-            f"{' und BTC-EUR' if crypto_present else ''} ohne Kurs, statt mit einem "
-            "spaeteren Wechselkurs falsch umgerechnet zu werden.",
+            f"  WARNUNG: keine EUR/USD-Kurse fuer {beginn} bis {ende}. "
+            f"Fuer diese Wochen bleiben {betroffen} ohne Kurs. "
+            f"Abhilfe: Zeilen fuer diesen Zeitraum in {MANUAL_FX_FILE} ergaenzen.",
             file=sys.stderr,
         )
 

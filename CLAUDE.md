@@ -475,6 +475,16 @@ Lauf neu eingemischt:
   der wirksamste Ort für Handarbeit: eine gepflegte Zeile macht die Woche
   für alle neun USD-Ticker *und* für BTC-EUR umrechenbar, deckt also den
   gesamten Bereich ab, den `FX_WEEKLY` vor November 2014 offenlässt.
+  Eingecheckt sind bereits die offiziellen **EZB-Referenzkurse** (Euro
+  foreign exchange reference rates) für 2006-01-02 bis 2014-11-14, 2.272
+  Einträge in **täglicher** Auflösung — damit wird jeder Wochenschlusskurs
+  mit dem Kurs seines eigenen Handelstags umgerechnet statt mit dem einer
+  benachbarten Woche. Bewusst nur bis KW 46/2014: ab KW 47 übernimmt
+  `FX_WEEKLY`, dessen Daten dadurch unangetastet bleiben (der Lauf meldet
+  entsprechend „0 ersetzt"). Die Datei trägt Quelle, Abdeckung und
+  Kontrollwerte in ihrem Kopf; sie wurde aus der in `currencyconverter`
+  (PyPI) gebündelten Kopie der EZB-Datei erzeugt, weil der Direktabruf bei
+  `data-api.ecb.europa.eu` an der Netzwerk-Policy scheitert.
 - `data/manual_prices.csv` (`Date,Ticker,Preis_EUR`, Langformat) — gelesen
   von `read_manual_prices()`, eingemischt **ganz zum Schluss**. Die Werte
   sind deshalb **immer schon in EUR** und laufen nicht mehr durch die
@@ -503,12 +513,19 @@ aller USD-Ticker *und* die komplette frühe BTC-Historie mit dem konstanten
 Kurs 0,7982 EUR/USD von 2014 umgerechnet, die Wechselkursbewegung dieser
 Jahre fehlte also vollständig. Jetzt liefert die Funktion für solche Wochen
 `None`, `record_week()` trägt „missing" ein (dieselbe Regel, der
-`AlphaVantageSource.fetch()` beim Live-Abruf schon folgt), und der Lauf gibt
-eine Warnung mit dem tatsächlichen FX-Startdatum aus. **Folge:** Ein
-Re-Backfill verkürzt die belastbare Historie der 9 USD-Ticker und von BTC-EUR
-auf November 2014 — das ist der ehrliche Umfang der verfügbaren Daten. Wer
-die frühen Jahre zurück will, braucht eine EUR/USD-Quelle mit längerer
-Historie, nicht eine Extrapolation. Reine Datenbeschaffung
+`AlphaVantageSource.fetch()` beim Live-Abruf schon folgt), und `_fx_luecken()`
+meldet jeden Zeitraum ohne Abdeckung. Diese Prüfung schaut bewusst nicht nur
+auf den **Beginn** der Reihe, sondern auch auf Löcher **mittendrin**: sobald
+`manual_fx_usd_eur.csv` die Frühphase abdeckt, startet die Reihe 2006, und
+eine reine Beginn-Prüfung würde ein Loch zwischen dem Ende der gepflegten
+Daten und dem Beginn der API-Abdeckung nicht mehr sehen — genau das passiert,
+wenn Alpha Vantages FX_WEEKLY-Fenster mit der Zeit nach vorne wandert.
+Toleranz `_FX_LUECKE_TAGE = 14`, damit einzelne Feiertagswochen und der
+Versatz zwischen `since` (heute minus N Jahre) und dem ersten Handelstag
+keine Fehlalarme auslösen. **Folge:** Ohne die EZB-Ergänzungsdatei würde ein
+Re-Backfill die belastbare Historie der 9 USD-Ticker und von BTC-EUR auf
+November 2014 verkürzen; mit ihr bleibt die volle Historie erhalten,
+umgerechnet mit dem jeweils zeitgleichen echten Wechselkurs. Reine Datenbeschaffung
 (`collect_weekly_series`) und CSV-Schreiben (`write_backfilled_history`)
 sind als separate, unabhängig testbare Funktionen im Skript
 implementiert - siehe `tests/test_backfill_history.py` (mockt

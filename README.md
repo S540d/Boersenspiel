@@ -260,11 +260,22 @@ every run:
 | `data/manual_prices.csv` | `Date,Ticker,Preis_EUR` | **last**, so values are already in EUR |
 
 The FX file is the higher-leverage one: Alpha Vantage's `FX_WEEKLY` only
-goes back to November 2014, and the backfill deliberately refuses to convert
-earlier weeks with a later rate. A single hand-maintained rate makes that
-week convertible for all nine USD tickers *and* BTC-EUR at once. Use
-`manual_prices.csv` only for prices the API doesn't have at all (e.g. the
+goes back to 21 November 2014, and the backfill deliberately refuses to
+convert earlier weeks with a later rate. A single rate makes that week
+convertible for all nine USD tickers *and* BTC-EUR at once. It already ships
+filled: 2,272 **daily** ECB euro foreign exchange reference rates covering
+2006-01-02 to 2014-11-14, so every weekly close is converted at its own
+trading day's rate rather than a neighbouring week's. Coverage deliberately
+stops at ISO week 46/2014 so `FX_WEEKLY` data stays untouched from week 47
+onwards.
+
+Use `manual_prices.csv` only for prices the API doesn't have at all (e.g. the
 earliest BTC history) — and make sure they are split-adjusted.
+
+`_fx_luecken()` reports any period without FX coverage, checking not just the
+start of the series but gaps *inside* it — once the manual file covers the
+early years the series starts in 2006, and a start-only check would no longer
+notice a hole opening up if Alpha Vantage's window drifts forward over time.
 
 Hand-maintained values win over the API, compared at **ISO week** level, so
 a manual Friday entry replaces an API Thursday value from the same week
