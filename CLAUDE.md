@@ -195,7 +195,16 @@ inkrementell fortgeschrieben).
   sonst hielte `BUY_AND_HOLD` nie ein Instrument, das es bei
   Simulationsbeginn noch nicht gab): `neues_instrument`, sobald ein Ticker
   erstmals einen Kurs hat, und `kapitaleinsatz`, sobald geparktes Cash
-  wieder ein handelbares Ziel hat. Letzteres ist nötig, weil der
+  wieder ein handelbares Ziel hat. **Aber nur der Erstkauf selbst ist von
+  `opt.rebalancing` unabhängig, nicht der übrige Bestand (#62):** bei
+  ausgeschaltetem Rebalancing baut `erstkauf_gewichte()` eine Zielverteilung,
+  in der das neue Instrument sein reguläres Zielgewicht bekommt und der
+  gesamte Rest die *aktuellen* Marktwert-Verhältnisse behält (nur proportional
+  herunterskaliert). Vorher lief bei jedem Börsengang ein komplettes
+  Rebalancing über `current_weights` — über die 20-Jahres-Historie 27
+  verdeckte Voll-Rebalancings, wodurch „Time in the market beats timing the
+  market" bit-identische 1-/3-/5-Jahres-Renditen wie die rebalancierende
+  Barbell-Strategie lieferte und am Ende exakt deren Zielgewichte hielt. Letzteres ist nötig, weil der
   Rebalancing-Trigger nur Topf A prüft: war zeitweise *kein* Zielinstrument
   handelbar (z. B. „Sell in May" startet im September 2006 defensiv, Topf A
   existiert aber erst ab 2008), sind Ist- und Zielgewicht von Topf A beide
@@ -435,12 +444,88 @@ Prompt-/Agentenweg zu ersetzen.
 
 `data/price_history.csv` wächst im Normalbetrieb nur Woche für Woche seit
 Projektstart, weil `GLOBAL_QUOTE` nur den aktuellen Kurs liefert.
-`scripts/backfill_history.py` nutzt stattdessen `TIME_SERIES_WEEKLY` /
+`scripts/backfill_history.py` nutzt stattdessen `TIME_SERIES_WEEKLY_ADJUSTED` /
 `DIGITAL_CURRENCY_WEEKLY` (komplette verfügbare Historie in **einem**
 Request pro Ticker) und schreibt über `history_store.record_week()`
 (derselbe Pfad wie der Live-Abruf) die komplette Historie neu. USD-Ticker
 werden mit dem historischen `FX_WEEKLY`-Kurs derselben Woche umgerechnet
-(Forward-Fill bei fehlender Woche). Reine Datenbeschaffung
+(Forward-Fill bei fehlender Woche).
+
+**Splitbereinigung (#62):** Der Backfill lief bis dahin über
+`TIME_SERIES_WEEKLY`, also über *nominale* Schlusskurse. Jeder Aktiensplit
+sieht dort wie ein Kurssturz aus — in der 20-Jahres-Historie betraf das fünf
+der zehn Satelliten-Aktien mit Phantom-Wochenverlusten bis -91% (TSLA 5:1
+2020 und 3:1 2022, MSTR 10:1 2024, KO 2:1 2012, RHHBY und BYDDY je ein
+ADR-Verhältniswechsel). `_split_bereinigte_close_series()` leitet aus
+`close / adjusted close` den kumulierten **Split**-Faktor ab und teilt die
+Nominalkurse dadurch. Bewusst split-only statt des vollen `adjusted close`:
+der ist eine Total-Return-Reihe und enthält auch Dividenden, die die
+Simulation bereits separat als Barertrag modelliert (`ausschuettend` /
+`DIVIDENDENRENDITE_PLATZHALTER`, #57) — sonst zählten sie doppelt. Liefert
+ein Symbol gar keinen `adjusted close`, bleibt es beim Nominalkurs.
+
+**Handgepflegte Ergänzungen (#62):** Der Backfill setzt
+`price_history.csv` komplett zurück (`_reset_data_files()`) — manuell
+nachgetragene Kurse wären damit bei jedem Lauf weg. Zwei Dateien werden
+deshalb **nur gelesen und von keinem Skript geschrieben**, und bei jedem
+Lauf neu eingemischt:
+
+- `data/manual_fx_usd_eur.csv` (`Date,EUR_pro_USD`) — gelesen von
+  `read_manual_fx()`, eingemischt **vor** der Währungsumrechnung. Das ist
+  der wirksamste Ort für Handarbeit: eine gepflegte Zeile macht die Woche
+  für alle neun USD-Ticker *und* für BTC-EUR umrechenbar, deckt also den
+  gesamten Bereich ab, den `FX_WEEKLY` vor November 2014 offenlässt.
+  Eingecheckt sind bereits die offiziellen **EZB-Referenzkurse** (Euro
+  foreign exchange reference rates) für 2006-01-02 bis 2014-11-14, 2.272
+  Einträge in **täglicher** Auflösung — damit wird jeder Wochenschlusskurs
+  mit dem Kurs seines eigenen Handelstags umgerechnet statt mit dem einer
+  benachbarten Woche. Bewusst nur bis KW 46/2014: ab KW 47 übernimmt
+  `FX_WEEKLY`, dessen Daten dadurch unangetastet bleiben (der Lauf meldet
+  entsprechend „0 ersetzt"). Die Datei trägt Quelle, Abdeckung und
+  Kontrollwerte in ihrem Kopf; sie wurde aus der in `currencyconverter`
+  (PyPI) gebündelten Kopie der EZB-Datei erzeugt, weil der Direktabruf bei
+  `data-api.ecb.europa.eu` an der Netzwerk-Policy scheitert.
+- `data/manual_prices.csv` (`Date,Ticker,Preis_EUR`, Langformat) — gelesen
+  von `read_manual_prices()`, eingemischt **ganz zum Schluss**. Die Werte
+  sind deshalb **immer schon in EUR** und laufen nicht mehr durch die
+  Umrechnung. Gedacht für Kurse, die Alpha Vantage überhaupt nicht liefert
+  (z. B. die früheste BTC-Historie) — nicht für USD-Kurse, die nur am
+  fehlenden Wechselkurs scheitern; die gehören in die FX-Datei.
+
+Beide Dateien erlauben `#`-Kommentarzeilen und dokumentieren sich damit
+selbst. Ein unbekannter Ticker in `manual_prices.csv` bricht den Lauf ab,
+statt still ignoriert zu werden. Handgepflegte Werte gewinnen gegen die
+API; verglichen wird auf **ISO-Wochen-Ebene** (`_ueberschreibe_iso_woche()`),
+nicht auf Datumsebene — sonst stünde ein manueller Freitagswert neben dem
+API-Donnerstagswert derselben Woche und welcher in die Zeile käme, wäre
+Zufall der Iterationsreihenfolge. Der Lauf gibt je Datei aus, wie viele
+Wochen ergänzt und wie viele ersetzt wurden; Einträge sollten wieder
+entfernt werden, sobald die API die Woche selbst liefert.
+`collect_weekly_series()` bleibt dateizugriffsfrei — die beiden Dicts
+kommen als Parameter herein, gelesen wird in `main()`.
+
+**Keine Rückwärts-Extrapolation des Wechselkurses (#62):**
+`_nearest_fx_rate()` fiel für Wochen *vor* Beginn der FX-Reihe auf den
+ältesten verfügbaren Kurs zurück — der aber jünger ist als das umzurechnende
+Datum. Alpha Vantages `FX_WEEKLY` liefert USD/EUR erst ab **November 2014**;
+dadurch wurden im 20-Jahres-Backfill 227 Wochen (Juli 2010 bis November 2014)
+aller USD-Ticker *und* die komplette frühe BTC-Historie mit dem konstanten
+Kurs 0,7982 EUR/USD von 2014 umgerechnet, die Wechselkursbewegung dieser
+Jahre fehlte also vollständig. Jetzt liefert die Funktion für solche Wochen
+`None`, `record_week()` trägt „missing" ein (dieselbe Regel, der
+`AlphaVantageSource.fetch()` beim Live-Abruf schon folgt), und `_fx_luecken()`
+meldet jeden Zeitraum ohne Abdeckung. Diese Prüfung schaut bewusst nicht nur
+auf den **Beginn** der Reihe, sondern auch auf Löcher **mittendrin**: sobald
+`manual_fx_usd_eur.csv` die Frühphase abdeckt, startet die Reihe 2006, und
+eine reine Beginn-Prüfung würde ein Loch zwischen dem Ende der gepflegten
+Daten und dem Beginn der API-Abdeckung nicht mehr sehen — genau das passiert,
+wenn Alpha Vantages FX_WEEKLY-Fenster mit der Zeit nach vorne wandert.
+Toleranz `_FX_LUECKE_TAGE = 14`, damit einzelne Feiertagswochen und der
+Versatz zwischen `since` (heute minus N Jahre) und dem ersten Handelstag
+keine Fehlalarme auslösen. **Folge:** Ohne die EZB-Ergänzungsdatei würde ein
+Re-Backfill die belastbare Historie der 9 USD-Ticker und von BTC-EUR auf
+November 2014 verkürzen; mit ihr bleibt die volle Historie erhalten,
+umgerechnet mit dem jeweils zeitgleichen echten Wechselkurs. Reine Datenbeschaffung
 (`collect_weekly_series`) und CSV-Schreiben (`write_backfilled_history`)
 sind als separate, unabhängig testbare Funktionen im Skript
 implementiert - siehe `tests/test_backfill_history.py` (mockt
@@ -563,4 +648,28 @@ summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
 mit allen 17 Instrumenten. `tests/test_backfill_history.py` prüft
 `scripts/backfill_history.py` (USD/EUR-Umrechnung inkl. Forward-Fill,
 ISO-Wochen-Gruppierung, Carry-Forward fehlender Ticker) gegen ein
-Fake-`AlphaVantageSource`-Objekt.
+Fake-`AlphaVantageSource`-Objekt; seit #62 zusätzlich, dass
+`_nearest_fx_rate()` **nicht** rückwärts extrapoliert (Datum vor Beginn der
+FX-Reihe → `None`, Forward-Fill danach unverändert) und dass
+`collect_weekly_series()` die betroffenen Wochen der USD-Ticker und von
+BTC-EUR fallen lässt statt sie falsch umzurechnen. Für die handgepflegten
+Ergänzungen (#62): Einlesen beider Dateien inkl. `#`-Kommentarzeilen und
+fehlender Datei, Abbruch bei unbekanntem Ticker, dass ein manueller
+FX-Kurs eine Woche vor Beginn der FX-Reihe für USD-Ticker *und* BTC
+umrechenbar macht, dass `manual_prices`-Werte **nicht** noch einmal
+umgerechnet werden, dass sie einen API-Wert derselben ISO-Woche ersetzen
+statt danebenzustehen, dass Ticker außerhalb der angefragten Liste
+ignoriert werden — und End-to-End, dass ein handgepflegter Kurs den
+kompletten Neuaufbau von `price_history.csv` übersteht. Für die Splitbereinigung
+(#62) in `tests/test_alphavantage.py`: dass `fetch_weekly_history()` den
+`TIME_SERIES_WEEKLY_ADJUSTED`-Endpunkt anfragt, dass eine nachgebaute
+TSLA-Reihe (5:1 und 3:1) ohne Phantom-Absturz herauskommt, dass ein
+dividendengroßer Faktorsprung eben **nicht** als Split gewertet wird (sonst
+zählte die separat modellierte Dividende doppelt), und dass ein Symbol ohne
+`adjusted close` unverändert beim Nominalkurs bleibt. Für den Erstkauf ohne
+Rebalancing (#62) in `tests/test_engine.py`: eine Drei-Instrumente-Strategie
+mit ungleichen Zielgewichten (40/40/20), bei der das dritte Instrument erst
+später an den Markt kommt — mit `rebalancing=False` bleibt das
+Wertverhältnis des Altbestands (2:1) exakt erhalten und nur das neue
+Instrument wird auf sein Zielgewicht gekauft, mit `rebalancing=True` landen
+weiterhin alle drei auf ihren Zielgewichten.

@@ -197,3 +197,220 @@ def test_a_failing_fx_fetch_costs_no_ticker_requests():
         bh.collect_weekly_series(source, ["LITE", "BTC-EUR"], since=date(2020, 1, 1))
 
     assert source.weekly_history_calls == []
+
+
+# --- Keine Rueckwaerts-Extrapolation des Wechselkurses (#62) ------------------
+
+
+def test_nearest_fx_rate_does_not_extrapolate_backwards():
+    """Vor Beginn der FX-Reihe gibt es keinen Kurs - und keinen Ersatz dafuer.
+
+    Vorher fiel die Funktion auf den aeltesten VERFUEGBAREN Kurs zurueck, der
+    aber juenger ist als das umzurechnende Datum. Im echten 20-Jahres-Backfill
+    beginnt Alpha Vantages FX_WEEKLY erst im November 2014; dadurch wurden 227
+    Wochen aller USD-Ticker und die komplette fruehe BTC-Historie mit dem
+    konstanten Kurs von 2014 umgerechnet.
+    """
+    rates = {date(2014, 11, 21): 0.7982, date(2014, 11, 28): 0.8028}
+    sorted_dates = sorted(rates)
+
+    # Datum VOR der Reihe -> kein Kurs.
+    assert bh._nearest_fx_rate(rates, sorted_dates, date(2010, 7, 9)) is None
+    # Datum in/nach der Reihe -> Forward-Fill wie bisher.
+    assert bh._nearest_fx_rate(rates, sorted_dates, date(2014, 11, 21)) == pytest.approx(0.7982)
+    assert bh._nearest_fx_rate(rates, sorted_dates, date(2026, 1, 1)) == pytest.approx(0.8028)
+
+
+def test_collect_weekly_series_drops_usd_weeks_before_the_fx_history_starts():
+    source = _FakeSource(
+        weekly={"LITE": {date(2010, 7, 9): 100.0, date(2026, 8, 14): 200.0}},
+        fx={date(2014, 11, 21): 0.80, date(2026, 8, 14): 0.90},
+        crypto={date(2010, 7, 9): 0.05, date(2026, 8, 14): 58000.0},
+    )
+    result = bh.collect_weekly_series(source, ["LITE", "BTC-EUR"], since=date(2006, 1, 1))
+
+    # Woche vor Beginn der FX-Reihe faellt weg, statt mit dem 2014er-Kurs
+    # falsch umgerechnet zu werden - record_week() traegt dafuer "missing" ein.
+    assert date(2010, 7, 9) not in result["LITE"]
+    assert date(2010, 7, 9) not in result["BTC-EUR"]
+    assert result["LITE"][date(2026, 8, 14)] == pytest.approx(180.0)
+    assert result["BTC-EUR"][date(2026, 8, 14)] == pytest.approx(52200.0)
+
+
+# --- Handgepflegte Ergaenzungsdateien (#62) -----------------------------------
+#
+# Der Backfill setzt price_history.csv komplett zurueck. Manuell recherchierte
+# Kurse (frueheste BTC-Historie) und Wechselkurse (EUR/USD vor November 2014,
+# das FX_WEEKLY nicht liefert) leben deshalb in eigenen Dateien, die kein
+# Skript schreibt und die bei jedem Lauf neu eingemischt werden.
+
+
+def _schreibe(path: Path, text: str) -> None:
+    path.write_text(text, encoding="utf-8")
+
+
+def test_read_manual_fx_liest_werte_und_ueberspringt_kommentare(tmp_path: Path):
+    _schreibe(
+        tmp_path / bh.MANUAL_FX_FILE,
+        "# eine Kommentarzeile\nDate,EUR_pro_USD\n2010-07-09,0.7912\n2011-05-13,0.7010\n",
+    )
+    assert bh.read_manual_fx(tmp_path) == {
+        date(2010, 7, 9): pytest.approx(0.7912),
+        date(2011, 5, 13): pytest.approx(0.7010),
+    }
+
+
+def test_read_manual_prices_liest_langformat(tmp_path: Path):
+    _schreibe(
+        tmp_path / bh.MANUAL_PRICES_FILE,
+        "# Kommentar\nDate,Ticker,Preis_EUR\n2010-07-23,BTC-EUR,0.0391\n2010-07-30,BTC-EUR,0.0450\n",
+    )
+    assert bh.read_manual_prices(tmp_path) == {
+        "BTC-EUR": {
+            date(2010, 7, 23): pytest.approx(0.0391),
+            date(2010, 7, 30): pytest.approx(0.0450),
+        }
+    }
+
+
+def test_fehlende_ergaenzungsdateien_sind_kein_fehler(tmp_path: Path):
+    assert bh.read_manual_fx(tmp_path) == {}
+    assert bh.read_manual_prices(tmp_path) == {}
+
+
+def test_read_manual_prices_bricht_bei_unbekanntem_ticker_ab(tmp_path: Path):
+    # Ein Tippfehler im Ticker wuerde sonst still ignoriert - und der
+    # muehsam recherchierte Kurs landete nie in der Historie.
+    _schreibe(tmp_path / bh.MANUAL_PRICES_FILE, "Date,Ticker,Preis_EUR\n2010-07-23,BTCEUR,0.0391\n")
+    with pytest.raises(ValueError, match="BTCEUR"):
+        bh.read_manual_prices(tmp_path)
+
+
+def test_manual_fx_macht_wochen_vor_der_fx_reihe_umrechenbar():
+    """Der eigentliche Zweck der FX-Datei: eine einzige gepflegte Zeile macht
+    die Woche fuer alle USD-Instrumente auf einmal umrechenbar."""
+    source = _FakeSource(
+        weekly={"LITE": {date(2010, 7, 9): 100.0, date(2026, 8, 14): 200.0}},
+        fx={date(2014, 11, 21): 0.80, date(2026, 8, 14): 0.90},
+        crypto={date(2010, 7, 9): 0.05, date(2026, 8, 14): 58000.0},
+    )
+    ohne = bh.collect_weekly_series(source, ["LITE", "BTC-EUR"], since=date(2006, 1, 1))
+    assert date(2010, 7, 9) not in ohne["LITE"]
+    assert date(2010, 7, 9) not in ohne["BTC-EUR"]
+
+    mit = bh.collect_weekly_series(
+        source,
+        ["LITE", "BTC-EUR"],
+        since=date(2006, 1, 1),
+        manual_fx={date(2010, 7, 9): 0.7912},
+    )
+    assert mit["LITE"][date(2010, 7, 9)] == pytest.approx(79.12)
+    assert mit["BTC-EUR"][date(2010, 7, 9)] == pytest.approx(0.05 * 0.7912)
+    # Die API-Wochen bleiben unveraendert.
+    assert mit["LITE"][date(2026, 8, 14)] == pytest.approx(180.0)
+
+
+def test_manual_prices_werden_nicht_noch_einmal_umgerechnet():
+    """Handgepflegte Kurse sind bereits in EUR - sie duerfen nicht durch die
+    USD/EUR-Umrechnung laufen, sonst waeren sie um den Wechselkurs daneben."""
+    source = _FakeSource(
+        weekly={"LITE": {date(2026, 8, 14): 200.0}},
+        fx={date(2026, 8, 14): 0.90},
+        crypto={},
+    )
+    result = bh.collect_weekly_series(
+        source,
+        ["LITE", "BTC-EUR"],
+        since=date(2006, 1, 1),
+        manual_prices={"BTC-EUR": {date(2010, 7, 23): 0.0391}, "LITE": {date(2010, 7, 9): 50.0}},
+    )
+    assert result["BTC-EUR"][date(2010, 7, 23)] == pytest.approx(0.0391)
+    assert result["LITE"][date(2010, 7, 9)] == pytest.approx(50.0)  # nicht * 0.90
+
+
+def test_manual_prices_gewinnen_gegen_die_api_in_derselben_iso_woche():
+    """Abgeglichen wird auf ISO-Wochen-Ebene: ein manueller Eintrag vom
+    Freitag ersetzt den API-Wert vom Donnerstag derselben Woche, statt als
+    zweiter Wert derselben Woche danebenzustehen."""
+    source = _FakeSource(
+        weekly={"LITE": {date(2026, 8, 13): 200.0}},  # Donnerstag
+        fx={date(2026, 8, 13): 1.0},
+        crypto={},
+    )
+    result = bh.collect_weekly_series(
+        source,
+        ["LITE"],
+        since=date(2006, 1, 1),
+        manual_prices={"LITE": {date(2026, 8, 14): 111.0}},  # Freitag, gleiche ISO-Woche
+    )
+    assert result["LITE"] == {date(2026, 8, 14): pytest.approx(111.0)}
+
+
+def test_manual_prices_ueberleben_den_schreibvorgang(tmp_path: Path):
+    """End-to-End-Absicherung des eigentlichen Anliegens: nach dem kompletten
+    Neuaufbau von price_history.csv steht der handgepflegte Kurs noch drin."""
+    per_ticker = bh.collect_weekly_series(
+        _FakeSource(weekly={"EUNL": {date(2026, 8, 14): 85.0}}, fx={}, crypto={}),
+        ["EUNL", "BTC-EUR"],
+        since=date(2006, 1, 1),
+        manual_prices={"BTC-EUR": {date(2010, 7, 23): 0.0391}},
+    )
+    bh.write_backfilled_history(per_ticker, tmp_path)
+
+    rows = {r.date: r.prices for r in read_price_history(data_dir=tmp_path)}
+    assert rows[date(2010, 7, 23)]["BTC-EUR"] == Decimal("0.0391")
+
+
+def test_manual_prices_fuer_nicht_angefragte_ticker_werden_ignoriert():
+    """Schutz gegen versehentliches Einschleusen: collect_weekly_series
+    liefert nur Ticker, die auch angefragt wurden."""
+    source = _FakeSource(weekly={"EUNL": {date(2026, 8, 14): 85.0}}, fx={}, crypto={})
+    result = bh.collect_weekly_series(
+        source,
+        ["EUNL"],
+        since=date(2006, 1, 1),
+        manual_prices={"TSLA": {date(2010, 7, 9): 1.16}},
+    )
+    assert "TSLA" not in result
+
+
+def test_fx_luecken_findet_loecher_mittendrin():
+    """Sobald manual_fx_usd_eur.csv die Fruehphase abdeckt, beginnt die
+    FX-Reihe 2006 - eine reine Beginn-Pruefung wuerde ein Loch zwischen dem
+    Ende der handgepflegten Daten und dem Beginn der API-Abdeckung dann nicht
+    mehr sehen. Genau das passiert, wenn Alpha Vantages FX_WEEKLY-Fenster mit
+    der Zeit nach vorne wandert."""
+    dates = [date(2006, 1, 2), date(2006, 1, 9), date(2014, 11, 21), date(2014, 11, 28)]
+    assert bh._fx_luecken(dates, since=date(2006, 1, 1)) == [(date(2006, 1, 9), date(2014, 11, 21))]
+
+
+def test_fx_luecken_meldet_lueckenlose_reihe_nicht():
+    dates = [date(2026, 8, 7), date(2026, 8, 14), date(2026, 8, 21)]
+    assert bh._fx_luecken(dates, since=date(2026, 8, 1)) == []
+
+
+def test_fx_luecken_meldet_weiterhin_einen_zu_spaeten_beginn():
+    dates = [date(2014, 11, 21), date(2014, 11, 28)]
+    assert bh._fx_luecken(dates, since=date(2006, 1, 1)) == [(date(2006, 1, 1), date(2014, 11, 21))]
+
+
+def test_fx_luecken_toleriert_einzelne_ausgefallene_wochen():
+    # Feiertagswoche ohne Kurs ist kein Abdeckungsloch.
+    dates = [date(2026, 8, 7), date(2026, 8, 21)]
+    assert bh._fx_luecken(dates, since=date(2026, 8, 1)) == []
+
+
+def test_mitgelieferte_fx_datei_deckt_die_luecke_bis_zum_api_beginn():
+    """Regressionsschutz fuer die eingecheckte data/manual_fx_usd_eur.csv:
+    sie muss den Zeitraum vor dem Beginn von FX_WEEKLY (2014-11-21) ohne
+    eigene Loecher abdecken."""
+    fx = bh.read_manual_fx(Path(__file__).resolve().parents[1] / "data")
+    assert fx, "manual_fx_usd_eur.csv sollte die EZB-Referenzkurse enthalten"
+    ds = sorted(fx)
+    assert ds[0] <= date(2006, 9, 1)  # aelteste Zeile in price_history.csv
+    assert ds[-1] >= date(2014, 11, 14)
+    assert bh._fx_luecken(ds, since=ds[0]) == []
+    # Kehrwert-Konvention: 1 USD kostet deutlich weniger als 1 EUR im Juli 2008
+    # (EUR/USD-Hoch 1,599) und etwa 0,79 EUR im Juli 2010.
+    assert fx[date(2008, 7, 15)] == pytest.approx(0.625391, abs=1e-6)
+    assert fx[date(2010, 7, 9)] == pytest.approx(0.791327, abs=1e-6)

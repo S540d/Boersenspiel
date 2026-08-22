@@ -429,3 +429,87 @@ def test_error_message_is_truncated_for_huge_payloads():
         av._extract_time_series(payload, "TESTKONTEXT")
     assert "gekuerzt" in str(exc.value)
     assert len(str(exc.value)) < 1000
+
+
+# --- Splitbereinigung des Backfills (#62) -------------------------------------
+#
+# TIME_SERIES_WEEKLY liefert nominale Schlusskurse: jeder Aktiensplit sieht dort
+# wie ein Kurssturz aus (TSLA 5:1 2020, MSTR 10:1 2024, KO 2:1 2012, ...).
+# fetch_weekly_history nutzt deshalb TIME_SERIES_WEEKLY_ADJUSTED und leitet aus
+# close/adjusted-close den kumulierten SPLIT-Faktor ab - bewusst ohne die
+# ebenfalls im adjusted close steckende Dividendenbereinigung, weil die
+# Simulation Ausschuettungen separat modelliert (#57).
+
+
+def test_fetch_weekly_history_uses_the_split_adjusted_endpoint(monkeypatch: pytest.MonkeyPatch):
+    gesehen: dict = {}
+
+    def _capture(url, params, timeout):
+        gesehen.update(params)
+        return _FakeResponse({"Weekly Adjusted Time Series": {"2026-08-14": {"4. close": "10.00", "5. adjusted close": "10.00"}}})
+
+    monkeypatch.setattr(av.requests, "get", _capture)
+    av.AlphaVantageSource(api_key="dummy").fetch_weekly_history("TSLA", since=date(2020, 1, 1))
+
+    assert gesehen["function"] == "TIME_SERIES_WEEKLY_ADJUSTED"
+
+
+def test_fetch_weekly_history_removes_split_jumps(monkeypatch: pytest.MonkeyPatch):
+    """Nachgebaut nach der echten TSLA-Reihe: 5:1-Split, danach 3:1-Split.
+    Der kumulierte Bereinigungsfaktor close/adjusted ist damit 15 vor dem
+    ersten, 3 zwischen den beiden und 1 nach dem zweiten Split."""
+    payload = {
+        "Weekly Adjusted Time Series": {
+            # vor beiden Splits: nominal 300, effektiv 300/15 = 20
+            "2020-08-28": {"4. close": "300.00", "5. adjusted close": "20.00"},
+            # nach dem 5:1: nominal 60, effektiv 60/3 = 20
+            "2020-09-04": {"4. close": "60.00", "5. adjusted close": "20.00"},
+            # nach dem 3:1: nominal 22, effektiv 22
+            "2022-08-26": {"4. close": "22.00", "5. adjusted close": "22.00"},
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    result = av.AlphaVantageSource(api_key="dummy").fetch_weekly_history("TSLA", since=date(2020, 1, 1))
+
+    assert result[date(2020, 8, 28)] == pytest.approx(20.0)
+    assert result[date(2020, 9, 4)] == pytest.approx(20.0)
+    assert result[date(2022, 8, 26)] == pytest.approx(22.0)
+    # Kein Phantom-Absturz mehr zwischen den beiden Wochen um den Split herum.
+    assert result[date(2020, 9, 4)] / result[date(2020, 8, 28)] == pytest.approx(1.0)
+
+
+def test_fetch_weekly_history_keeps_dividends_in_the_kursreihe(monkeypatch: pytest.MonkeyPatch):
+    """Dividenden druecken den adjusted close ebenfalls, aber nur langsam.
+    Sie duerfen NICHT als Split interpretiert werden - die Simulation rechnet
+    Ausschuettungen separat als Barertrag (DIVIDENDENRENDITE_PLATZHALTER)."""
+    payload = {
+        "Weekly Adjusted Time Series": {
+            "2026-08-07": {"4. close": "60.00", "5. adjusted close": "57.00"},  # Faktor 1.0526
+            "2026-08-14": {"4. close": "61.00", "5. adjusted close": "61.00"},  # Faktor 1.0
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    result = av.AlphaVantageSource(api_key="dummy").fetch_weekly_history("KO", since=date(2020, 1, 1))
+
+    # Nominalkurse unveraendert - der Faktorsprung von 1.0526 liegt unter der
+    # Split-Schwelle und wird deshalb ignoriert.
+    assert result[date(2026, 8, 7)] == pytest.approx(60.0)
+    assert result[date(2026, 8, 14)] == pytest.approx(61.0)
+
+
+def test_fetch_weekly_history_falls_back_to_nominal_close_without_adjusted_field(
+    monkeypatch: pytest.MonkeyPatch,
+):
+    """Liefert ein Symbol (z. B. eine kleine Auslandsboerse) keinen adjusted
+    close, bleibt es beim Nominalkurs - eine fehlende Bereinigung ist besser
+    als eine erfundene."""
+    payload = {
+        "Weekly Adjusted Time Series": {
+            "2026-08-14": {"4. close": "128.70"},
+            "2026-08-07": {"4. close": "127.10"},
+        }
+    }
+    monkeypatch.setattr(av.requests, "get", lambda url, params, timeout: _FakeResponse(payload))
+    result = av.AlphaVantageSource(api_key="dummy").fetch_weekly_history("EUNL", since=date(2020, 1, 1))
+
+    assert result == {date(2026, 8, 14): 128.70, date(2026, 8, 7): 127.10}

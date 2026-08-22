@@ -34,6 +34,21 @@ aeltere Instrumente (ETFs, Einzelaktien wie Coca-Cola/Roche) haben oft
 liegenden Woche traegt ``history_store.record_week`` ohnehin "missing" statt
 eines erfundenen Werts ein.
 
+Handgepflegte Ergaenzungen (#62): Der Lauf setzt ``price_history.csv``
+komplett zurueck - manuell nachgetragene Kurse waeren damit weg. Deshalb
+gibt es zwei Dateien, die NUR gelesen und von keinem Skript geschrieben
+werden, und deren Inhalt bei jedem Lauf neu eingemischt wird:
+
+  data/manual_fx_usd_eur.csv   Date,EUR_pro_USD
+  data/manual_prices.csv       Date,Ticker,Preis_EUR
+
+Handgepflegte Werte gewinnen gegen die API, verglichen auf ISO-Wochen-Ebene;
+der Lauf gibt je Datei aus, wie viele Wochen ergaenzt und wie viele ersetzt
+wurden. Der wirksamste Hebel ist die FX-Datei: ein gepflegter EUR/USD-Kurs
+macht die Fruehphase aller neun USD-Ticker UND von BTC-EUR umrechenbar,
+waehrend ``manual_prices.csv`` nur fuer Kurse gedacht ist, die Alpha Vantage
+ueberhaupt nicht liefert.
+
 Nutzung:
     python scripts/backfill_history.py --years 20
 """
@@ -56,10 +71,101 @@ from boersenspiel.sources.alphavantage import USD_TICKERS, AlphaVantageSource
 
 _REQUEST_INTERVAL_SECONDS = 1.1
 
+# Handgepflegte Ergaenzungsdateien (#62). Werden von KEINEM Skript geschrieben -
+# nur gelesen. Damit ueberlebt manuell recherchiertes Material jeden weiteren
+# Backfill-Lauf, der price_history.csv ansonsten komplett neu aufbaut.
+MANUAL_PRICES_FILE = "manual_prices.csv"
+MANUAL_FX_FILE = "manual_fx_usd_eur.csv"
+
 
 def _iso_week(d: date) -> tuple[int, int]:
     iso = d.isocalendar()
     return iso[0], iso[1]
+
+
+def _read_csv_rows(path: Path) -> list[dict[str, str]]:
+    """Liest eine Ergaenzungsdatei und ueberspringt Kommentarzeilen (``#``),
+    damit die Dateien sich selbst dokumentieren koennen. Fehlt die Datei,
+    gibt es schlicht nichts zu ergaenzen."""
+    if not path.exists():
+        return []
+    with path.open(newline="") as f:
+        zeilen = [z for z in f if not z.lstrip().startswith("#")]
+    return list(csv.DictReader(zeilen))
+
+
+def read_manual_fx(data_dir: Path) -> dict[date, float]:
+    """EUR/USD-Kurse aus ``data/manual_fx_usd_eur.csv``.
+
+    Spalten: ``Date,EUR_pro_USD``. Deckt den Zeitraum ab, den Alpha Vantages
+    ``FX_WEEKLY`` nicht liefert (vor dem 21.11.2014, siehe #62). Ein einziger
+    Wechselkurs macht dort die Umrechnung aller neun USD-Ticker UND von
+    BTC-EUR moeglich - deshalb ist das der wirksamste Ort fuer Handarbeit,
+    nicht die Kurse selbst.
+
+    Eingecheckt sind die offiziellen EZB-Referenzkurse in TAEGLICHER
+    Aufloesung (2006-01-02 bis 2014-11-14), damit jeder Wochenschlusskurs mit
+    dem Kurs seines eigenen Handelstags umgerechnet wird statt mit dem einer
+    benachbarten Woche. Die Datei traegt ihre Herkunft im Kopf.
+    """
+    rates: dict[date, float] = {}
+    for row in _read_csv_rows(data_dir / MANUAL_FX_FILE):
+        datum = (row.get("Date") or "").strip()
+        kurs = (row.get("EUR_pro_USD") or "").strip()
+        if not datum or not kurs:
+            continue
+        rates[date.fromisoformat(datum)] = float(kurs)
+    return rates
+
+
+def read_manual_prices(data_dir: Path) -> dict[str, dict[date, float]]:
+    """Handgepflegte Wochenkurse aus ``data/manual_prices.csv``.
+
+    Spalten: ``Date,Ticker,Preis_EUR`` (Langformat - deutlich leichter von
+    Hand zu pflegen als eine 18-spaltige Matrix, und ohne Kopplung an die
+    Spaltenreihenfolge von ``price_history.csv``).
+
+    **Die Werte sind IMMER schon in EUR.** Sie werden erst nach der
+    Waehrungsumrechnung eingemischt und deshalb nicht noch einmal
+    umgerechnet - anders als die von Alpha Vantage gelieferten USD-Kurse.
+    """
+    per_ticker: dict[str, dict[date, float]] = {}
+    for row in _read_csv_rows(data_dir / MANUAL_PRICES_FILE):
+        datum = (row.get("Date") or "").strip()
+        ticker = (row.get("Ticker") or "").strip()
+        preis = (row.get("Preis_EUR") or "").strip()
+        if not datum or not ticker or not preis:
+            continue
+        if ticker not in TICKERS:
+            raise ValueError(
+                f"{MANUAL_PRICES_FILE}: unbekannter Ticker {ticker!r} "
+                f"(erlaubt sind: {', '.join(TICKERS)})"
+            )
+        per_ticker.setdefault(ticker, {})[date.fromisoformat(datum)] = float(preis)
+    return per_ticker
+
+
+def _ueberschreibe_iso_woche(
+    basis: dict[date, float], ergaenzung: dict[date, float]
+) -> tuple[dict[date, float], int, int]:
+    """Mischt ``ergaenzung`` in ``basis`` - handgepflegte Werte gewinnen.
+
+    Verglichen wird auf ISO-WOCHEN-Ebene, nicht auf Datumsebene: der Backfill
+    gruppiert spaeter ohnehin nach Kalenderwoche, und ein manueller Eintrag
+    vom Freitag wuerde sonst neben einem API-Wert vom Donnerstag derselben
+    Woche stehen bleiben - welcher davon in der Zeile landet, waere dann
+    Zufall der Iterationsreihenfolge.
+
+    Gibt zusaetzlich zurueck, wie viele Wochen ersetzt und wie viele neu
+    gefuellt wurden, damit der Lauf das sichtbar machen kann.
+    """
+    if not ergaenzung:
+        return dict(basis), 0, 0
+    manuelle_wochen = {_iso_week(d) for d in ergaenzung}
+    ersetzt = sum(1 for d in basis if _iso_week(d) in manuelle_wochen)
+    zusammen = {d: p for d, p in basis.items() if _iso_week(d) not in manuelle_wochen}
+    zusammen.update(ergaenzung)
+    return zusammen, ersetzt, len(ergaenzung) - ersetzt
 
 
 def _reset_data_files(data_dir: Path) -> None:
@@ -73,21 +179,80 @@ def _reset_data_files(data_dir: Path) -> None:
 
 
 def _nearest_fx_rate(rates: dict[date, float], sorted_dates: list[date], target: date) -> float | None:
-    """Naechstgelegener FX-Kurs an oder vor ``target`` (Forward-Fill der
-    letzten bekannten Woche), sonst der frueheste verfuegbare Kurs."""
+    """Naechstgelegener FX-Kurs an oder VOR ``target`` (Forward-Fill der letzten
+    bekannten Woche), sonst ``None``.
+
+    Bewusst KEINE Rueckwaerts-Extrapolation (#62). Vorher fiel diese Funktion
+    fuer Wochen vor Beginn der FX-Reihe auf ``rates[sorted_dates[0]]`` zurueck,
+    also auf den aeltesten VERFUEGBAREN Kurs - der aber juenger ist als das
+    umzurechnende Datum. Alpha Vantages ``FX_WEEKLY`` liefert USD/EUR erst ab
+    November 2014; dadurch wurden im 20-Jahres-Backfill 227 Wochen (Juli 2010
+    bis November 2014) aller USD-Ticker UND die komplette fruehe BTC-Historie
+    mit dem konstanten Kurs von 2014 (0,7982 EUR/USD) umgerechnet. Die
+    Wechselkursbewegung dieser Jahre fehlte damit vollstaendig, und die
+    Umrechnung war je nach Woche um bis zu ~25% falsch.
+
+    ``None`` heisst "kein Kurs fuer diese Woche": ``record_week()`` traegt dann
+    "missing" ein statt eines falsch umgerechneten Werts - dieselbe Regel, der
+    ``AlphaVantageSource.fetch()`` beim Live-Abruf schon folgt.
+    """
     if not sorted_dates:
         return None
     candidates = [d for d in sorted_dates if d <= target]
-    return rates[candidates[-1]] if candidates else rates[sorted_dates[0]]
+    return rates[candidates[-1]] if candidates else None
+
+
+# Ab dieser Luecke zwischen zwei aufeinanderfolgenden FX-Kursen fehlt mehr als
+# eine ausgefallene Woche (Feiertage, einzelne Ausreisser) und es wird gewarnt.
+_FX_LUECKE_TAGE = 14
+
+
+def _fx_luecken(sorted_dates: list[date], since: date) -> list[tuple[date, date]]:
+    """Zeitraeume ohne EUR/USD-Abdeckung ab ``since``.
+
+    Prueft bewusst nicht nur den Beginn der Reihe, sondern auch Loecher
+    MITTENDRIN. Sobald ``manual_fx_usd_eur.csv`` die Fruehphase abdeckt, faengt
+    eine reine Beginn-Pruefung naemlich nichts mehr ab: die Reihe startet dann
+    2006, und ein Loch zwischen dem Ende der handgepflegten Daten und dem
+    Beginn der API-Abdeckung bliebe unbemerkt - genau das passiert, wenn Alpha
+    Vantages FX_WEEKLY-Fenster mit der Zeit nach vorne wandert.
+    """
+    if not sorted_dates:
+        return [(since, date.today())]
+    luecken: list[tuple[date, date]] = []
+    # Auch am Anfang mit Toleranz pruefen: ``since`` ist ein gerechnetes Datum
+    # (heute minus N Jahre) und faellt selten auf einen Handelstag - ein bis
+    # zwei Tage Versatz sind der Normalfall, kein Abdeckungsloch.
+    if (sorted_dates[0] - since).days > _FX_LUECKE_TAGE:
+        luecken.append((since, sorted_dates[0]))
+    for vorher, nachher in zip(sorted_dates, sorted_dates[1:]):
+        if (nachher - vorher).days > _FX_LUECKE_TAGE:
+            luecken.append((vorher, nachher))
+    return luecken
 
 
 def collect_weekly_series(
-    source: AlphaVantageSource, tickers: list[str], since: date
+    source: AlphaVantageSource,
+    tickers: list[str],
+    since: date,
+    manual_fx: dict[date, float] | None = None,
+    manual_prices: dict[str, dict[date, float]] | None = None,
 ) -> dict[str, dict[date, float]]:
     """Holt die woechentliche Kurshistorie (in EUR) fuer alle ``tickers`` ab
     ``since``. Reine Datenbeschaffung + Waehrungsumrechnung, keine
     Dateizugriffe - macht die Logik unabhaengig testbar von echten
-    Netzwerkaufrufen und von ``record_week``."""
+    Netzwerkaufrufen und von ``record_week``. Die beiden Ergaenzungs-Dicts
+    kommen deshalb als Parameter herein (gelesen wird in ``main()`` ueber
+    ``read_manual_fx`` / ``read_manual_prices``).
+
+    Reihenfolge der Ergaenzungen ist bedeutsam (#62):
+
+    1. ``manual_fx`` wird VOR der Umrechnung eingemischt - damit werden die
+       von Alpha Vantage gelieferten USD-Kurse der Fruehphase ueberhaupt erst
+       umrechenbar.
+    2. ``manual_prices`` wird ganz zum Schluss eingemischt und ist deshalb
+       bereits in EUR anzugeben - diese Werte werden NICHT mehr umgerechnet.
+    """
     per_ticker: dict[str, dict[date, float]] = {}
     non_crypto = [t for t in tickers if t != "BTC-EUR"]
     usd_tickers_present = [t for t in non_crypto if t in USD_TICKERS]
@@ -118,7 +283,26 @@ def collect_weekly_series(
         pace()
         print("  EUR/USD-Historie (FX_WEEKLY) ...", file=sys.stderr)
         fx_rates = source.fetch_fx_weekly_eur_per_usd(since)
+    if manual_fx:
+        fx_rates, ersetzt, gefuellt = _ueberschreibe_iso_woche(fx_rates, manual_fx)
+        print(
+            f"  {MANUAL_FX_FILE}: {gefuellt} Eintraege ergaenzt, {ersetzt} ersetzt",
+            file=sys.stderr,
+        )
     fx_dates_sorted = sorted(fx_rates)
+    betroffen = (
+        f"{sorted(usd_tickers_present)}{' und BTC-EUR' if crypto_present else ''}"
+    )
+    for beginn, ende in _fx_luecken(fx_dates_sorted, since):
+        # Sichtbar machen, wo die FX-Abdeckung Loecher hat - dort bleiben die
+        # USD-Ticker und BTC ohne Kurs, statt mit einem Kurs aus einer anderen
+        # Zeit falsch umgerechnet zu werden (#62).
+        print(
+            f"  WARNUNG: keine EUR/USD-Kurse fuer {beginn} bis {ende}. "
+            f"Fuer diese Wochen bleiben {betroffen} ohne Kurs. "
+            f"Abhilfe: Zeilen fuer diesen Zeitraum in {MANUAL_FX_FILE} ergaenzen.",
+            file=sys.stderr,
+        )
 
     for ticker in non_crypto:
         pace()
@@ -142,6 +326,19 @@ def collect_weekly_series(
             for d, usd_price in btc_usd.items()
             if (rate := _nearest_fx_rate(fx_rates, fx_dates_sorted, d)) is not None
         }
+
+    # Handgepflegte Kurse ganz zum Schluss: sie sind bereits in EUR und duerfen
+    # deshalb nicht mehr durch die Waehrungsumrechnung laufen (#62).
+    for ticker, series in (manual_prices or {}).items():
+        if ticker not in tickers:
+            continue
+        per_ticker[ticker], ersetzt, gefuellt = _ueberschreibe_iso_woche(
+            per_ticker.get(ticker, {}), series
+        )
+        print(
+            f"  {MANUAL_PRICES_FILE}: {ticker} - {gefuellt} Wochen ergaenzt, {ersetzt} ersetzt",
+            file=sys.stderr,
+        )
 
     return per_ticker
 
@@ -191,8 +388,11 @@ def main() -> int:
     since = date.today() - timedelta(days=365 * args.years)
     source = AlphaVantageSource()
 
+    manual_fx = read_manual_fx(args.data_dir)
+    manual_prices = read_manual_prices(args.data_dir)
+
     print(f"Backfill ab {since.isoformat()} fuer {len(TICKERS)} Ticker ...", file=sys.stderr)
-    per_ticker = collect_weekly_series(source, TICKERS, since)
+    per_ticker = collect_weekly_series(source, TICKERS, since, manual_fx, manual_prices)
     week_count = write_backfilled_history(per_ticker, args.data_dir)
 
     print(f"Fertig: {week_count} Wochen zurueckgeschrieben nach {args.data_dir / 'price_history.csv'}")

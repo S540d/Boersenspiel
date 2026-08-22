@@ -446,6 +446,50 @@ def simulate(
                 executed = True
         return executed
 
+    def erstkauf_gewichte(
+        values: dict[str, Decimal],
+        weights: dict[str, Decimal],
+        neue: set[str],
+        prices: dict[str, Decimal],
+    ) -> dict[str, Decimal]:
+        """Ziel-Gewichte fuer einen Erstkauf OHNE Rebalancing (#62).
+
+        Bei ``opt.rebalancing=False`` soll ein neu handelbares Instrument
+        gekauft und geparktes Cash eingesetzt werden - aber der uebrige
+        Bestand darf dabei nicht auf seine Zielgewichte zurueckgeholt werden.
+        Diese Funktion baut deshalb eine Zielverteilung, in der
+
+        * die neuen Instrumente ihren regulaeren Zielanteil bekommen und
+        * der gesamte Rest die AKTUELLEN Marktwert-Verhaeltnisse des
+          bestehenden Depots behaelt (nur proportional herunterskaliert).
+
+        Das Ergebnis geht durch dieselbe wertkonservierende Mechanik wie ein
+        normales Rebalancing (``rebalance_to_targets``): finanziert wird
+        zuerst aus geparktem Cash, der Fehlbetrag anteilig aus allen
+        bestehenden Positionen. Die relativen Gewichte des Altbestands
+        untereinander bleiben exakt erhalten - es entsteht kein verdecktes
+        Rebalancing.
+        """
+        ziel_neu = {t: weights.get(t, Decimal(0)) for t in neue if weights.get(t, Decimal(0)) > 0}
+        rest_anteil = Decimal(1) - sum(ziel_neu.values(), Decimal(0))
+        if rest_anteil <= 0:
+            # Die neuen Instrumente beanspruchen bereits das ganze Depot -
+            # dann ist die regulaere Zielverteilung ohnehin die richtige.
+            return weights
+        bestand = {
+            t: values.get(t, Decimal(0))
+            for t in tickers
+            if t in prices and t not in ziel_neu and values.get(t, Decimal(0)) > 0
+        }
+        summe_bestand = sum(bestand.values(), Decimal(0))
+        if summe_bestand <= 0:
+            # Noch kein bewertbarer Altbestand (z. B. allererster Erstkauf nach
+            # einer reinen Cash-Phase) - dann gibt es nichts zu erhalten und die
+            # regulaere Zielverteilung ist die einzig sinnvolle Vorgabe.
+            return weights
+        ziel_rest = {t: v / summe_bestand * rest_anteil for t, v in bestand.items()}
+        return {**ziel_neu, **ziel_rest}
+
     def december_gewinnmitnahme(prices: dict[str, Decimal], trade_date: date) -> bool:
         """Maßnahme A: Gewinnpositionen anteilig verkaufen und sofort
         zurückkaufen, bis der realisierte Gewinn den verbleibenden
@@ -648,10 +692,24 @@ def simulate(
                 # September 2006 defensiv, Topf A existiert aber erst ab 2008) -
                 # ueber den Topf-A-Trigger allein wuerde dieses Kapital nie wieder
                 # investiert, weil dessen Ist- und Zielgewicht dann beide 0 sind.
+                #
+                # WICHTIG (#62): Der Erstkauf darf nur das NEUE Instrument
+                # finanzieren, nicht den gesamten Bestand auf die Zielgewichte
+                # zurueckholen. Sonst rebalanciert eine Strategie mit
+                # opt.rebalancing=False bei jedem Boersengang doch das komplette
+                # Depot - "Time in the market beats timing the market" lief so
+                # ueber die 20-Jahres-Historie 27 verdeckte Voll-Rebalancings und
+                # war am Ende von der rebalancierenden Barbell-Strategie nicht
+                # mehr zu unterscheiden (bit-identische 1-/3-/5-Jahres-Renditen).
                 neue_instrumente = {t for t in tickers if t in prices} - handelbare_ticker
                 if neue_instrumente or total_cash() > 0:
                     grund = "neues_instrument" if neue_instrumente else "kapitaleinsatz"
-                    if rebalance_to_targets(prices, row.date, grund, current_weights):
+                    einsatz_weights = (
+                        current_weights
+                        if opt.rebalancing
+                        else erstkauf_gewichte(values, current_weights, neue_instrumente, prices)
+                    )
+                    if rebalance_to_targets(prices, row.date, grund, einsatz_weights):
                         last_rebalance_date = row.date
                     values = current_values(prices)
                     total_value = sum(values.values(), Decimal(0)) + total_cash()

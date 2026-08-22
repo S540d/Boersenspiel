@@ -247,6 +247,43 @@ more than once on the same day. **Replaces** `price_history.csv` completely -
 no merging with previously live-collected weeks is needed, since the backfill
 already covers those (and older) weeks anyway.
 
+### Hand-maintained additions
+
+Because the backfill rewrites `price_history.csv` from scratch, anything
+researched by hand would be lost on the next run. Two files are therefore
+**only ever read, never written by any script**, and are merged back in on
+every run:
+
+| File | Columns | Merged |
+|---|---|---|
+| `data/manual_fx_usd_eur.csv` | `Date,EUR_pro_USD` | **before** the currency conversion |
+| `data/manual_prices.csv` | `Date,Ticker,Preis_EUR` | **last**, so values are already in EUR |
+
+The FX file is the higher-leverage one: Alpha Vantage's `FX_WEEKLY` only
+goes back to 21 November 2014, and the backfill deliberately refuses to
+convert earlier weeks with a later rate. A single rate makes that week
+convertible for all nine USD tickers *and* BTC-EUR at once. It already ships
+filled: 2,272 **daily** ECB euro foreign exchange reference rates covering
+2006-01-02 to 2014-11-14, so every weekly close is converted at its own
+trading day's rate rather than a neighbouring week's. Coverage deliberately
+stops at ISO week 46/2014 so `FX_WEEKLY` data stays untouched from week 47
+onwards.
+
+Use `manual_prices.csv` only for prices the API doesn't have at all (e.g. the
+earliest BTC history) — and make sure they are split-adjusted.
+
+`_fx_luecken()` reports any period without FX coverage, checking not just the
+start of the series but gaps *inside* it — once the manual file covers the
+early years the series starts in 2006, and a start-only check would no longer
+notice a hole opening up if Alpha Vantage's window drifts forward over time.
+
+Hand-maintained values win over the API, compared at **ISO week** level, so
+a manual Friday entry replaces an API Thursday value from the same week
+rather than sitting next to it. Both files accept `#` comment lines and
+carry their own documentation; an unknown ticker aborts the run instead of
+being silently ignored. Each run prints how many weeks were added and how
+many replaced — remove entries once the API covers them itself.
+
 Because the API key lives as a repo secret (and not on every developer
 machine), there is also a manually triggered workflow **"Historical Backfill
 (manual)"** (`.github/workflows/backfill.yml`): Actions → select workflow →
