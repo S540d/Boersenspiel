@@ -689,6 +689,19 @@ Kursabruf (Alpha Vantage) → Dashboard-Build → Commit von
 GitHub-Pages-Deploy. Braucht die Secrets/Settings: Repo-Secret
 `ALPHAVANTAGE_API_KEY`; Settings → Actions → Workflow permissions → "Read
 and write permissions"; Settings → Pages → Source → "GitHub Actions".
+**Der Commit-Schritt trägt bewusst `continue-on-error: true`:** ein
+zeitgleicher Merge auf `main` (z. B. während der Workflow läuft) kann den
+`git push` der Kurshistorie in einen echten Merge-Konflikt laufen lassen
+(beobachtet am 22.08.2026, Lauf #16 — Fetch und Dashboard-Build liefen
+beide durch, nur der anschließende Push/Rebase scheiterte). Ohne
+`continue-on-error` riss das den gesamten Job ab und übersprang damit
+„Pages-Artefakt hochladen" sowie den `deploy`-Job — ein für den Pages-Deploy
+irrelevanter git-Konflikt verhinderte so die Veröffentlichung eines bereits
+fertig gebauten Dashboards. `record_week()` ist wochen-idempotent (siehe
+`history_store.py`), ein bei einem Konflikt verpasster Commit holt sich beim
+nächsten erfolgreichen Lauf von selbst nach — es geht keine Kurswoche
+verloren, nur die Veröffentlichung dieses einen Laufs würde sonst unnötig
+blockiert.
 
 ### Tests
 
