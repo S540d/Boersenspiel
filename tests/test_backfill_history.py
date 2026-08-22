@@ -414,3 +414,66 @@ def test_mitgelieferte_fx_datei_deckt_die_luecke_bis_zum_api_beginn():
     # (EUR/USD-Hoch 1,599) und etwa 0,79 EUR im Juli 2010.
     assert fx[date(2008, 7, 15)] == pytest.approx(0.625391, abs=1e-6)
     assert fx[date(2010, 7, 9)] == pytest.approx(0.791327, abs=1e-6)
+
+
+# --- Request-Budget (#64) -----------------------------------------------------
+#
+# Alpha Vantages Free Tier erlaubt 25 Requests pro Tag und API-Key. Mit den
+# sieben Datenreihen aus #64 sind beide Laeufe bei exakt 25 - es gibt keinen
+# Puffer mehr. Ein weiteres Instrument macht jeden Lauf unmoeglich, und ein
+# nicht aufloesbares Symbol bricht den Backfill ab, ohne dass die bereits
+# verbrauchten Requests zurueckkommen. Deshalb als Test statt als Kommentar.
+
+_ALPHAVANTAGE_TAGESLIMIT = 25
+
+
+def _backfill_requests() -> int:
+    """1x FX_WEEKLY + 1x DIGITAL_CURRENCY_WEEKLY + je 1x TIME_SERIES pro
+    nicht-Krypto-Ticker."""
+    return 1 + 1 + len([t for t in TICKERS if t != "BTC-EUR"])
+
+
+def _wochenabruf_requests() -> int:
+    """1x CURRENCY_EXCHANGE_RATE (einmal je fetch(), nicht je Ticker) + je 1x
+    GLOBAL_QUOTE bzw. Krypto-Endpunkt pro Ticker."""
+    return 1 + len(TICKERS)
+
+
+def test_backfill_passt_in_das_tageslimit():
+    assert _backfill_requests() <= _ALPHAVANTAGE_TAGESLIMIT, (
+        f"Backfill braucht {_backfill_requests()} Requests, erlaubt sind "
+        f"{_ALPHAVANTAGE_TAGESLIMIT}. Ein Instrument entfernen oder Premium-Key."
+    )
+
+
+def test_wochenabruf_passt_in_das_tageslimit():
+    assert _wochenabruf_requests() <= _ALPHAVANTAGE_TAGESLIMIT, (
+        f"Wochenabruf braucht {_wochenabruf_requests()} Requests, erlaubt sind "
+        f"{_ALPHAVANTAGE_TAGESLIMIT}."
+    )
+
+
+def test_neue_datenreihen_sind_in_euro_notiert():
+    """Die sieben Instrumente aus #64 sind bewusst XETRA-Symbole. Landete eines
+    in USD_TICKERS, braeuchte es die Umrechnung - und haette damit vor November
+    2014 gar keinen Kurs, weil FX_WEEKLY erst dann beginnt (#62)."""
+    from boersenspiel.sources.alphavantage import ALPHAVANTAGE_SYMBOLS, USD_TICKERS
+
+    neue = ["IUSA", "XEON", "EXSA", "IBCL", "IBCI", "IQQ6", "EXXY"]
+    for ticker in neue:
+        assert ticker in TICKERS, f"{ticker} fehlt in instruments.py"
+        assert ALPHAVANTAGE_SYMBOLS[ticker].endswith(".DEX"), ticker
+        assert ticker not in USD_TICKERS, f"{ticker} braeuchte sonst FX-Umrechnung"
+
+
+def test_neue_datenreihen_liegen_in_keinem_topf():
+    """Solange die Zuordnung an #63 haengt, duerfen die neuen Instrumente keine
+    Strategie beeinflussen: engine.simulate() liest nur
+    strategy.alle_ticker_gewichte(), ein Ticker ohne Topf wird nie gehandelt."""
+    from boersenspiel.scenarios import SCENARIOS
+    from boersenspiel.strategies import STRATEGIES
+
+    neue = {"IUSA", "XEON", "EXSA", "IBCL", "IBCI", "IQQ6", "EXXY"}
+    for strategie in list(STRATEGIES) + list(SCENARIOS):
+        allokiert = set(strategie.alle_ticker_gewichte())
+        assert not (allokiert & neue), f"{strategie.name} allokiert {allokiert & neue}"

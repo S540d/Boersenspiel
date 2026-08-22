@@ -21,7 +21,7 @@ pytest tests/test_engine.py -q     # einzelne Testdatei
 pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # einzelner Test
 
 python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
-python scripts/backfill_history.py --years 20       # einmaliger historischer Backfill (ersetzt price_history.csv, ~18 API-Requests)
+python scripts/backfill_history.py --years 20       # einmaliger historischer Backfill (ersetzt price_history.csv, 25 API-Requests = Tageslimit)
 python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
 python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
 ```
@@ -48,9 +48,28 @@ inkrementell fortgeschrieben).
 
 ### Trennung der Verantwortlichkeiten (wichtig beim Erweitern)
 
-- `instruments.py` — die 17 Instrumente (7 Barbell-Basisinstrumente + 10
-  Einzelaktien-Satellit, s.u.), **quellenunabhängig**. Kein
+- `instruments.py` — die 24 Instrumente (7 Barbell-Basisinstrumente + 10
+  Einzelaktien-Satellit + 7 nicht allokierte Datenreihen, s.u.), **quellenunabhängig**. Kein
   Provider-Symbol-Mapping hier.
+  **Datenreihen ohne Allokation (#64):** Die sieben zuletzt ergänzten
+  Instrumente (`IUSA`, `XEON`, `EXSA`, `IBCL`, `IBCI`, `IQQ6`, `EXXY`) stehen
+  bewusst in **keinem Topf**. `engine.simulate()` liest ausschließlich
+  `strategy.alle_ticker_gewichte()` — ein Instrument ohne Topf wird nie
+  gehandelt und verändert keine veröffentlichte Zahl (per Test abgesichert,
+  Renditen sind vor und nach der Aufnahme bit-identisch). Es landet nur in
+  `price_history.csv`. Grund: erst Daten sammeln, dann allokieren — die
+  Zuordnung hängt an den Methodenentscheidungen aus #63, ohne die Kurse jetzt
+  mitzuerheben bräuchte es später aber einen zweiten kompletten Backfill an
+  einem zweiten Tag. Alle sieben sind XETRA-Symbole in EUR, kosten also keinen
+  zusätzlichen FX-Request und umgehen das Währungsproblem aus #62 vollständig.
+  Ihre Steuerattribute (`teilfreistellung`/`thesaurierend`/`ausschuettend`)
+  sind aus Fondsgattung und Namenszusatz abgeleitet, **nicht** gegen die
+  Prospekte geprüft — solange die Instrumente in keinem Topf liegen, wertet die
+  Engine sie nie aus; vor einer Allokation gehören sie verifiziert.
+  **Request-Budget:** Mit 24 Instrumenten brauchen Backfill *und* Wochenabruf
+  je **genau 25** Requests — das volle Alpha-Vantage-Tageslimit, kein Puffer.
+  `tests/test_backfill_history.py` hält das als Test fest, damit ein
+  18. Instrument nicht still beide Workflows unmöglich macht.
 - `strategies.py` — austauschbare `Strategy`-Definitionen (Töpfe,
   Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
   Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
@@ -543,7 +562,7 @@ eine aussagekräftige Exception aus. Der FX-Abruf läuft bewusst **vor** den
 Ticker-Abrufen, damit ein Fehlschlag einen statt 17 Requests kostet. Für den Lauf gibt es den manuell startbaren
 Workflow `.github/workflows/backfill.yml` (nutzt das Repo-Secret, verlangt
 `confirm=REPLACE`, schreibt eine Plausibilitätsprüfung in die Job-Summary) -
-nicht am selben Tag wie den wöchentlichen Kursabruf starten (18 + 18
+nicht am selben Tag wie den wöchentlichen Kursabruf starten (25 + 25
 Requests > Tageslimit 25). `--years` ist nur eine untere Schranke, die
 `AlphaVantageSource.fetch_weekly_history()`/`fetch_crypto_weekly_history()`
 zum Filtern der von Alpha Vantage gelieferten Zeitreihe nutzen - ein Wert,

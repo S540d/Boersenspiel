@@ -11,10 +11,10 @@ instead of a Google Sheet, output as a static dashboard on GitHub Pages.
 
 ## The portfolio
 
-Every strategy and scenario draws from the same 17 instruments defined in
-`instruments.py`; which of them a given strategy actually holds, and at what
-weight, is decided separately in `strategies.py`. Two buckets recur in every
-strategy:
+Every strategy and scenario draws from 17 of the 24 instruments defined in
+`instruments.py` — the other seven are unallocated data series (see below).
+Which of them a given strategy actually holds, and at what weight, is decided
+separately in `strategies.py`. Two buckets recur in every strategy:
 
 - **Bucket A – Safety**: broad, low-volatility instruments — a global bond
   ETF and physical gold. Always the smaller half of the barbell (20% or 30%,
@@ -38,6 +38,27 @@ Tesla, Palantir, Strategy/formerly MicroStrategy, Rivian) with two defensive
 blue chips (Coca-Cola, Roche) as a counterexample — a first pass, not an
 optimized or backtested selection.
 
+### Unallocated data series
+
+Seven further instruments are fetched every week but held by **no strategy**:
+
+| Role | Ticker | Instrument |
+|---|---|---|
+| Benchmark S&P 500 | `IUSA` | iShares Core S&P 500 (Dist) |
+| EUR money market | `XEON` | Xtrackers II EUR Overnight Rate 1C |
+| Europe | `EXSA` | iShares STOXX Europe 600 (DE) |
+| Government bonds 15–30y | `IBCL` | iShares € Govt Bond 15-30yr |
+| Inflation-linked | `IBCI` | iShares € Inflation Linked Govt Bond |
+| Real estate | `IQQ6` | iShares Developed Markets Property Yield |
+| Broad commodities | `EXXY` | iShares Diversified Commodity Swap (DE) |
+
+`engine.simulate()` only ever reads `strategy.alle_ticker_gewichte()`, so an
+instrument that belongs to no bucket is never traded and changes no published
+figure — it just lands in `price_history.csv`. Collecting the prices now means
+a later allocation decision does not require a second full backfill on a
+second day. All seven are XETRA symbols quoted in EUR, so they need no FX
+request and sidestep the currency problem described further below.
+
 ## Architecture
 
 The project splits into two halves that only touch each other through a CSV
@@ -55,7 +76,7 @@ flowchart TB
         store["history_store.record_week()<br/><b>only write path</b><br/>weekly idempotency · carry-forward"]
     end
 
-    store ==> csv[("<b>data/price_history.csv</b><br/>date × 17 tickers<br/><i>raw prices only, nothing derived</i>")]
+    store ==> csv[("<b>data/price_history.csv</b><br/>date × 24 tickers<br/><i>raw prices only, nothing derived</i>")]
     store -.log.-> log[("data/fetch_log.csv")]
 
     subgraph auswertung["② Analytics — fresh on every build, reading"]
@@ -75,7 +96,7 @@ flowchart TB
 ### Process overview
 
 **① Data acquisition.** Once a week, the workflow fetches a price for each of
-the 17 tickers. Everything source-specific — Alpha Vantage symbols, the
+the 24 tickers. Everything source-specific — Alpha Vantage symbols, the
 USD→EUR conversion of the satellite stocks, the dedicated crypto endpoint —
 stays inside `sources/`. The result is always the same: one `PriceQuote` per
 ticker. Which provider delivered the price is no longer visible, or relevant,
@@ -137,9 +158,10 @@ Three properties that are easy to miss:
   runs could happen in any order or in parallel.
 - **Scenarios only use part of the data.** All scenarios in `scenarios.py`
   build on the buckets of `Barbell 20/80` and therefore only touch **7 of the
-  17** tickers; the 10 satellite stocks appear only in
-  `Barbell 20/60/20 + Single-Stock Satellite`. The price history is
-  deliberately broader than any single evaluation.
+  24** tickers; the 10 satellite stocks appear only in
+  `Barbell 20/60/20 + Single-Stock Satellite`, and seven are unallocated data
+  series. The price history is deliberately broader than any single
+  evaluation.
 - **No lookahead.** Every `gewichte_fn` may only read `rows[:i+1]`. A rule
   deciding in week i must not know week i+1 — otherwise every result would be
   worthless.
@@ -172,7 +194,7 @@ strategy always yields the identical result.
 
 | File | Purpose |
 |---|---|
-| `src/boersenspiel/instruments.py` | The 17 instruments (7 barbell base instruments + 10 single-stock satellite; ticker, ISIN) – source-independent |
+| `src/boersenspiel/instruments.py` | The 24 instruments (7 barbell base + 10 single-stock satellite + 7 unallocated data series; ticker, ISIN) – source-independent |
 | `src/boersenspiel/strategies.py` | Interchangeable strategy definitions (weights, buckets, rebalancing threshold) + cross-strategy tax/fee constants |
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
@@ -241,9 +263,13 @@ rate is available for a given week).
 python scripts/backfill_history.py --years 20  # default: 20 years back (lower bound only)
 ```
 
-Uses roughly 18 requests once (16 non-crypto tickers + 1× `FX_WEEKLY` + 1×
-crypto) - fits within the daily free-tier limit of 25, but shouldn't run
-more than once on the same day. **Replaces** `price_history.csv` completely -
+Uses exactly 25 requests (23 non-crypto tickers + 1× `FX_WEEKLY` + 1× crypto)
+— the full daily free-tier limit, with no headroom left since the seven
+unallocated data series were added. A re-run after a network error, a debug
+call, or the weekly fetch on the same day will all breach it. An unresolvable
+ticker symbol aborts the run without returning the requests already spent, so
+verify symbols (`SYMBOL_SEARCH`) before adding an instrument;
+`tests/test_backfill_history.py` guards the budget itself. **Replaces** `price_history.csv` completely -
 no merging with previously live-collected weeks is needed, since the backfill
 already covers those (and older) weeks anyway.
 
@@ -522,7 +548,7 @@ pytest -q
 
 ## Known limitations
 
-- **Hindsight bias in instrument selection:** the 17 instruments were picked
+- **Hindsight bias in instrument selection:** the instruments were picked
   when their price history was already known. A backtested return therefore
   does not answer "what would I have earned?", only "how would these rules
   have played out on these, retrospectively chosen, instruments?". The
@@ -543,7 +569,7 @@ pytest -q
   its high rather than across the full period — see
   [#56](https://github.com/S540d/Boersenspiel/issues/56).
 - **Alpha Vantage free-tier limit:** 25 requests/day, max. 1 request/second.
-  Still unproblematic for the current 17 tickers fetched once a week, but
+  Still unproblematic for the current 24 tickers fetched once a week, but
   barely any headroom for additional manual fetches on the same day;
   `AlphaVantageSource` sleeps between requests. If a price still fails (e.g.
   due to rate limiting or an empty response), the last known price is

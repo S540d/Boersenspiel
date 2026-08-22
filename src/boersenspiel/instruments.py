@@ -95,6 +95,76 @@ INSTRUMENTS: dict[str, Instrument] = {
         Instrument("RIVN", "Rivian Automotive", "US76954A1034", ausschuettend=True),
         Instrument("KO", "Coca-Cola (defensiver Blue Chip)", "US1912161007", ausschuettend=True),
         Instrument("RHHBY", "Roche Holding (ADR, defensiver Blue Chip)", "US7711951043", ausschuettend=True),
+        # --- Datenreihen ohne Allokation (#64) ---------------------------------
+        # Sieben zusaetzliche Instrumente, die das taegliche Alpha-Vantage-Budget
+        # von 25 Requests ausschoepfen (vorher 18). Sie stehen BEWUSST in KEINEM
+        # Topf einer Strategie: `engine.simulate()` liest ausschliesslich
+        # `strategy.alle_ticker_gewichte()`, ein Instrument ohne Topf wird also
+        # nie gehandelt und veraendert keine einzige veroeffentlichte Zahl. Es
+        # landet nur in `price_history.csv`.
+        #
+        # Das ist Absicht: erst Daten sammeln, dann allokieren. Die Zuordnung zu
+        # Toepfen haengt an den Methodenentscheidungen aus #63 (insbesondere dem
+        # Rebalancing-Trigger) - bis dahin waere jede Gewichtung geraten. Ohne
+        # die Kurse jetzt mitzuerheben braeuchte es spaeter aber einen zweiten
+        # kompletten Backfill an einem zweiten Tag.
+        #
+        # ACHTUNG bei der spaeteren Allokation: `teilfreistellung`,
+        # `thesaurierend` und `ausschuettend` unten sind aus Fondsgattung und
+        # Namenszusatz (Dist/Acc) abgeleitet, NICHT gegen die Fondsprospekte
+        # geprueft. Solange die Instrumente in keinem Topf liegen, wertet die
+        # Engine sie nie aus - sobald sie allokiert werden, gehoeren sie
+        # verifiziert, sonst rechnet das Steuermodell mit falschen Annahmen.
+        Instrument(
+            "IUSA",
+            "S&P 500 ETF (iShares Core, aussch.) - Benchmark, nicht allokiert",
+            "IE0031442068",
+            teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
+            ausschuettend=True,
+        ),
+        Instrument(
+            "XEON",
+            "EUR-Geldmarkt ETF (Xtrackers II Overnight Rate, thes.)",
+            "LU0290358497",
+            # Kein Aktienfonds -> keine Teilfreistellung.
+            thesaurierend=True,
+        ),
+        Instrument(
+            "EXSA",
+            "STOXX Europe 600 ETF (iShares, aussch.)",
+            "DE0002635307",
+            teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
+            ausschuettend=True,
+        ),
+        Instrument(
+            "IBCL",
+            "Euro-Staatsanleihen 15-30 Jahre ETF (iShares, aussch.)",
+            "IE00B1FZS913",
+            ausschuettend=True,
+        ),
+        Instrument(
+            "IBCI",
+            "Inflationsindexierte Euro-Staatsanleihen ETF (iShares)",
+            "IE00B0M62X26",
+            ausschuettend=True,
+        ),
+        Instrument(
+            "IQQ6",
+            "Immobilien-ETF (iShares Developed Markets Property Yield, aussch.)",
+            "IE00B1FZS350",
+            # Haelt boersennotierte Immobiliengesellschaften/REITs, also >51%
+            # Aktien -> Aktienfonds-Teilfreistellung, nicht die Immobilienfonds-
+            # Quote. Bei der Allokation gegen den Prospekt pruefen.
+            teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
+            ausschuettend=True,
+        ),
+        Instrument(
+            "EXXY",
+            "Rohstoff-ETF breit (iShares Diversified Commodity Swap)",
+            "DE000A0H0728",
+            # Rohstofffonds -> keine Teilfreistellung.
+            ausschuettend=True,
+        ),
     ]
 }
 

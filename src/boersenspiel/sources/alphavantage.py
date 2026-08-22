@@ -59,6 +59,20 @@ ALPHAVANTAGE_SYMBOLS: dict[str, str] = {
     "RIVN": "RIVN",
     "KO": "KO",
     "RHHBY": "RHHBY",
+    # Datenreihen ohne Allokation (#64) - alle sieben bewusst als XETRA-Symbol
+    # in EUR. Damit faellt kein zusaetzlicher FX-Request an, und das gesamte
+    # Waehrungsproblem aus #62 entsteht fuer sie gar nicht erst (FX_WEEKLY
+    # beginnt erst im November 2014). Am 22.08.2026 per SYMBOL_SEARCH geprueft:
+    # jedes Symbol loest auf XETRA in EUR auf. Das ist wichtig, weil ein nicht
+    # aufloesbares Symbol den kompletten Backfill abbricht - bei 25 von 25
+    # Requests waere damit das Tagesbudget verbraucht.
+    "IUSA": "IUSA.DEX",
+    "XEON": "XEON.DEX",
+    "EXSA": "EXSA.DEX",
+    "IBCL": "IBCL.DEX",
+    "IBCI": "IBCI.DEX",
+    "IQQ6": "IQQ6.DEX",
+    "EXXY": "EXXY.DEX",
 }
 
 # Ticker, deren Alpha-Vantage-Symbol in USD notiert - Kurs wird bei jedem
