@@ -177,7 +177,7 @@ strategy always yields the identical result.
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Pure simulation function: (price history, strategy) → portfolio/tax state |
-| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions) |
+| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back or full history), backed by four fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)) |
 | `src/boersenspiel/templates/` | Jinja templates: `base.html.j2` (shared shell incl. the three-dot menu), `dashboard.html.j2`, `strategy_detail.html.j2`, `praemissen.html.j2` |
 | `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
 | `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
@@ -423,8 +423,15 @@ pytest -q
   deployed. If no target instrument is tradeable at all, everything stays
   parked — deliberately: "out of the market" with no defensive instrument
   available *is* cash.
-- **Distributions and dividends are not modeled.** For distributing
-  instruments the simulation therefore misses part of the real return.
+- **Company-specific dividend amounts are not modeled.** The 10 single-stock
+  satellite instruments (`Instrument.ausschuettend`) use a flat placeholder
+  dividend yield (`DIVIDENDENRENDITE_PLATZHALTER`, 2.5% p.a.) instead of
+  their real historical dividend history – some of the 10 don't actually pay
+  a dividend, others pay more or less than the placeholder
+  ([#57](https://github.com/S540d/Boersenspiel/issues/57)). The dividend is
+  booked as real cash once a year, reinvested via the existing cash-parking
+  mechanism, and taxed like a real capital gain. The ETFs, the bond fund,
+  physical gold, and BTC-EUR still pay no dividend at all in the simulation.
 - **December harvest:** On the last price row of a completed calendar year,
   exactly one of two mutually exclusive measures applies, depending on how
   the tax year has gone so far (see
