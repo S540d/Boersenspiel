@@ -224,20 +224,37 @@ class AlphaVantageSource:
     # hinnehmen soll.
 
     def fetch_weekly_history(self, ticker: str, since: date) -> dict[date, float]:
-        """Woechentliche Schlusskurse eines nicht-Krypto-Tickers ab ``since``,
-        in der nativen Waehrung seines Alpha-Vantage-Symbols (EUR fuer
-        .DEX/.AMS-Symbole, sonst USD - Umrechnung erfolgt separat, siehe
-        ``fetch_fx_weekly_eur_per_usd``)."""
+        """Woechentliche, SPLITBEREINIGTE Schlusskurse eines nicht-Krypto-Tickers
+        ab ``since``, in der nativen Waehrung seines Alpha-Vantage-Symbols (EUR
+        fuer .DEX/.AMS-Symbole, sonst USD - Umrechnung erfolgt separat, siehe
+        ``fetch_fx_weekly_eur_per_usd``).
+
+        Nutzt ``TIME_SERIES_WEEKLY_ADJUSTED`` statt ``TIME_SERIES_WEEKLY`` (#61).
+        Der unbereinigte Endpunkt liefert den nominalen Schlusskurs: bei jedem
+        Aktiensplit faellt die Kursreihe um den Split-Faktor, ohne dass ein
+        Anleger etwas verloren haette. In der 20-Jahres-Historie betraf das
+        fuenf der zehn Satelliten-Aktien und erzeugte Phantom-Wochenverluste bis
+        -91% (TSLA 5:1 2020 und 3:1 2022, MSTR 10:1 2024, KO 2:1 2012, RHHBY und
+        BYDDY je ein ADR-Verhaeltniswechsel).
+
+        Bewusst SPLIT-only statt des vollen ``adjusted close``: der adjustierte
+        Kurs ist eine Total-Return-Reihe, rechnet also auch Dividenden ein. Die
+        Simulation modelliert Bar-Ausschuettungen aber bereits explizit als
+        eigenen, steuerlich korrekt behandelten Kapitalertrag
+        (``strategies.DIVIDENDENRENDITE_PLATZHALTER``, ``Instrument.ausschuettend``,
+        #57). Der volle adjusted close wuerde sie ein zweites Mal als
+        Kurssteigerung enthalten.
+        """
         symbol = ALPHAVANTAGE_SYMBOLS.get(ticker)
         if symbol is None:
             raise ValueError(f"kein Alpha-Vantage-Symbol-Mapping fuer {ticker!r}")
         resp = requests.get(
             ALPHAVANTAGE_URL,
-            params={"function": "TIME_SERIES_WEEKLY", "symbol": symbol, "apikey": self.api_key},
+            params={"function": "TIME_SERIES_WEEKLY_ADJUSTED", "symbol": symbol, "apikey": self.api_key},
             timeout=30,
         )
         resp.raise_for_status()
-        return _parse_weekly_close_series(_extract_time_series(resp.json(), symbol), since)
+        return _split_bereinigte_close_series(_extract_time_series(resp.json(), symbol), since)
 
     def fetch_fx_weekly_eur_per_usd(self, since: date) -> dict[date, float]:
         """Woechentlicher EUR-Gegenwert von 1 USD ab ``since`` (fuer die
@@ -349,6 +366,60 @@ def _parse_trading_day(raw: str | None) -> date | None:
     except ValueError:
         print(f"alphavantage: unlesbarer Handelstag {raw!r}", file=sys.stderr)
         return None
+
+
+# Ab diesem Verhaeltnis-Sprung zwischen zwei aufeinanderfolgenden Wochen gilt
+# eine Aenderung des Bereinigungsfaktors als Split (bzw. ADR-Verhaeltniswechsel)
+# und nicht als Dividende. Der kleinste uebliche Split ist 5:4 (=1,25); die
+# groesste denkbare Wochendividende liegt deutlich darunter.
+_SPLIT_SCHWELLE = 1.15
+
+
+def _split_bereinigte_close_series(series: dict, since: date) -> dict[date, float]:
+    """Splitbereinigte (aber NICHT dividendenbereinigte) Wochenschlusskurse aus
+    einer ``TIME_SERIES_WEEKLY_ADJUSTED``-Antwort.
+
+    Alpha Vantage liefert je Woche ``4. close`` (nominal) und
+    ``5. adjusted close`` (Total Return: split- UND dividendenbereinigt), aber
+    keinen Split-Koeffizienten. Der kumulierte Bereinigungsfaktor
+    ``close / adjusted close`` faellt bei Dividenden nur langsam, bei einem
+    Split dagegen in einem einzigen Schritt um den Split-Faktor. Diese Funktion
+    isoliert deshalb genau diese Spruenge und teilt die nominalen Kurse durch
+    den ab der jeweiligen Woche kumulierten Split-Faktor. Dividenden bleiben
+    damit im Kursverlauf unberuecksichtigt - so wie es die Simulation erwartet,
+    die sie separat als Barertrag modelliert (siehe ``fetch_weekly_history``).
+    """
+    beobachtungen: list[tuple[date, float, float]] = []
+    for date_str, values in series.items():
+        close_str = values.get("4. close")
+        adj_str = values.get("5. adjusted close")
+        if close_str is None:
+            continue
+        close = float(close_str)
+        adj = float(adj_str) if adj_str is not None else 0.0
+        beobachtungen.append((date.fromisoformat(date_str), close, adj))
+    beobachtungen.sort()
+
+    # Kumulierten Split-Faktor je Woche bestimmen: rueckwaerts vom Ende her,
+    # damit die juengste Woche (per Definition unbereinigt) den Faktor 1 hat.
+    faktoren: dict[date, float] = {}
+    kumuliert = 1.0
+    vorheriges_verhaeltnis: float | None = None
+    for d, close, adj in reversed(beobachtungen):
+        verhaeltnis = close / adj if adj > 0 else None
+        if verhaeltnis is not None and vorheriges_verhaeltnis is not None:
+            sprung = verhaeltnis / vorheriges_verhaeltnis
+            if sprung >= _SPLIT_SCHWELLE:
+                kumuliert *= sprung
+        if verhaeltnis is not None:
+            vorheriges_verhaeltnis = verhaeltnis
+        faktoren[d] = kumuliert
+
+    return {
+        d: close / faktoren[d]
+        for d, close, _adj in beobachtungen
+        if d >= since and faktoren.get(d, 0.0) > 0
+    }
 
 
 def _parse_weekly_close_series(series: dict, since: date) -> dict[date, float]:

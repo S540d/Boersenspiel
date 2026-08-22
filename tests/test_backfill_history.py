@@ -197,3 +197,41 @@ def test_a_failing_fx_fetch_costs_no_ticker_requests():
         bh.collect_weekly_series(source, ["LITE", "BTC-EUR"], since=date(2020, 1, 1))
 
     assert source.weekly_history_calls == []
+
+
+# --- Keine Rueckwaerts-Extrapolation des Wechselkurses (#61) ------------------
+
+
+def test_nearest_fx_rate_does_not_extrapolate_backwards():
+    """Vor Beginn der FX-Reihe gibt es keinen Kurs - und keinen Ersatz dafuer.
+
+    Vorher fiel die Funktion auf den aeltesten VERFUEGBAREN Kurs zurueck, der
+    aber juenger ist als das umzurechnende Datum. Im echten 20-Jahres-Backfill
+    beginnt Alpha Vantages FX_WEEKLY erst im November 2014; dadurch wurden 227
+    Wochen aller USD-Ticker und die komplette fruehe BTC-Historie mit dem
+    konstanten Kurs von 2014 umgerechnet.
+    """
+    rates = {date(2014, 11, 21): 0.7982, date(2014, 11, 28): 0.8028}
+    sorted_dates = sorted(rates)
+
+    # Datum VOR der Reihe -> kein Kurs.
+    assert bh._nearest_fx_rate(rates, sorted_dates, date(2010, 7, 9)) is None
+    # Datum in/nach der Reihe -> Forward-Fill wie bisher.
+    assert bh._nearest_fx_rate(rates, sorted_dates, date(2014, 11, 21)) == pytest.approx(0.7982)
+    assert bh._nearest_fx_rate(rates, sorted_dates, date(2026, 1, 1)) == pytest.approx(0.8028)
+
+
+def test_collect_weekly_series_drops_usd_weeks_before_the_fx_history_starts():
+    source = _FakeSource(
+        weekly={"LITE": {date(2010, 7, 9): 100.0, date(2026, 8, 14): 200.0}},
+        fx={date(2014, 11, 21): 0.80, date(2026, 8, 14): 0.90},
+        crypto={date(2010, 7, 9): 0.05, date(2026, 8, 14): 58000.0},
+    )
+    result = bh.collect_weekly_series(source, ["LITE", "BTC-EUR"], since=date(2006, 1, 1))
+
+    # Woche vor Beginn der FX-Reihe faellt weg, statt mit dem 2014er-Kurs
+    # falsch umgerechnet zu werden - record_week() traegt dafuer "missing" ein.
+    assert date(2010, 7, 9) not in result["LITE"]
+    assert date(2010, 7, 9) not in result["BTC-EUR"]
+    assert result["LITE"][date(2026, 8, 14)] == pytest.approx(180.0)
+    assert result["BTC-EUR"][date(2026, 8, 14)] == pytest.approx(52200.0)

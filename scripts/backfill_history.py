@@ -73,12 +73,27 @@ def _reset_data_files(data_dir: Path) -> None:
 
 
 def _nearest_fx_rate(rates: dict[date, float], sorted_dates: list[date], target: date) -> float | None:
-    """Naechstgelegener FX-Kurs an oder vor ``target`` (Forward-Fill der
-    letzten bekannten Woche), sonst der frueheste verfuegbare Kurs."""
+    """Naechstgelegener FX-Kurs an oder VOR ``target`` (Forward-Fill der letzten
+    bekannten Woche), sonst ``None``.
+
+    Bewusst KEINE Rueckwaerts-Extrapolation (#61). Vorher fiel diese Funktion
+    fuer Wochen vor Beginn der FX-Reihe auf ``rates[sorted_dates[0]]`` zurueck,
+    also auf den aeltesten VERFUEGBAREN Kurs - der aber juenger ist als das
+    umzurechnende Datum. Alpha Vantages ``FX_WEEKLY`` liefert USD/EUR erst ab
+    November 2014; dadurch wurden im 20-Jahres-Backfill 227 Wochen (Juli 2010
+    bis November 2014) aller USD-Ticker UND die komplette fruehe BTC-Historie
+    mit dem konstanten Kurs von 2014 (0,7982 EUR/USD) umgerechnet. Die
+    Wechselkursbewegung dieser Jahre fehlte damit vollstaendig, und die
+    Umrechnung war je nach Woche um bis zu ~25% falsch.
+
+    ``None`` heisst "kein Kurs fuer diese Woche": ``record_week()`` traegt dann
+    "missing" ein statt eines falsch umgerechneten Werts - dieselbe Regel, der
+    ``AlphaVantageSource.fetch()`` beim Live-Abruf schon folgt.
+    """
     if not sorted_dates:
         return None
     candidates = [d for d in sorted_dates if d <= target]
-    return rates[candidates[-1]] if candidates else rates[sorted_dates[0]]
+    return rates[candidates[-1]] if candidates else None
 
 
 def collect_weekly_series(
@@ -119,6 +134,17 @@ def collect_weekly_series(
         print("  EUR/USD-Historie (FX_WEEKLY) ...", file=sys.stderr)
         fx_rates = source.fetch_fx_weekly_eur_per_usd(since)
     fx_dates_sorted = sorted(fx_rates)
+    if fx_dates_sorted and fx_dates_sorted[0] > since:
+        # Sichtbar machen, dass die FX-Reihe kuerzer ist als der angefragte
+        # Zeitraum - alles davor bleibt fuer USD-Ticker und BTC leer (#61).
+        print(
+            f"  WARNUNG: FX_WEEKLY (USD/EUR) beginnt erst am {fx_dates_sorted[0]}, "
+            f"angefragt ab {since}. Fuer alle Wochen davor bleiben die USD-Ticker "
+            f"{sorted(usd_tickers_present)}"
+            f"{' und BTC-EUR' if crypto_present else ''} ohne Kurs, statt mit einem "
+            "spaeteren Wechselkurs falsch umgerechnet zu werden.",
+            file=sys.stderr,
+        )
 
     for ticker in non_crypto:
         pace()

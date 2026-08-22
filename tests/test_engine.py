@@ -539,3 +539,88 @@ def test_missing_price_in_later_row_values_with_last_known_price():
 
     values = [vp.total_value for vp in result.value_history]
     assert values == [Decimal("998"), Decimal("998"), Decimal("998")]
+
+
+# --- Erstkauf darf kein verdecktes Rebalancing sein (#61) ---------------------
+
+# Drei Instrumente, T3 kommt erst spaeter an den Markt. Die Gewichte sind
+# bewusst ungleich (40/40/20), damit sich ein Erstkauf "nur T3 dazukaufen" von
+# einem Voll-Rebalancing "alle drei auf Zielgewicht" unterscheiden laesst.
+DRITTES_INSTRUMENT_STRATEGY = Strategy(
+    name="Test-Spaeterer-Boersengang",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(
+            name="TopfX",
+            gewicht_gesamt=Decimal("0.8"),
+            sub_gewichte={"T1": Decimal("0.5"), "T2": Decimal("0.5")},
+        ),
+        Topf(name="TopfY", gewicht_gesamt=Decimal("0.2"), sub_gewichte={"T3": Decimal("1")}),
+    ],
+    ziel_topf="TopfX",
+    ziel_gewicht=Decimal("0.8"),
+    rebalancing_schwelle_pp=Decimal("10"),
+)
+
+# Ohne Gebuehren/Steuer, damit die Stueckzahlen von Hand exakt aufgehen.
+_OHNE_REIBUNG = dict(ordergebuehren=False, besteuerung=False, steueroptimierung=False)
+
+
+def _drittes_instrument_rows() -> list[PriceRow]:
+    return [
+        # T3 gibt es noch nicht -> sein 20%-Ziel wird auf T1/T2 umgelegt
+        # (je 0.4/0.8 = 50%): 1000 EUR -> je 500 EUR -> je 5 Stueck zu 100.
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        # T1 verdoppelt sich. Depot: T1 1000, T2 500, gesamt 1500.
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("200"), "T2": Decimal("100")}),
+        # T3 ist erstmals handelbar (Boersengang).
+        PriceRow(date(2024, 1, 15), {"T1": Decimal("200"), "T2": Decimal("100"), "T3": Decimal("50")}),
+    ]
+
+
+def test_erstkauf_ohne_rebalancing_laesst_die_verhaeltnisse_des_altbestands_unangetastet():
+    """Bei ``rebalancing=False`` finanziert der Erstkauf NUR das neue
+    Instrument - anteilig aus allen bestehenden Positionen, ohne deren
+    Verhaeltnis zueinander zu veraendern.
+
+    Vorher loeste jeder Boersengang ein komplettes Rebalancing aus, auch wenn
+    Rebalancing fuer die Strategie ausgeschaltet war. Ueber die
+    20-Jahres-Historie waren das 27 verdeckte Voll-Rebalancings, wodurch das
+    Szenario "Time in the market beats timing the market" von der
+    rebalancierenden Barbell-Strategie nicht mehr zu unterscheiden war.
+    """
+    result = simulate(
+        _drittes_instrument_rows(),
+        DRITTES_INSTRUMENT_STRATEGY,
+        Optimierungen(rebalancing=False, **_OHNE_REIBUNG),
+    )
+
+    # T3 bekommt sein Zielgewicht: 20% von 1500 = 300 EUR / 50 = 6 Stueck.
+    assert result.holdings["T3"] == Decimal("6")
+    # Die restlichen 1200 EUR verteilen sich im BISHERIGEN Verhaeltnis 1000:500,
+    # also 800 EUR T1 (= 4 Stueck zu 200) und 400 EUR T2 (= 4 Stueck zu 100).
+    # (Die Zielanteile 0.8*1000/1500 bzw. 0.8*500/1500 sind periodisch, deshalb
+    # auf Cent-Ebene statt exakt vergleichen.)
+    assert abs(result.holdings["T1"] - Decimal("4")) < Decimal("0.0001")
+    assert abs(result.holdings["T2"] - Decimal("4")) < Decimal("0.0001")
+    # Gegenprobe auf die eigentliche Invariante: das Wertverhaeltnis T1:T2 ist
+    # vor (1000:500) und nach dem Erstkauf (800:400) dasselbe.
+    werte = result.value_history[-1].ticker_values
+    assert abs(werte["T1"] / werte["T2"] - Decimal("2")) < Decimal("0.0001")
+    assert abs(result.value_history[-1].total_value - Decimal("1500")) < Decimal("0.0001")
+
+
+def test_erstkauf_mit_rebalancing_holt_weiterhin_alles_auf_zielgewicht():
+    """Gegenprobe: fuer eine rebalancierende Strategie bleibt der Erstkauf
+    ein vollwertiges Rebalancing auf die Zielgewichte."""
+    result = simulate(
+        _drittes_instrument_rows(),
+        DRITTES_INSTRUMENT_STRATEGY,
+        Optimierungen(rebalancing=True, **_OHNE_REIBUNG),
+    )
+
+    # Zielgewichte 40/40/20 auf 1500 EUR: 600 / 600 / 300.
+    assert result.holdings["T1"] == Decimal("3")  # 600 / 200
+    assert result.holdings["T2"] == Decimal("6")  # 600 / 100
+    assert result.holdings["T3"] == Decimal("6")  # 300 / 50
+    assert result.value_history[-1].total_value == Decimal("1500")

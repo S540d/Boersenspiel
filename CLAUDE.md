@@ -195,7 +195,16 @@ inkrementell fortgeschrieben).
   sonst hielte `BUY_AND_HOLD` nie ein Instrument, das es bei
   Simulationsbeginn noch nicht gab): `neues_instrument`, sobald ein Ticker
   erstmals einen Kurs hat, und `kapitaleinsatz`, sobald geparktes Cash
-  wieder ein handelbares Ziel hat. Letzteres ist nötig, weil der
+  wieder ein handelbares Ziel hat. **Aber nur der Erstkauf selbst ist von
+  `opt.rebalancing` unabhängig, nicht der übrige Bestand (#61):** bei
+  ausgeschaltetem Rebalancing baut `erstkauf_gewichte()` eine Zielverteilung,
+  in der das neue Instrument sein reguläres Zielgewicht bekommt und der
+  gesamte Rest die *aktuellen* Marktwert-Verhältnisse behält (nur proportional
+  herunterskaliert). Vorher lief bei jedem Börsengang ein komplettes
+  Rebalancing über `current_weights` — über die 20-Jahres-Historie 27
+  verdeckte Voll-Rebalancings, wodurch „Time in the market beats timing the
+  market" bit-identische 1-/3-/5-Jahres-Renditen wie die rebalancierende
+  Barbell-Strategie lieferte und am Ende exakt deren Zielgewichte hielt. Letzteres ist nötig, weil der
   Rebalancing-Trigger nur Topf A prüft: war zeitweise *kein* Zielinstrument
   handelbar (z. B. „Sell in May" startet im September 2006 defensiv, Topf A
   existiert aber erst ab 2008), sind Ist- und Zielgewicht von Topf A beide
@@ -435,12 +444,41 @@ Prompt-/Agentenweg zu ersetzen.
 
 `data/price_history.csv` wächst im Normalbetrieb nur Woche für Woche seit
 Projektstart, weil `GLOBAL_QUOTE` nur den aktuellen Kurs liefert.
-`scripts/backfill_history.py` nutzt stattdessen `TIME_SERIES_WEEKLY` /
+`scripts/backfill_history.py` nutzt stattdessen `TIME_SERIES_WEEKLY_ADJUSTED` /
 `DIGITAL_CURRENCY_WEEKLY` (komplette verfügbare Historie in **einem**
 Request pro Ticker) und schreibt über `history_store.record_week()`
 (derselbe Pfad wie der Live-Abruf) die komplette Historie neu. USD-Ticker
 werden mit dem historischen `FX_WEEKLY`-Kurs derselben Woche umgerechnet
-(Forward-Fill bei fehlender Woche). Reine Datenbeschaffung
+(Forward-Fill bei fehlender Woche).
+
+**Splitbereinigung (#61):** Der Backfill lief bis dahin über
+`TIME_SERIES_WEEKLY`, also über *nominale* Schlusskurse. Jeder Aktiensplit
+sieht dort wie ein Kurssturz aus — in der 20-Jahres-Historie betraf das fünf
+der zehn Satelliten-Aktien mit Phantom-Wochenverlusten bis -91% (TSLA 5:1
+2020 und 3:1 2022, MSTR 10:1 2024, KO 2:1 2012, RHHBY und BYDDY je ein
+ADR-Verhältniswechsel). `_split_bereinigte_close_series()` leitet aus
+`close / adjusted close` den kumulierten **Split**-Faktor ab und teilt die
+Nominalkurse dadurch. Bewusst split-only statt des vollen `adjusted close`:
+der ist eine Total-Return-Reihe und enthält auch Dividenden, die die
+Simulation bereits separat als Barertrag modelliert (`ausschuettend` /
+`DIVIDENDENRENDITE_PLATZHALTER`, #57) — sonst zählten sie doppelt. Liefert
+ein Symbol gar keinen `adjusted close`, bleibt es beim Nominalkurs.
+
+**Keine Rückwärts-Extrapolation des Wechselkurses (#61):**
+`_nearest_fx_rate()` fiel für Wochen *vor* Beginn der FX-Reihe auf den
+ältesten verfügbaren Kurs zurück — der aber jünger ist als das umzurechnende
+Datum. Alpha Vantages `FX_WEEKLY` liefert USD/EUR erst ab **November 2014**;
+dadurch wurden im 20-Jahres-Backfill 227 Wochen (Juli 2010 bis November 2014)
+aller USD-Ticker *und* die komplette frühe BTC-Historie mit dem konstanten
+Kurs 0,7982 EUR/USD von 2014 umgerechnet, die Wechselkursbewegung dieser
+Jahre fehlte also vollständig. Jetzt liefert die Funktion für solche Wochen
+`None`, `record_week()` trägt „missing" ein (dieselbe Regel, der
+`AlphaVantageSource.fetch()` beim Live-Abruf schon folgt), und der Lauf gibt
+eine Warnung mit dem tatsächlichen FX-Startdatum aus. **Folge:** Ein
+Re-Backfill verkürzt die belastbare Historie der 9 USD-Ticker und von BTC-EUR
+auf November 2014 — das ist der ehrliche Umfang der verfügbaren Daten. Wer
+die frühen Jahre zurück will, braucht eine EUR/USD-Quelle mit längerer
+Historie, nicht eine Extrapolation. Reine Datenbeschaffung
 (`collect_weekly_series`) und CSV-Schreiben (`write_backfilled_history`)
 sind als separate, unabhängig testbare Funktionen im Skript
 implementiert - siehe `tests/test_backfill_history.py` (mockt
@@ -563,4 +601,20 @@ summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
 mit allen 17 Instrumenten. `tests/test_backfill_history.py` prüft
 `scripts/backfill_history.py` (USD/EUR-Umrechnung inkl. Forward-Fill,
 ISO-Wochen-Gruppierung, Carry-Forward fehlender Ticker) gegen ein
-Fake-`AlphaVantageSource`-Objekt.
+Fake-`AlphaVantageSource`-Objekt; seit #61 zusätzlich, dass
+`_nearest_fx_rate()` **nicht** rückwärts extrapoliert (Datum vor Beginn der
+FX-Reihe → `None`, Forward-Fill danach unverändert) und dass
+`collect_weekly_series()` die betroffenen Wochen der USD-Ticker und von
+BTC-EUR fallen lässt statt sie falsch umzurechnen. Für die Splitbereinigung
+(#61) in `tests/test_alphavantage.py`: dass `fetch_weekly_history()` den
+`TIME_SERIES_WEEKLY_ADJUSTED`-Endpunkt anfragt, dass eine nachgebaute
+TSLA-Reihe (5:1 und 3:1) ohne Phantom-Absturz herauskommt, dass ein
+dividendengroßer Faktorsprung eben **nicht** als Split gewertet wird (sonst
+zählte die separat modellierte Dividende doppelt), und dass ein Symbol ohne
+`adjusted close` unverändert beim Nominalkurs bleibt. Für den Erstkauf ohne
+Rebalancing (#61) in `tests/test_engine.py`: eine Drei-Instrumente-Strategie
+mit ungleichen Zielgewichten (40/40/20), bei der das dritte Instrument erst
+später an den Markt kommt — mit `rebalancing=False` bleibt das
+Wertverhältnis des Altbestands (2:1) exakt erhalten und nur das neue
+Instrument wird auf sein Zielgewicht gekauft, mit `rebalancing=True` landen
+weiterhin alle drei auf ihren Zielgewichten.
