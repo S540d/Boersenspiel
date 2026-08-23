@@ -8,6 +8,7 @@ kommt aus ``engine.simulate()``).
 
 from __future__ import annotations
 
+import dataclasses
 import re
 from datetime import date, timedelta
 from decimal import Decimal
@@ -1470,3 +1471,86 @@ def test_neue_seiten_sind_von_jeder_seite_aus_dem_menue_erreichbar(tmp_path: Pat
         assert 'href="vergleich.html"' in menue
         assert 'href="portfolio.html"' in menue
         assert 'href="praemissen.html"' in menue
+
+
+# --- #90/#92/#93: Startseiten-Charts ----------------------------------------
+
+
+def test_gruppen_chart_hat_fuer_jedes_mitglied_eine_eigene_farbe(tmp_path: Path):
+    """#90: bei sechs Linien (Kombi + fünf Weisheiten) lief die vierstellige
+    Palette im Kreis, Blau kam doppelt vor."""
+    output = build_dashboard(_rows(), _strategien_mit_unterszenarien(), output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    palette = html.split("const gruppenSeriesColors = [", 1)[1].split("]", 1)[0]
+    farben = [f.strip() for f in palette.replace("\n", "").split(",") if f.strip()]
+    assert len(farben) == len(set(farben))
+    # Genug Farben für die grösste real vorkommende Gruppe (Kombi + 5 Weisheiten).
+    assert len(farben) >= 6
+    # Die Benchmark-Overlay-Linie (#72) benutzt series4 - die darf im selben
+    # Chart nicht noch einmal als Mitgliedsfarbe auftauchen.
+    assert "colors.series4" not in palette
+
+
+def test_startseiten_balkendiagramm_zeigt_nur_die_ausgewaehlten_strategien(tmp_path: Path):
+    """#92: mehr Balken als Achsenbeschriftungen - die abgewählten Läufe
+    verschwinden aus dem Balkendiagramm, nicht aus der Vergleichstabelle."""
+    strategien = [
+        ZWEI_STRATEGIEN[0],
+        dataclasses.replace(ZWEI_STRATEGIEN[1], im_startseiten_chart=False),
+    ]
+    output = build_dashboard(_rows(), strategien, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    labels = html.split("getElementById('summary-chart')", 1)[1].split("labels:", 1)[1].split("\n", 1)[0]
+    assert "A: Verdoppler" in labels
+    assert "B: Verlierer" not in labels
+    # Chart.js darf keine Beschriftung mehr auslassen ...
+    assert "autoSkip: false" in html
+    # ... und die abgewählte Strategie bleibt in der vollständigen Tabelle.
+    assert "B: Verlierer" in _summary_tabelle(tmp_path)
+
+
+def test_gruppen_chart_haengt_am_benchmark_schalter(tmp_path: Path, monkeypatch):
+    """#93: in der Grafik fehlte der Benchmark, und der Schalter stand darunter."""
+    monkeypatch.setattr(dashboard_module, "BENCHMARK_STRATEGIEN", [_benchmark_fixture()])
+    output = build_dashboard(
+        _rows_mit_benchmark_ticker(),
+        _strategien_mit_unterszenarien(),
+        output_path=tmp_path / "index.html",
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert 'id="benchmark-switch"' in html
+
+    gruppen_js = html.split("getElementById('gruppen-chart-1')", 1)[1]
+    assert "__benchmarks" in gruppen_js.split("{% endfor %}")[0]
+    # Die Overlay-Linie haengt sich hinter die Mitglieder, statt eine davon zu
+    # ueberschreiben.
+    assert "__baseDatasetCount = 3" in gruppen_js
+    # Y-Achse fest (Owner-Vorgabe #72), damit der Schalter die Skala nicht dehnt.
+    assert "suggestedMax" not in gruppen_js.split("chartRefreshers", 1)[0]
+    # Schalter steht ueber dem Gruppen-Abschnitt.
+    assert html.index('id="benchmark-switch"') < html.index('id="gruppe-kombi"')
+
+
+def test_startseite_verweist_fuers_kombinationsverfahren_auf_die_praemissen(tmp_path: Path):
+    """#93: der Erklärtext verweist auf die Prämissen - und dort steht das
+    Verfahren dann auch wirklich."""
+    strategien = _strategien_mit_unterszenarien()
+    kombi = dataclasses.replace(
+        strategien[0],
+        beitraege=(Beitrag(name="Regel X", ohne=strategien[1]),),
+    )
+    output = build_dashboard(_rows(), [kombi] + strategien[1:], output_path=tmp_path / "index.html")
+
+    assert 'href="praemissen.html#kombination"' in output.read_text(encoding="utf-8")
+    praemissen = _seite(tmp_path, "praemissen")
+    assert 'id="kombination"' in praemissen
+    # Die Regelnamen kommen aus Strategy.beitraege, stehen also nicht im Template.
+    assert "Regel X" in praemissen
+
+
+def test_praemissen_ohne_zusammengesetzte_strategie_zeigen_keinen_kombinationsabschnitt(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    assert 'id="kombination"' not in _seite(tmp_path, "praemissen")

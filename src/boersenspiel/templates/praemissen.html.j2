@@ -246,6 +246,50 @@
       </table>
     </div>
 
+{% if zusammengesetzte %}
+    <h3 id="kombination" data-i18n-en="Composite strategies: how the combination works">Zusammengesetzte Strategien: wie kombiniert wird</h3>
+    <p class="hint" data-i18n-en="Some strategies are not a rule of their own but a combination of several. They are computed in two steps, once per week:">
+      Manche Strategien sind keine eigene Regel, sondern eine Kombination
+      mehrerer Regeln. Sie werden in zwei Schritten gerechnet, einmal pro Woche:
+    </p>
+    <ol class="hint">
+      <li data-i18n-en="Every rule proposes an equity quota for that week - or abstains, if its condition does not apply this week (a seasonal rule has nothing to say in March). The target quota is the arithmetic mean of the proposals actually made. Two rules contradicting each other therefore cancel each other out in part, instead of one of them winning.">
+        Jede Regel schlägt für diese Woche eine Aktienquote vor &ndash; oder
+        enthält sich, wenn ihre Bedingung diese Woche nicht greift (eine
+        saisonale Regel hat im März nichts zu sagen). Die Ziel-Quote ist das
+        arithmetische Mittel der tatsächlich abgegebenen Vorschläge. Zwei
+        Regeln, die sich widersprechen, heben sich damit teilweise auf, statt
+        dass eine von ihnen gewinnt.
+      </li>
+      <li data-i18n-en="Rules that act per instrument rather than on the overall quota (a trailing stop, for instance) are applied afterwards to the resulting weights.">
+        Regeln, die nicht auf die Gesamtquote, sondern auf einzelne Instrumente
+        wirken (etwa ein Trailing-Stop), werden danach auf die so entstandenen
+        Gewichte angewendet.
+      </li>
+    </ol>
+    <p class="hint" data-i18n-en="The share attributable to each individual rule is measured leave-one-out: the same strategy is simulated once more without exactly that one rule, and the difference in CAGR is its contribution. It is shown on the detail page of the composite strategy. Note that a rule can behave differently on its own than inside the combination - as its own scenario it applies its rule alone, inside the combination it is only one vote among several.">
+      Was die einzelne Regel beiträgt, wird per Leave-one-out gemessen: dieselbe
+      Strategie läuft noch einmal ohne genau diese eine Regel, die Differenz der
+      CAGR ist ihr Beitrag. Er steht auf der Detailseite der zusammengesetzten
+      Strategie. Wichtig: Eine Regel kann sich allein anders verhalten als in
+      der Kombination &ndash; als eigenes Szenario setzt sie ihre Regel
+      durchgängig um, in der Kombination ist sie nur eine Stimme von mehreren.
+    </p>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th class="text-left" data-i18n-en="Composite strategy">Zusammengesetzte Strategie</th><th class="text-left" data-i18n-en="Combined rules">Kombinierte Regeln</th></tr></thead>
+        <tbody>
+        {% for z in zusammengesetzte %}
+          <tr>
+            <td class="text-left"><a href="{{ z.id }}.html">{{ z.name }}</a></td>
+            <td class="text-left">{{ z.regeln | join("; ") }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+{% endif %}
+
     <h3 data-i18n-en="Cash and uninvested capital">Cash und ungenutztes Kapital</h3>
     <p class="hint" data-i18n-en="No strategy has its own cash target allocation. When a scenario switches to &quot;defensive&quot; (e.g. &quot;Sell in May&quot;, SMA death cross, trailing stop), the capital moves entirely into bucket A (safety) - bucket A takes on the cash role, instead of an unremunerated cash position or one carrying a made-up interest rate. A genuine cash position would have two downsides: it would need a fictional interest rate instead of one derivable from the price history, and it would duplicate bucket A without a purpose of its own.">
       Keine Strategie hat eine eigene Cash-Zielallokation. Schaltet ein

@@ -597,6 +597,11 @@ def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list
                 "id": _slug(eltern_name),
                 "mitglieder": mitglieder,
                 "chart_max": max(alle_werte) if alle_werte else 0.0,
+                # #93: der Gruppen-Chart hing bisher als einziger Wertverlauf-Chart
+                # nicht am Benchmark-Schalter (#72). Die Reihen der uebergeordneten
+                # Strategie passen ohne Datumsabgleich, weil alle Mitglieder ueber
+                # dieselben `rows` simuliert werden (gleiches Instrumentenset).
+                "benchmarks_json": json.dumps(eltern_view["benchmarks"]),
             }
         )
     return gruppen
@@ -951,6 +956,7 @@ def _build_strategy_view(
         # Strategy.eigene_chart_skala) - own_chart_max ist dabei bewusst NUR das
         # Maximum der eigenen Wertreihe, unabhaengig von allen anderen Strategien.
         "eigene_chart_skala": strategy.eigene_chart_skala,
+        "im_startseiten_chart": strategy.im_startseiten_chart,
         "own_chart_max": max(total_values) if total_values else 0.0,
     }
 
@@ -1116,6 +1122,20 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "walk_forward_min_wochen": _WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT,
         "cash_ueberall_null": cash_ueberall_null,
         "btc_fruehphase_ende": _BTC_FRUEHPHASE_ENDE.isoformat(),
+        # #93: das Kombinationsverfahren zusammengesetzter Strategien gehoert
+        # nachpruefbar auf diese Seite - der Startseiten-Abschnitt verweist
+        # darauf, statt es dort in einem Absatz zu erklaeren. Die Regelnamen
+        # kommen aus `Strategy.beitraege`, damit die Liste nicht gegenueber
+        # scenarios.py veraltet.
+        "zusammengesetzte": [
+            {
+                "name": s_.name,
+                "id": _slug(s_.name),
+                "regeln": [b.name for b in s_.beitraege],
+            }
+            for s_ in strategies
+            if s_.beitraege
+        ],
     }
 
 
@@ -1298,6 +1318,11 @@ def build_dashboard(
     index_html = index_template.render(
         strategies=views,
         summary=summary,
+        # #92: das CAGR-Balkendiagramm der Startseite zeigt nur die Strategien
+        # mit `im_startseiten_chart` - mit allen Läufen standen dort mehr Balken
+        # als Achsenbeschriftungen (Chart.js duennt die Beschriftungen aus). Die
+        # vollstaendige Liste bleibt in `summary` (Tabelle auf vergleich.html).
+        chart_summary=[v for v in summary if v["im_startseiten_chart"]],
         learnings=learnings,
         wert_chart_max=wert_chart_max,
         teilszenario_gruppen=teilszenario_gruppen,
