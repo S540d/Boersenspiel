@@ -20,7 +20,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .engine import SimulationResult, simulate
 from .history_store import FetchLogEntry, PriceRow
-from .instruments import INSTRUMENTS, TICKERS
+from .instruments import INSTRUMENTS, TICKERS, Instrument
 from .learnings import derive_learnings
 from .strategies import (
     BENCHMARK_STRATEGIEN,
@@ -42,12 +42,13 @@ _STALE_STATUS = {"carried_forward", "missing"}
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[2] / "docs" / "index.html"
 
-# Anzeigenamen der vier Optimierungs-Schalter (siehe strategies.Optimierungen / #17).
+# Anzeigenamen der fuenf Optimierungs-Schalter (siehe strategies.Optimierungen / #17).
 _OPTIMIERUNGS_LABELS: dict[str, str] = {
     "steueroptimierung": "Steueroptimierung (Dezember-Harvest)",
     "rebalancing": "Rebalancing",
     "ordergebuehren": "Ordergebühren",
     "besteuerung": "Besteuerung",
+    "fondskosten": "Laufende Fondskosten (TER)",
 }
 
 
@@ -173,14 +174,51 @@ def _max_drawdown_pct(total_values: list[float]) -> float:
 # schweren Verlustwochen) ist kein besseres Ergebnis als eine niedrigere Rendite bei
 # geringem Risiko - genau das zeigt die nominale Rendite allein nicht.
 #
-# Bewusster Platzhalter (analog VORABPAUSCHALE_BASISZINS_PLATZHALTER in
-# strategies.py): ein echter risikofreier Zins (z. B. laufzeitnahe
-# Bundesanleihen-Rendite) ist hier noch nicht hinterlegt, 0% ist eine
-# vereinfachende Annahme.
+# Rueckfallwert, wenn sich aus der Kurshistorie kein Zins ableiten laesst (siehe
+# _risikofreier_zins_pct()). Bis #75 war dieser Wert die einzige Quelle - und mit
+# 0,0 keine harmlose Vereinfachung: Sharpe/Sortino waren damit faktisch
+# "Rendite ÷ Risiko" statt "UEBERrendite ÷ Risiko", und die Frage, die eine
+# Sharpe-Ratio ueberhaupt beantwortet - werde ich fuer das eingegangene Risiko
+# besser bezahlt als fuers risikolose Parken? - konnte per Konstruktion nie mit
+# "nein" beantwortet werden. Der Fehler wirkte zudem ungleich: er hob Strategien
+# mit geringer Volatilitaet (kleiner Nenner) staerker an, also gerade die
+# defensiven, deren Rendite dem Geldmarkt am naechsten liegt.
+# Einheit: Prozentpunkte p.a. (wie der Rueckgabewert von _risikofreier_zins_pct()).
 _RISIKOFREIER_ZINS_PLATZHALTER = 0.0
 
+# EUR-Geldmarkt-ETF (Xtrackers II EUR Overnight Rate, thesaurierend). Bildet per
+# Definition den EUR-Tagesgeldsatz ab und liegt mit durchgehender Historie seit
+# 2007 ohnehin in price_history.csv - seine eigene CAGR ueber exakt den
+# ausgewerteten Zeitraum IST der passende risikofreie Zins. Das haelt die Kennzahl
+# automatisch am jeweiligen Zinsumfeld (2006-2008 3-4%, 2012-2022 nahe 0%, ab 2023
+# wieder 3-4%), statt einen festen Wert zu hinterlegen, der dagegen veraltet -
+# dasselbe Prinzip wie auf der Praemissen-Seite (_praemissen_kontext()).
+_GELDMARKT_TICKER = "XEON"
 
-def _sharpe_ratio(total_values: list[float]) -> float:
+# Unter dieser Laenge ist eine annualisierte Geldmarktrendite aus so wenigen
+# Wochen kein belastbarer Zins mehr - dann gilt der Rueckfallwert.
+_ZINS_MIN_WOCHEN = 26
+
+
+def _risikofreier_zins_pct(rows: list[PriceRow]) -> float:
+    """Risikofreier Zins in % p.a., abgeleitet aus dem Geldmarkt-ETF ueber
+    denselben Zeitraum, ueber den auch die Strategie ausgewertet wird (#75).
+
+    Faellt auf ``_RISIKOFREIER_ZINS_PLATZHALTER`` zurueck, wenn der Ticker im
+    Zeitraum fehlt oder der Zeitraum zu kurz ist - der Platzhalter bleibt also
+    Rueckfallwert, ist aber nicht mehr die einzige Quelle.
+    """
+    kurse = [(r.date, r.prices[_GELDMARKT_TICKER]) for r in rows if _GELDMARKT_TICKER in r.prices]
+    if len(kurse) < _ZINS_MIN_WOCHEN:
+        return _RISIKOFREIER_ZINS_PLATZHALTER
+    (erstes_datum, erster_kurs), (letztes_datum, letzter_kurs) = kurse[0], kurse[-1]
+    if erster_kurs <= 0:
+        return _RISIKOFREIER_ZINS_PLATZHALTER
+    gesamt_pct = _f((letzter_kurs - erster_kurs) / erster_kurs) * 100
+    return _cagr_pct(gesamt_pct, (letztes_datum - erstes_datum).days)
+
+
+def _sharpe_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
     """Annualisierte Ueberrendite je Einheit annualisierter Volatilitaet
     (Standardabweichung aller Wochenrenditen, positive wie negative)."""
     renditen = _wochenrenditen(total_values)
@@ -189,8 +227,13 @@ def _sharpe_ratio(total_values: list[float]) -> float:
     std_pct = statistics.pstdev(renditen) * (52**0.5)
     if std_pct == 0:
         return 0.0
+    # ACHTUNG Einheiten: _wochenrenditen() liefert BRUECHE (0,01 = 1%), std_pct und
+    # ann_mean_pct sind trotz ihrer Namen ebenfalls Brueche. Der uebergebene Zins
+    # kommt dagegen in Prozentpunkten p.a. herein (wie ueberall sonst in dieser
+    # Datei) und muss deshalb vor dem Abzug umgerechnet werden.
+    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
     ann_mean_pct = statistics.fmean(renditen) * 52
-    return (ann_mean_pct - _RISIKOFREIER_ZINS_PLATZHALTER) / std_pct
+    return (ann_mean_pct - zins / 100) / std_pct
 
 
 def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
@@ -202,7 +245,7 @@ def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
     return (sum(quadrate) / len(quadrate)) ** 0.5
 
 
-def _sortino_ratio(total_values: list[float]) -> float:
+def _sortino_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
     """Wie ``_sharpe_ratio``, aber nur Verlustwochen fliessen ins Risikomass ein -
     Streuung nach oben (Gewinnwochen) wird nicht als Risiko gewertet."""
     renditen = _wochenrenditen(total_values)
@@ -211,8 +254,10 @@ def _sortino_ratio(total_values: list[float]) -> float:
     downside_pct = _downside_deviation(renditen) * (52**0.5)
     if downside_pct == 0:
         return 0.0
+    # Einheiten wie bei _sharpe_ratio(): Brueche gegen Prozentpunkte, siehe dort.
+    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
     ann_mean_pct = statistics.fmean(renditen) * 52
-    return (ann_mean_pct - _RISIKOFREIER_ZINS_PLATZHALTER) / downside_pct
+    return (ann_mean_pct - zins / 100) / downside_pct
 
 
 # --- Walk-Forward-Robustheit ueber Teilperioden -----------------------------------
@@ -339,6 +384,10 @@ def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
         if len(preset_rows) < 1:
             continue
         result = simulate(preset_rows, strategy)
+        # Risikofreier Zins aus dem Geldmarkt-ETF ueber genau DIESEN Preset-Zeitraum
+        # (#75) - ein 1-Jahres-Preset im Hochzinsumfeld hat einen anderen Referenzzins
+        # als die volle Historie.
+        zins_pct = _risikofreier_zins_pct(preset_rows)
         total_values = [_f(vp.total_value) for vp in result.value_history]
         labels = [vp.date.isoformat() for vp in result.value_history]
         rendite_pct = _rendite_pct(result, strategy)
@@ -350,8 +399,9 @@ def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
                 "rendite_label": f"{rendite_pct:+.2f}",
                 "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
                 "max_drawdown_label": f"{-_max_drawdown_pct(total_values):.2f}",
-                "sharpe_label": f"{_sharpe_ratio(total_values):.2f}",
-                "sortino_label": f"{_sortino_ratio(total_values):.2f}",
+                "sharpe_label": f"{_sharpe_ratio(total_values, zins_pct):.2f}",
+                "sortino_label": f"{_sortino_ratio(total_values, zins_pct):.2f}",
+                "risikofreier_zins_label": f"{zins_pct:.2f}".replace(".", ","),
                 "labels": labels,
                 "total_values": total_values,
                 "chart_max": max(total_values) if total_values else 0.0,
@@ -455,10 +505,57 @@ def _cagr_pct(rendite_pct: float, tage: int) -> float:
     return (faktor ** (1 / jahre) - 1) * 100
 
 
+# --- Gemeinsamer Vergleichszeitraum (#73) -----------------------------------------
+#
+# _real_investierbarer_zeitraum() (F4, #63) schneidet die Historie JE STRATEGIE auf
+# den Zeitraum zu, ab dem deren komplettes Instrumentenset handelbar war. Das ist fuer
+# sich genommen richtig - es nimmt den Look-ahead-Bias heraus -, erzeugt aber ein
+# zweites, ebenso entscheidungsrelevantes Problem: die Zeitraeume unterscheiden sich
+# dann zwischen den Strategien erheblich. Der S&P-500-Benchmark braucht nur IUSA und
+# laeuft deshalb ueber die vollen 20 Jahre (ab 2006), waehrend jede Barbell-Strategie
+# erst 2021 beginnt, weil ein einziges ihrer Instrumente nicht frueher existiert.
+#
+# Eine nach CAGR sortierte Uebersichtstabelle stellte damit eine 20-Jahres-Rendite
+# (inkl. Finanzkrise und anschliessender Erholung) neben 5-Jahres-Renditen (inkl.
+# Baerenmarkt 2022) - und ausgerechnet die eine Zeile, an der jede Anlageentscheidung
+# haengt ("schlaegt die Strategie einfach den Index?"), war die nicht vergleichbare.
+# Gemessen an der realen Historie drehte das die Aussage fuer sechs von 15
+# Strategien/Szenarien.
+#
+# Diese Funktionen simulieren deshalb JEDE Strategie zusaetzlich auf dem spaetesten
+# gemeinsamen Startdatum aller angezeigten Strategien - frisch, mit eigenem
+# Startkapital, exakt nach demselben Muster wie _walk_forward_segmente() und
+# _zeitraum_presets(). Die Uebersichtstabelle sortiert danach.
+
+# Unter dieser Laenge ist ein gemeinsamer Zeitraum keine belastbare Aussage mehr -
+# dann entfaellt die Spalte, statt eine aus wenigen Wochen annualisierte Zahl zu
+# zeigen (dieselbe Zurueckhaltung wie bei _walk_forward_segmente()).
+_VERGLEICH_MIN_WOCHEN = 26
+
+
+def _gemeinsamer_beginn(strategie_rows: dict[str, list[PriceRow]]) -> date | None:
+    """Spaetestes Simulations-Startdatum ueber alle angezeigten Strategien - ab
+    diesem Datum hat JEDE von ihnen Kurse und ist damit vergleichbar."""
+    beginne = [rows[0].date for rows in strategie_rows.values() if rows]
+    return max(beginne) if beginne else None
+
+
+def _vergleichs_cagr_pct(
+    strategy: Strategy, rows: list[PriceRow], beginn: date
+) -> float | None:
+    """CAGR dieser Strategie, frisch simuliert ab ``beginn``. ``None``, wenn der
+    verbleibende Zeitraum zu kurz fuer eine belastbare Annualisierung ist."""
+    ausschnitt = [r for r in rows if r.date >= beginn]
+    if len(ausschnitt) < _VERGLEICH_MIN_WOCHEN:
+        return None
+    result = simulate(ausschnitt, strategy)
+    return _cagr_pct(_f(_rendite_pct(result, strategy)), _tage_zwischen(result))
+
+
 def _optimierungs_effekte(
     strategy: Strategy, rows: list[PriceRow], basis_cagr_pct: float, tage: int
 ) -> list[dict]:
-    """Effekt jedes der vier Optimierungs-Schalter (#17) als Leave-one-out-Differenz
+    """Effekt jedes der fuenf Optimierungs-Schalter (#17) als Leave-one-out-Differenz
     auf CAGR-Basis (F6c, #63): CAGR mit allen Schaltern wie konfiguriert minus CAGR
     mit genau diesem einen Schalter aus. Eine Differenz zweier Gesamtrenditen ist
     hier keine sinnvolle Prozentpunkt-Angabe, sobald sich Basis- und Vergleichslauf
@@ -555,8 +652,9 @@ def _build_strategy_view(
     netto_cagr_pct = _cagr_pct(_f(netto_rendite_pct), tage)
     volatilitaet_pct = _volatilitaet_pct(total_values)
     max_drawdown_pct = _max_drawdown_pct(total_values)
-    sharpe_ratio = _sharpe_ratio(total_values)
-    sortino_ratio = _sortino_ratio(total_values)
+    risikofreier_zins_pct = _risikofreier_zins_pct(rows)
+    sharpe_ratio = _sharpe_ratio(total_values, risikofreier_zins_pct)
+    sortino_ratio = _sortino_ratio(total_values, risikofreier_zins_pct)
     cash_max_pct, cash_max_datum = _cash_anteil_max(points)
     walk_forward_segmente = _walk_forward_segmente(rows, strategy)
     walk_forward_spread_pp = (
@@ -605,10 +703,18 @@ def _build_strategy_view(
         "sharpe_label": f"{sharpe_ratio:.2f}",
         "sortino_ratio": sortino_ratio,
         "sortino_label": f"{sortino_ratio:.2f}",
+        # #75: je Strategie ausgewiesen, weil er aus deren eigenem
+        # Simulationszeitraum abgeleitet wird und deshalb nicht fuer alle gleich ist.
+        "risikofreier_zins_label": f"{risikofreier_zins_pct:.2f}".replace(".", ","),
         "cash_max_pct": cash_max_pct,
         "cash_max_label": f"{cash_max_pct:.1f}",
         "cash_max_datum": cash_max_datum or "–",
         "sim_beginn": points[0].date.isoformat(),
+        # #73: der tatsaechliche Zeitraum gehoert neben jede Renditezahl - ohne ihn
+        # ist nicht erkennbar, dass zwei Zeilen derselben Tabelle unterschiedlich
+        # lange und unterschiedliche Marktphasen abdecken koennen.
+        "sim_ende": points[-1].date.isoformat(),
+        "sim_jahre_label": f"{tage / 365.25:.1f}".replace(".", ","),
         "sim_ende": points[-1].date.isoformat(),
         "teil_von": strategy.teil_von,
         "labels_json": json.dumps(labels),
@@ -702,6 +808,13 @@ def _allokierte_ticker(strategies: list[Strategy]) -> set[str]:
     return {t for s in strategies for t in s.alle_ticker_gewichte()}
 
 
+def _dividendenrendite_pct(inst: Instrument) -> float:
+    """Ausschuettungsrendite eines Instruments in Prozent (#74) - der
+    instrumenteneigene Wert, sonst der Pauschal-Platzhalter."""
+    rendite = inst.dividendenrendite if inst.dividendenrendite is not None else DIVIDENDENRENDITE_PLATZHALTER
+    return float(rendite) * 100
+
+
 def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views: list[dict]) -> dict:
     """Baut die Daten für die Prämissen-Seite.
 
@@ -731,6 +844,18 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
             "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
             "thesaurierend": "ja" if inst.thesaurierend else "nein",
             "ausschuettend": "ja" if inst.ausschuettend else "nein",
+            # #74: je Instrument statt eines Pauschalwerts fuer alle. "-" fuer
+            # Instrumente, die nicht ausschuetten; der Platzhalter erscheint nur
+            # dort, wo tatsaechlich kein instrumenteneigener Wert hinterlegt ist.
+            "dividendenrendite": (
+                f"{_dividendenrendite_pct(inst):.1f}".replace(".", ",")
+                if inst.ausschuettend
+                else "–"
+            ),
+            "dividendenrendite_platzhalter": inst.ausschuettend and inst.dividendenrendite is None,
+            # #76: laufende Fondskosten. "-" fuer Instrumente ohne Fondsmantel
+            # (Einzelaktien, physisches Gold, BTC).
+            "ter": f"{float(inst.ter) * 100:.2f}".replace(".", ",") if inst.ter else "–",
             "spekulationsfrist": (
                 f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
             ),
@@ -762,6 +887,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 "cash_max_label": view.get("cash_max_label", "0.0"),
                 "cash_max_datum": view.get("cash_max_datum", "–"),
                 "sim_beginn": view.get("sim_beginn", "–"),
+                "risikofreier_zins_label": view.get("risikofreier_zins_label", "–"),
             }
         )
     cash_werte = [s["cash_max_label"] for s in strategie_liste]
@@ -781,7 +907,10 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "vorabpauschale_basiszins": f"{VORABPAUSCHALE_BASISZINS_PLATZHALTER * 100:.1f}".replace(".", ","),
         "vorabpauschale_faktor": f"{VORABPAUSCHALE_FAKTOR * 100:.0f}",
         "dividendenrendite": f"{DIVIDENDENRENDITE_PLATZHALTER * 100:.1f}".replace(".", ","),
-        "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER * 100:.0f}",
+        # Nur noch der Rueckfallwert (#75) - der tatsaechlich verwendete Zins steht
+        # je Strategie in der Tabelle oben.
+        "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER:.0f}",
+        "geldmarkt_ticker": _GELDMARKT_TICKER,
         "sma_kurz": _SMA_KURZ_WOCHEN,
         "sma_lang": _SMA_LANG_WOCHEN,
         "walk_forward_segmente": _WALK_FORWARD_SEGMENTE,
@@ -822,9 +951,59 @@ def build_dashboard(
         _build_strategy_view(s, simulate(strategie_rows[s.name], s), strategie_rows[s.name], carry_forward)
         for s in strategies
     ]
-    # Sortierung nach CAGR statt Gesamtrendite (F6b, #63): CAGR ist die Leitkennzahl
-    # der Uebersichtstabelle, die Reihenfolge soll dazu konsistent sein.
-    summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
+    # Gemeinsamer Vergleichszeitraum (#73): jede Strategie zusaetzlich ab dem
+    # spaetesten Startdatum aller angezeigten Strategien simulieren, damit die
+    # Uebersichtstabelle Gleiches mit Gleichem vergleicht. Siehe _gemeinsamer_beginn().
+    beginn = _gemeinsamer_beginn(strategie_rows)
+    benchmark_namen = {b.name for b in BENCHMARK_STRATEGIEN}
+    vergleich_cagr: dict[str, float | None] = {}
+    if beginn is not None:
+        for s in strategies:
+            vergleich_cagr[s.name] = _vergleichs_cagr_pct(s, strategie_rows[s.name], beginn)
+    # Referenzlinie fuer die Ueberrendite: die erste Benchmark-Strategie, die im
+    # gemeinsamen Zeitraum ueberhaupt eine Zahl liefert. Steht keine zur Verfuegung
+    # (kein Benchmark unter den angezeigten Strategien), entfaellt die Spalte still,
+    # statt gegen eine willkuerliche andere Strategie zu vergleichen.
+    benchmark_cagr: float | None = None
+    benchmark_label: str | None = None
+    for s in strategies:
+        if s.name in benchmark_namen and vergleich_cagr.get(s.name) is not None:
+            benchmark_cagr = vergleich_cagr[s.name]
+            benchmark_label = s.name
+            break
+
+    for view in views:
+        wert = vergleich_cagr.get(view["name"])
+        view["vergleich_cagr_pct"] = wert
+        view["vergleich_cagr_label"] = f"{wert:+.2f}" if wert is not None else "–"
+        if wert is None or benchmark_cagr is None or view["name"] in benchmark_namen:
+            view["alpha_pp"] = None
+            view["alpha_pp_label"] = "–"
+        else:
+            view["alpha_pp"] = wert - benchmark_cagr
+            view["alpha_pp_label"] = f"{wert - benchmark_cagr:+.2f}"
+
+    vergleich_kontext = {
+        "vergleich_beginn": beginn.isoformat() if beginn is not None else None,
+        "vergleich_ende": rows[-1].date.isoformat(),
+        "vergleich_benchmark": benchmark_label,
+        "vergleich_benchmark_label": (
+            f"{benchmark_cagr:+.2f}" if benchmark_cagr is not None else None
+        ),
+        "vergleich_verfuegbar": any(v["vergleich_cagr_pct"] is not None for v in views),
+    }
+
+    # Sortierung nach der Rendite im GEMEINSAMEN Zeitraum (#73), sonst - solange
+    # keiner ermittelbar ist - weiterhin nach CAGR ueber den jeweils eigenen
+    # Zeitraum (F6b, #63).
+    if vergleich_kontext["vergleich_verfuegbar"]:
+        summary = sorted(
+            views,
+            key=lambda v: (v["vergleich_cagr_pct"] is not None, v["vergleich_cagr_pct"] or 0.0),
+            reverse=True,
+        )
+    else:
+        summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
     learnings = derive_learnings(views)
     teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
 
@@ -861,6 +1040,7 @@ def build_dashboard(
         # künftigen Instrumente-/Strategiewechsel mitzieht.
         instrumente_anzahl=len(_allokierte_ticker(strategies)),
         benchmark_optionen=[{"id": k, "label": v} for k, v in benchmark_optionen.items()],
+        **vergleich_kontext,
     )
 
     env = Environment(

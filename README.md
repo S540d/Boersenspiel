@@ -79,6 +79,10 @@ All 24 tracked instruments, and which strategy actually holds each one:
 
 `engine.simulate()` only ever reads `strategy.alle_ticker_gewichte()` — an
 instrument only moves the numbers of the strategies that actually list it.
+`XEON` carries a second, allocation-independent role: as the EUR
+money-market series it supplies the risk-free rate for the Sharpe and Sortino
+ratios of *every* strategy, derived over each one's own evaluation window
+([#75](https://github.com/S540d/Boersenspiel/issues/75)).
 All Xetra-listed instruments above are quoted in EUR directly, so they need
 no FX conversion and sidestep the currency problem described further below;
 only the 10 single-stock satellite tickers (all but `S92`) trade in USD and
@@ -194,18 +198,24 @@ Three properties that are easy to miss:
 **Cutting across all strategies and scenarios** are mechanisms that the
 engine always applies identically to every run:
 
-| Mechanism | Effect |
-|---|---|
-| Rebalancing | Restores target weights once the threshold is exceeded |
-| Year-end tax optimization | Realizes losses or gains at the year boundary |
-| Order fees | €1 per buy and sell |
-| Taxation | Loss carryforward → tax-free allowance → 26.375% |
+| Mechanism | `Optimierungen` flag | Effect |
+|---|---|---|
+| Rebalancing | `rebalancing` | Restores target weights once the threshold is exceeded |
+| Year-end tax optimization | `steueroptimierung` | Realizes losses or gains at the year boundary |
+| Order fees | `ordergebuehren` | €1 per buy and sell |
+| Taxation | `besteuerung` | Loss carryforward → tax-free allowance → 26.375% |
+| Ongoing fund costs (TER) | `fondskosten` | `Instrument.ter` ÷ 52 deducted from the holding each week |
 
-These mechanisms are currently **not toggleable**. The dashboard comparison
-therefore only answers "which weighting rule performed better?", not "how
-much did the tax optimization actually contribute?". A proposal to make them
-individually toggleable, and thus measure their contribution as a difference,
-is tracked as [#17](https://github.com/S540d/Boersenspiel/issues/17).
+Each mechanism is **individually toggleable** via the `Optimierungen` flags
+([#17](https://github.com/S540d/Boersenspiel/issues/17); `fondskosten` added
+in [#76](https://github.com/S540d/Boersenspiel/issues/76)), and every detail
+page reports each one's isolated contribution as a leave-one-out difference
+in CAGR percentage points ("Effekt der Optimierungs-Schalter"). The dashboard
+comparison therefore answers not only "which weighting rule performed
+better?" but also "how much did the tax optimization actually contribute?".
+A strategy may set its own defaults — `BUY_AND_HOLD` uses
+`Optimierungen(rebalancing=False)` rather than an artificially unreachable
+rebalancing threshold.
 
 **Guiding principle:** Only raw data (prices) is persisted long-term. Everything derived (position values,
 rebalancing, tax, tax-free allowance, loss carryforward) is recomputed
@@ -223,7 +233,7 @@ strategy always yields the identical result.
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Pure simulation function: (price history, strategy) → portfolio/tax state |
-| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back or full history), backed by four fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)) |
+| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back or full history), backed by four fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)). The overview table's lead column re-simulates every strategy over a **common comparison period** and reports each one's excess return over the benchmark ([#73](https://github.com/S540d/Boersenspiel/issues/73)) |
 | `src/boersenspiel/templates/` | Jinja templates: `base.html.j2` (shared shell incl. the three-dot menu), `dashboard.html.j2`, `strategy_detail.html.j2`, `praemissen.html.j2` |
 | `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
 | `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
@@ -513,15 +523,34 @@ pytest -q
   deployed. If no target instrument is tradeable at all, everything stays
   parked — deliberately: "out of the market" with no defensive instrument
   available *is* cash.
-- **Company-specific dividend amounts are not modeled.** The 10 single-stock
-  satellite instruments (`Instrument.ausschuettend`) use a flat placeholder
-  dividend yield (`DIVIDENDENRENDITE_PLATZHALTER`, 2.5% p.a.) instead of
-  their real historical dividend history – some of the 10 don't actually pay
-  a dividend, others pay more or less than the placeholder
-  ([#57](https://github.com/S540d/Boersenspiel/issues/57)). The dividend is
-  booked as real cash once a year, reinvested via the existing cash-parking
-  mechanism, and taxed like a real capital gain. The ETFs, the bond fund,
-  physical gold, and BTC-EUR still pay no dividend at all in the simulation.
+- **Distributions are modeled per instrument, at a constant rate.** Every
+  instrument marked `ausschuettend` carries its own `Instrument.dividendenrendite`
+  (rounded from public fact sheets), applied once a year to its value at the
+  start of that year
+  ([#57](https://github.com/S540d/Boersenspiel/issues/57), per instrument
+  since [#74](https://github.com/S540d/Boersenspiel/issues/74)). The
+  distribution is booked as real cash, reinvested via the existing
+  cash-parking mechanism, and taxed like a real capital gain.
+  `DIVIDENDENRENDITE_PLATZHALTER` remains only as the fallback for an
+  instrument with no rate of its own. Until #74 that single flat rate applied
+  to *every* distributing instrument, which was a directional distortion, not
+  just an imprecision: seven satellite stocks that pay no dividend at all
+  received one anyway, while bond and property ETFs — whose running return
+  consists largely *of* the distribution — were set far too low, as was
+  `IUSA`, the benchmark line every strategy is measured against. The
+  remaining simplification is that each rate is constant across the whole
+  history rather than the dividend actually paid in a given year.
+- **Ongoing fund costs (TER) are modeled** as a weekly pro-rata reduction of
+  units (`Instrument.ter`, TER ÷ 52), switchable via the `fondskosten` flag in
+  `Optimierungen` so its isolated effect is reported per strategy like the
+  other mechanisms ([#76](https://github.com/S540d/Boersenspiel/issues/76)).
+  It reduces the holding, not cash, and leaves the cost basis untouched.
+  Single stocks, physical gold, and BTC-EUR carry none. Omitting the TER was
+  not a neutral omission: the rates span an order of magnitude (IUSA 0.07% vs.
+  IQQ6 0.59%), the benchmark is the cheapest instrument in the field, and the
+  single-stock satellite carries no fund fee at all — so the omission favoured
+  precisely the most concentrated variant. Custody fees and front-end loads
+  are still not modeled.
 - **December harvest:** On the last price row of a completed calendar year,
   exactly one of two mutually exclusive measures applies, depending on how
   the tax year has gone so far (see
@@ -589,11 +618,28 @@ pytest -q
   **Premises page** (`docs/praemissen.html`, reachable from the three-dot
   menu on every page) spells this out for readers.
 - **Placeholder constants:** `VORABPAUSCHALE_BASISZINS_PLATZHALTER` (2.0%)
-  is not a real annual BMF base rate, and `_RISIKOFREIER_ZINS_PLATZHALTER`
-  (0%) used by the Sharpe/Sortino ratios is not a real reference rate. Taxes
-  use the flat withholding rate rather than a personal income tax rate, and
-  the simulated portfolio value itself is never reduced by tax — the tax
-  figures are tracking only.
+  is not a real annual BMF base rate. Taxes use the flat withholding rate
+  rather than a personal income tax rate, and the simulated portfolio value
+  itself is never reduced by tax — the tax figures are tracking only.
+  `_RISIKOFREIER_ZINS_PLATZHALTER` is no longer the source of the risk-free
+  rate used by Sharpe/Sortino; since
+  [#75](https://github.com/S540d/Boersenspiel/issues/75) that rate is derived
+  from the EUR money-market ETF `XEON` over the exact period being evaluated
+  (0.76% p.a. over 2006–2026, 2.05% over 2021–2026), and the constant is only
+  the fallback when `XEON` has no usable history in that window. The former
+  fixed 0% made Sharpe "return ÷ risk" rather than "*excess* return ÷ risk",
+  so it could never show that a strategy failed to beat the money market —
+  and it lifted low-volatility strategies most, i.e. exactly the defensive
+  ones.
+- **Returns are only comparable within the common comparison period.** Each
+  strategy is simulated over the window in which its full instrument set was
+  actually tradeable, and those windows differ substantially (the S&P 500
+  benchmark needs only `IUSA` and runs from 2006; every barbell strategy
+  starts in 2021). The overview table's lead column therefore re-simulates
+  every strategy from the latest of those start dates and sorts by that
+  ([#73](https://github.com/S540d/Boersenspiel/issues/73)); the per-strategy
+  CAGR and the risk columns still refer to each strategy's own window, which
+  the table shows alongside them.
 - **`BTC-EUR` history is far shorter than requested:** the 20-year backfill
   yields only ~50 weeks (from 2025-09-14), so Bitcoin is first bought near
   its high rather than across the full period — see

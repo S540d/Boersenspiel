@@ -30,12 +30,46 @@ class Instrument:
     # unterliegt - aktuell nur Kryptowährungen (365 Tage). None = normales
     # Abgeltungsteuer-Regime. Siehe #37.
     spekulationsfrist_tage: int | None = None
-    # True für Instrumente, die reale Bar-Ausschüttungen zahlen (Einzelaktien) -
-    # unterliegt in der Simulation der pauschalen Dividendenrendite-Annahme
-    # (`strategies.DIVIDENDENRENDITE_PLATZHALTER`, #57). Die 5 ETFs sind
-    # thesaurierend (keine Ausschüttung, siehe oben), 4GLD und BTC-EUR zahlen
-    # keine Dividende - bei allen dreien bleibt es beim Default False.
+    # True für Instrumente, die reale Bar-Ausschüttungen zahlen (#57). 4GLD und
+    # BTC-EUR zahlen keine, thesaurierende Fonds schütten definitionsgemäß nicht
+    # aus - dort bleibt es beim Default False. Ebenso bei Einzelaktien, die
+    # tatsächlich keine Dividende zahlen (Tesla, Rivian, Palantir, MSTR,
+    # SolarEdge, Lumentum, SMA Solar) - siehe #74.
     ausschuettend: bool = False
+    # Erwartete jährliche Ausschüttungsrendite dieses Instruments (#74). Wirkt
+    # nur bei ``ausschuettend=True``. ``None`` bedeutet "kein instrumenteneigener
+    # Wert hinterlegt" und fällt in der Engine auf
+    # ``strategies.DIVIDENDENRENDITE_PLATZHALTER`` zurück.
+    #
+    # Vorher galt dieser eine Pauschalwert (2,5%) für ALLE ausschüttenden
+    # Instrumente gleichermaßen. Das war nicht bloß ungenau, sondern gerichtet
+    # verzerrend: sieben Einzelaktien, die real gar keine Dividende zahlen,
+    # bekamen jährlich 2,5% geschenkt, während Anleihen- und Immobilien-ETFs -
+    # deren Ertrag zum großen Teil GERADE aus der Ausschüttung besteht - zu
+    # niedrig angesetzt waren. Die Pauschale begünstigte damit systematisch
+    # ausschüttungslose Wachstumswerte gegenüber genau den defensiven
+    # Bausteinen, die eine Barbell-Strategie überhaupt rechtfertigen.
+    #
+    # Die hinterlegten Werte sind gerundete Ausschüttungsrenditen aus
+    # öffentlichen Fondsanbieter-Fact-Sheets bzw. Unternehmensangaben
+    # (justETF/extraETF/onvista, Stand 2026) und bleiben eine Annahme: die
+    # Simulation rechnet mit einem über die ganze Historie KONSTANTEN Satz je
+    # Instrument, nicht mit den tatsächlichen Ausschüttungen des jeweiligen
+    # Jahres. Das ist die verbleibende Vereinfachung - aber eine ungerichtete,
+    # anders als ein einziger Satz für alle.
+    dividendenrendite: Decimal | None = None
+    # Laufende Fondskosten (Total Expense Ratio) p.a. (#76). 0 fuer Einzelaktien,
+    # physisches Gold und BTC - dort faellt keine Fondsgebuehr an.
+    #
+    # Der Verzicht auf die TER war kein neutraler Verzicht, sondern eine gerichtete
+    # Verzerrung: die Saetze liegen um eine Groessenordnung auseinander (IUSA 0,07%
+    # gegen IQQ6 0,59%), der Benchmark ist das mit Abstand guenstigste Instrument im
+    # Feld, und der Einzelaktien-Satellit traegt gar keine - die Modellierung
+    # beguenstigte also ausgerechnet die konzentrierteste Variante und liess
+    # Themen-/Nischenprodukte guenstiger erscheinen, als sie sind.
+    #
+    # Werte gerundet aus den jeweiligen Anbieter-Fact-Sheets.
+    ter: Decimal = Decimal("0")
 
 
 # Teilfreistellungsquote für Aktienfonds-ETFs (>51% Aktienquote) nach § 20 InvStG.
@@ -50,6 +84,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00B4L5Y983",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0020"),
         ),
         Instrument(
             "EUNA",
@@ -57,6 +92,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00BDBRDM35",
             # Rentenfonds - keine Teilfreistellung (nur Aktienfonds).
             thesaurierend=True,
+            ter=Decimal("0.0010"),
         ),
         Instrument("4GLD", "Xetra-Gold", "DE000A0S9GB0"),
         Instrument(
@@ -65,6 +101,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "LU1829221024",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0023"),
         ),
         Instrument(
             "SEMI",
@@ -72,6 +109,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE000I8KRLL9",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0035"),
         ),
         Instrument(
             "EIMI",
@@ -79,22 +117,48 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00BKM4GZ66",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0018"),
         ),
         Instrument("BTC-EUR", "Bitcoin", None, spekulationsfrist_tage=365),
         # Einzelaktien-Satellit (volatile Einzelwerte, siehe strategies.py
         # BARBELL_20_60_20_SATELLIT) - bewusst gemischt aus hoch-volatilen
         # Wachstumswerten und zwei defensiven Blue-Chips (Coca-Cola, Roche)
         # als Gegenbeispiel innerhalb desselben Topfs.
-        Instrument("LITE", "Lumentum Holdings (Optik/Photonik)", "US55024U1097", ausschuettend=True),
-        Instrument("BYDDY", "BYD Company (ADR, E-Autos)", "US05606L1008", ausschuettend=True),
-        Instrument("SEDG", "SolarEdge Technologies (Solar-Wechselrichter)", "US83417M1045", ausschuettend=True),
-        Instrument("S92", "SMA Solar Technology AG", "DE000A0DJ6J9", ausschuettend=True),
-        Instrument("TSLA", "Tesla", "US88160R1014", ausschuettend=True),
-        Instrument("PLTR", "Palantir Technologies", "US69608A1088", ausschuettend=True),
-        Instrument("MSTR", "Strategy Inc. (vormals MicroStrategy)", "US5949724083", ausschuettend=True),
-        Instrument("RIVN", "Rivian Automotive", "US76954A1034", ausschuettend=True),
-        Instrument("KO", "Coca-Cola (defensiver Blue Chip)", "US1912161007", ausschuettend=True),
-        Instrument("RHHBY", "Roche Holding (ADR, defensiver Blue Chip)", "US7711951043", ausschuettend=True),
+        # Zahlt keine Dividende (#74).
+        Instrument("LITE", "Lumentum Holdings (Optik/Photonik)", "US55024U1097"),
+        Instrument(
+            "BYDDY",
+            "BYD Company (ADR, E-Autos)",
+            "US05606L1008",
+            ausschuettend=True,
+            dividendenrendite=Decimal("0.010"),
+        ),
+        # Zahlt keine Dividende (#74).
+        Instrument("SEDG", "SolarEdge Technologies (Solar-Wechselrichter)", "US83417M1045"),
+        # Dividende ausgesetzt - keine laufende Ausschuettung (#74).
+        Instrument("S92", "SMA Solar Technology AG", "DE000A0DJ6J9"),
+        # Zahlt keine Dividende (#74).
+        Instrument("TSLA", "Tesla", "US88160R1014"),
+        # Zahlt keine Dividende (#74).
+        Instrument("PLTR", "Palantir Technologies", "US69608A1088"),
+        # Keine Dividende auf die Stammaktie (#74).
+        Instrument("MSTR", "Strategy Inc. (vormals MicroStrategy)", "US5949724083"),
+        # Zahlt keine Dividende (#74).
+        Instrument("RIVN", "Rivian Automotive", "US76954A1034"),
+        Instrument(
+            "KO",
+            "Coca-Cola (defensiver Blue Chip)",
+            "US1912161007",
+            ausschuettend=True,
+            dividendenrendite=Decimal("0.030"),
+        ),
+        Instrument(
+            "RHHBY",
+            "Roche Holding (ADR, defensiver Blue Chip)",
+            "US7711951043",
+            ausschuettend=True,
+            dividendenrendite=Decimal("0.033"),
+        ),
         # --- Sieben zusaetzliche Instrumente (#64) ------------------------------
         # Ergaenzt am 22.08.2026, um das taegliche Alpha-Vantage-Budget von 25
         # Requests auszuschoepfen (vorher 18). Alle sieben sind XETRA-Symbole in
@@ -118,6 +182,11 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE0031442068",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             ausschuettend=True,
+            # S&P 500 - niedrige Ausschuettungsrendite, siehe #74. Relevant weit
+            # ueber dieses eine Instrument hinaus: IUSA ist die Vergleichslinie,
+            # an der alle Strategien gemessen werden.
+            dividendenrendite=Decimal("0.013"),
+            ter=Decimal("0.0007"),
         ),
         Instrument(
             "XEON",
@@ -125,6 +194,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "LU0290358497",
             # Kein Aktienfonds -> keine Teilfreistellung.
             thesaurierend=True,
+            ter=Decimal("0.0010"),
         ),
         Instrument(
             "EXSA",
@@ -132,12 +202,18 @@ INSTRUMENTS: dict[str, Instrument] = {
             "DE0002635307",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             ausschuettend=True,
+            dividendenrendite=Decimal("0.030"),
+            ter=Decimal("0.0020"),
         ),
         Instrument(
             "IBCL",
             "Euro-Staatsanleihen 15-30 Jahre ETF (iShares, aussch.)",
             "IE00B1FZS913",
             ausschuettend=True,
+            # Lange Euro-Staatsanleihen: der Kupon IST hier praktisch der
+            # gesamte laufende Ertrag (#74).
+            dividendenrendite=Decimal("0.026"),
+            ter=Decimal("0.0020"),
         ),
         Instrument(
             "IBCI",
@@ -146,6 +222,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             # Acc-Anteilsklasse (WKN A0HGV1), nicht Dist - siehe Verifikations-
             # Hinweis oben.
             thesaurierend=True,
+            ter=Decimal("0.0009"),
         ),
         Instrument(
             "IQQ6",
@@ -156,6 +233,9 @@ INSTRUMENTS: dict[str, Instrument] = {
             # Quote.
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             ausschuettend=True,
+            # REITs schuetten den Grossteil ihrer Ertraege aus (#74).
+            dividendenrendite=Decimal("0.035"),
+            ter=Decimal("0.0059"),
         ),
         Instrument(
             "EXXY",
@@ -164,6 +244,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             # Rohstofffonds -> keine Teilfreistellung. Acc-Anteilsklasse, nicht
             # Dist - siehe Verifikations-Hinweis oben.
             thesaurierend=True,
+            ter=Decimal("0.0046"),
         ),
     ]
 }
