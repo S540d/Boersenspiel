@@ -1,0 +1,187 @@
+{% extends "base.html.j2" %}
+{% block title %}Rendite im Vergleich &ndash; Barbell-Portfolio Dashboard{% endblock %}
+{% block meta_description %}Rendite- und Risikokennzahlen aller Strategien und Szenarien im gemeinsamen Vergleichszeitraum.{% endblock %}
+{% block canonical %}https://s540d.github.io/Boersenspiel/vergleich.html{% endblock %}
+{% block header_extra %}<p class="back-link"><a href="index.html" data-i18n-en="&larr; Back to overview">&larr; Zur Übersicht</a></p>{% endblock %}
+{% block content %}
+  <section class="strategy" id="uebersicht">
+    <h2 data-i18n-en="Return comparison">Rendite im Vergleich</h2>
+    <p class="hint" data-i18n-en="All strategies and scenarios in one table{% if vergleich_verfuegbar %}, computed over the same period from {{ vergleich_beginn }} so the rows are actually comparable{% endif %}. Sorted by annualized return (CAGR). What the individual columns mean is explained below the table.">
+      Alle Strategien und Szenarien in einer Tabelle{% if vergleich_verfuegbar %},
+      gerechnet über denselben Zeitraum ab {{ vergleich_beginn }}, damit die Zeilen
+      überhaupt vergleichbar sind{% endif %}. Sortiert nach annualisierter Rendite
+      (CAGR). Was die einzelnen Spalten bedeuten, steht unter der Tabelle.
+    </p>
+    <p class="hint" data-i18n-en="Return against risk: every point is a strategy/scenario, x-axis CAGR % p.a., y-axis max drawdown % ({% if vergleich_verfuegbar %}from the common comparison period{% else %}from each one's own period{% endif %}). Top right is the most favorable case (high return, small drawdown), bottom right the most problematic (high return, but high drawdown too).">
+      <strong>Rendite gegen Risiko:</strong> jeder Punkt ist eine Strategie/ein
+      Szenario, x-Achse CAGR % p.a., y-Achse Max Drawdown %
+      ({% if vergleich_verfuegbar %}gemeinsamer Vergleichszeitraum{% else %}jeweils eigener Zeitraum{% endif %}).
+      Oben rechts liegt der günstigste Fall (hohe Rendite, kleiner Drawdown),
+      unten rechts der problematischste (hohe Rendite, aber auch hoher
+      Drawdown).
+    </p>
+    <div class="summary-chart-box"><canvas id="correlation-chart"></canvas></div>
+    <div class="overflow-x">
+      <table class="summary-table">
+        <thead><tr><th data-i18n-en="Strategy / scenario">Strategie / Szenario</th>{% if vergleich_verfuegbar %}<th data-i18n-en="CAGR % p.a. (comparison period)">CAGR % p.a. (Vergleichszeitraum)<span class="info-tip" tabindex="0" title="Annualisierte Rendite (Compound Annual Growth Rate): die konstante jährliche Wachstumsrate, die über den gemeinsamen Vergleichszeitraum auf denselben Endwert führt. Vergleichbar auch bei unterschiedlich langen Zeiträumen, anders als die Gesamtrendite." data-i18n-en-title="Annualized return (Compound Annual Growth Rate): the constant yearly growth rate that leads to the same final value over the common comparison period. Comparable even across periods of different length, unlike the total return.">i</span></th><th data-i18n-en="Excess return pp p.a.">&Uuml;berrendite pp p.a.<span class="info-tip" tabindex="0" title="Differenz der CAGR gegenüber dem Benchmark (S&P 500) im selben Vergleichszeitraum, in Prozentpunkten. Positiv = die Strategie hat den Index über diesen Zeitraum geschlagen, negativ = nicht." data-i18n-en-title="Difference of the CAGR versus the benchmark (S&P 500) over the same comparison period, in percentage points. Positive = the strategy beat the index over this period, negative = it did not.">i</span></th>{% endif %}<th data-i18n-en="Volatility % (ann.)">Volatilität % (ann.)<span class="info-tip" tabindex="0" title="Annualisierte Standardabweichung der wöchentlichen Renditen - ein Maß für die Schwankungsbreite des Wertverlaufs. Höher bedeutet unruhiger, nicht zwangsläufig schlechter." data-i18n-en-title="Annualized standard deviation of weekly returns - a measure of how much the value history swings. Higher means choppier, not necessarily worse.">i</span></th><th data-i18n-en="Max drawdown %">Max Drawdown %<span class="info-tip" tabindex="0" title="Der größte prozentuale Rückgang vom bisherigen Höchststand des Portfoliowerts während des Betrachtungszeitraums - der schlimmste Verlust, den ein Anleger tatsächlich ausgehalten hätte." data-i18n-en-title="The largest percentage decline from the portfolio's previous high during the viewing period - the worst loss an investor would actually have had to endure.">i</span></th><th>Sharpe<span class="info-tip" tabindex="0" title="Sharpe-Ratio: annualisierte Überrendite über dem risikofreien Zins, geteilt durch die gesamte Volatilität. Höher ist besser; negativ heißt, das Risiko hat sich gegenüber risikolosem Parken nicht gelohnt." data-i18n-en-title="Sharpe ratio: annualized excess return over the risk-free rate, divided by the overall volatility. Higher is better; negative means the risk taken didn't pay off compared to risk-free parking.">i</span></th><th>Sortino<span class="info-tip" tabindex="0" title="Sortino-Ratio: wie Sharpe, aber es zählt nur die Streuung der Verlustwochen als Risiko (Schwankung nach oben wird nicht bestraft). Meist etwas höher als die Sharpe-Ratio derselben Strategie." data-i18n-en-title="Sortino ratio: like Sharpe, but only the dispersion of losing weeks counts as risk (upside swings are not penalized). Usually somewhat higher than the same strategy's Sharpe ratio.">i</span></th><th data-i18n-en="CAGR % p.a. (own period)">CAGR % p.a. (eigener Zeitraum)<span class="info-tip" tabindex="0" title="Annualisierte Rendite über den eigenen, individuell längsten handelbaren Zeitraum dieser Strategie (kann für jede Zeile unterschiedlich lang sein) - Nebenspalte, nicht direkt mit anderen Zeilen vergleichbar." data-i18n-en-title="Annualized return over this strategy's own, individually longest tradable period (can be a different length for each row) - a secondary column, not directly comparable across rows.">i</span></th><th data-i18n-en="Total return % (gross)">Gesamtrendite % (brutto)<span class="info-tip" tabindex="0" title="Gesamte prozentuale Wertsteigerung über den eigenen Zeitraum, vor Steuer. Bei langen Zeiträumen praktisch unlesbar (z. B. mehrere Tausend Prozent) - die CAGR-Spalten sind deshalb die Leitkennzahl." data-i18n-en-title="Total percentage increase in value over the strategy's own period, before tax. Practically unreadable over long periods (e.g. several thousand percent) - which is why the CAGR columns are the leading metric.">i</span></th><th data-i18n-en="Profit/loss &euro;">Gewinn/Verlust &euro;</th><th data-i18n-en="Final value &euro;">Endwert &euro;</th><th data-i18n-en="Own period">Eigener Zeitraum<span class="info-tip" tabindex="0" title="Der Zeitraum, ab dem für diese Strategie tatsächlich alle ihre Zielinstrumente handelbar waren (kein rückwirkender Kauf eines 2026 zusammengestellten Portfolios ab 2006)." data-i18n-en-title="The period from which all of this strategy's target instruments were actually tradable (no retroactive purchase of a portfolio put together in 2026, starting in 2006).">i</span></th></tr></thead>
+        <tbody>
+        {% for s in summary %}
+          <tr>
+            <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
+            {% if vergleich_verfuegbar %}
+            {# Rendite UND Risiko aus dem gemeinsamen Vergleichszeitraum (#73/#78) -
+               nur so gehoeren die Zahlen einer Zeile ueberhaupt zusammen. #}
+            <td class="{{ ('positive' if s.vergleich_cagr_pct >= 0 else 'negative') if s.vergleich_cagr_pct is not none else '' }}"><strong>{{ s.vergleich_cagr_label or '–' }}</strong></td>
+            <td class="{{ ('positive' if s.alpha_pp >= 0 else 'negative') if s.alpha_pp is not none else '' }}">{{ s.alpha_pp_label }}</td>
+            <td>{{ s.vergleich_volatilitaet_label or '–' }}</td>
+            <td class="{{ 'negative' if s.vergleich_max_drawdown_pct else '' }}">{{ s.vergleich_max_drawdown_label or '–' }}</td>
+            <td class="{{ ('positive' if s.vergleich_sharpe_ratio >= 0 else 'negative') if s.vergleich_sharpe_ratio is not none else '' }}">{{ s.vergleich_sharpe_label or '–' }}</td>
+            <td class="{{ ('positive' if s.vergleich_sortino_ratio >= 0 else 'negative') if s.vergleich_sortino_ratio is not none else '' }}">{{ s.vergleich_sortino_label or '–' }}</td>
+            {% else %}
+            {# Kein gemeinsamer Zeitraum ermittelbar - dann gelten durchgehend die
+               Werte des jeweils eigenen Zeitraums, klar so beschriftet. #}
+            <td>{{ s.volatilitaet_label }}</td>
+            <td class="{{ 'negative' if s.max_drawdown_pct else '' }}">{{ s.max_drawdown_label }}</td>
+            <td class="{{ 'positive' if s.sharpe_ratio >= 0 else 'negative' }}">{{ s.sharpe_label }}</td>
+            <td class="{{ 'positive' if s.sortino_ratio >= 0 else 'negative' }}">{{ s.sortino_label }}</td>
+            {% endif %}
+            <td class="{{ 'positive' if s.cagr_pct >= 0 else 'negative' }}">{{ s.cagr_label }}</td>
+            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
+            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
+            <td>{{ s.total_value }}</td>
+            <td class="hint-cell">{{ s.sim_beginn }} &ndash; {{ s.sim_ende }}<br>(<span data-i18n-en="{{ s.sim_jahre_label }} years">{{ s.sim_jahre_label }} Jahre</span>)</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    <h3 data-i18n-en="How to read these numbers">Wie die Zahlen zu lesen sind</h3>
+    {% if vergleich_verfuegbar %}
+    <p class="hint" data-i18n-en="Comparison period: every strategy is only simulated over the period in which its complete instrument set was actually tradable (last column). Those periods differ in length, so their metrics cannot be compared directly. Return and risk are therefore reported here over a common period as well: every strategy is simulated fresh, with its own starting capital, from {{ vergleich_beginn }} - the latest start date of all strategies shown. CAGR, volatility, max drawdown, Sharpe and Sortino all come from that run and belong together; the table is sorted by it.">
+      <strong>Vergleichszeitraum:</strong> Jede Strategie wird nur über den
+      Zeitraum simuliert, in dem ihr komplettes Instrumentenset handelbar war
+      (letzte Spalte). Diese Zeiträume sind unterschiedlich lang, ihre
+      Kennzahlen also nicht direkt vergleichbar. Rendite und Risiko stehen
+      hier deshalb zusätzlich über einen gemeinsamen Zeitraum: jede Strategie
+      wird ab <strong>{{ vergleich_beginn }}</strong> &ndash; dem spätesten
+      Startdatum aller gezeigten Strategien &ndash; frisch mit eigenem
+      Startkapital simuliert. CAGR, Volatilität, Max Drawdown, Sharpe und
+      Sortino stammen aus diesem Lauf und gehören damit zusammen; danach ist
+      sortiert.
+    </p>
+    {% if vergleich_benchmark %}
+    <p class="hint" data-i18n-en="&quot;Excess return pp p.a.&quot; is the difference to &quot;{{ vergleich_benchmark }}&quot; ({{ vergleich_benchmark_label }}% p.a. over the same period). A negative value means the strategy would not have beaten the index.">
+      <strong>„Überrendite pp p.a."</strong> ist die Differenz zu
+      „{{ vergleich_benchmark }}" ({{ vergleich_benchmark_label }} % p.a. im
+      selben Zeitraum). Negativ heißt: die Strategie hätte den Index nicht
+      geschlagen.
+    </p>
+    {% endif %}
+    <p class="hint" data-i18n-en="This matters for risk too: a strategy with a long history of its own carries crises the others never went through. Over its full history the S&amp;P 500 benchmark shows a max drawdown of around -52% (2008), over the common period around -21% - the smallest in the field instead of the largest. Apparent superiority of the barbell strategies on both axes turns into a genuine return/risk trade-off. A short comparison period stays a narrow basis: it shows how the strategies behaved in the same market environment, not how they will behave in future.">
+      Das gilt gerade fürs Risiko: eine Strategie mit langer eigener Historie
+      schleppt Krisen mit, die die übrigen nie durchlaufen haben. Der
+      S&amp;P-500-Benchmark steht über seine volle Historie bei rund
+      &minus;52 % Max Drawdown (Finanzkrise 2008), über den gemeinsamen
+      Zeitraum bei rund &minus;21 % &ndash; damit hat er den
+      <em>geringsten</em> Drawdown im Feld statt den höchsten. Aus scheinbarer
+      Überlegenheit der Barbell-Strategien auf beiden Achsen wird so ein
+      echter Rendite-Risiko-Tausch. Ein kurzer Vergleichszeitraum bleibt eine
+      schmale Datenbasis: er zeigt, wie sich die Strategien im selben
+      Marktumfeld verhalten haben, nicht wie sie es künftig tun werden.
+    </p>
+    {% endif %}
+    <p class="hint" data-i18n-en="The metrics in short: CAGR (annualized return, &quot;% p.a.&quot;) is the leading figure - a total return over many years is barely readable and compares poorly across periods of different length; it stays as a secondary column. Volatility is the annualized dispersion of weekly returns, max drawdown the largest loss from a previous high. Sharpe and Sortino condense return per risk into one number (Sortino only counts losing weeks as risk); higher is better, negative means the risk taken did not pay off against risk-free parking. The risk-free rate is derived from the EUR money-market ETF over the period evaluated (see Premises), not fixed in advance - here {% if vergleich_zins_label %}{{ vergleich_zins_label }}% p.a., the same for every row{% else %}per row, over its own period{% endif %}. All return figures are gross (before tax); the estimated net return is on each detail page.">
+      <strong>Die Kennzahlen kurz:</strong> CAGR (annualisierte Rendite,
+      „% p.a.") ist die Leitkennzahl &ndash; eine Gesamtrendite über viele
+      Jahre ist kaum lesbar und zwischen unterschiedlich langen Zeiträumen
+      schlecht vergleichbar; sie bleibt als Nebenspalte stehen. Volatilität
+      ist die annualisierte Streuung der Wochenrenditen, Max Drawdown der
+      größte Verlust vom bisherigen Höchststand. Sharpe und Sortino fassen
+      Rendite pro Risiko in eine Zahl (Sortino zählt nur Verlustwochen als
+      Risiko); höher ist besser, negativ heißt, das Risiko hat sich gegenüber
+      risikolosem Parken nicht gelohnt. Der risikofreie Zins dafür wird aus
+      dem EUR-Geldmarkt-ETF über den ausgewerteten Zeitraum abgeleitet (siehe
+      Prämissen), nicht fest angenommen &ndash; hier
+      {% if vergleich_zins_label %}{{ vergleich_zins_label }} % p.a.,
+      einheitlich für alle Zeilen{% else %}je Zeile über deren eigenen
+      Zeitraum{% endif %}. Alle Renditewerte sind Bruttowerte (vor Steuer),
+      die geschätzte Nettorendite steht auf der jeweiligen Detailseite.
+    </p>
+  </section>
+{% endblock %}
+{% block scripts %}
+<script>
+  const style = getComputedStyle(document.documentElement);
+  const cssVar = (name) => style.getPropertyValue(name).trim();
+  const colors = {
+    series1: cssVar('--series-1'),
+    series2: cssVar('--series-2'),
+    grid: cssVar('--grid'),
+    axis: cssVar('--axis'),
+    text: cssVar('--text-secondary'),
+  };
+  const commonScales = {
+    x: { grid: { color: colors.grid }, ticks: { color: colors.text, maxTicksLimit: 8 } },
+    y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+  };
+  // Sprachumschalter: Chart.js-Texte sind fixe Strings beim Erzeugen, keine
+  // DOM-Knoten - data-i18n-en greift dort nicht (siehe dashboard.html.j2).
+  function T(de, en) { return document.documentElement.lang === 'en' ? en : de; }
+  const chartRefreshers = [];
+  window.__i18nRefresh.push(function () { chartRefreshers.forEach(function (fn) { fn(); }); });
+
+  // Korrelationsgrafik (#82): Rendite (CAGR) gegen Risiko (Max Drawdown) je
+  // Strategie/Szenario, aus denselben Werten wie die Uebersichtstabelle
+  // (Vergleichszeitraum, falls verfuegbar, sonst der jeweils eigene Zeitraum) -
+  // keine zusaetzliche Simulation, reine Darstellung bereits vorhandener Zahlen.
+  {
+    const correlationChart = new Chart(document.getElementById('correlation-chart'), {
+      type: 'scatter',
+      data: {
+        datasets: [{
+          label: 'Strategien/Szenarien',
+          data: [
+            {% for s in summary %}
+            {
+              x: {{ (s.vergleich_cagr_pct if vergleich_verfuegbar else s.cagr_pct) | tojson }},
+              y: {{ (-((s.vergleich_max_drawdown_pct if vergleich_verfuegbar else s.max_drawdown_pct) or 0.0)) | tojson }},
+              name: {{ s.name | tojson }},
+            },
+            {% endfor %}
+          ],
+          backgroundColor: colors.series1,
+          pointRadius: 6,
+          pointHoverRadius: 8,
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          title: { display: true, text: '', color: colors.text },
+          tooltip: {
+            callbacks: {
+              label: (ctx) => `${ctx.raw.name}: CAGR ${ctx.raw.x.toFixed(2)} % p.a., ${T('Max Drawdown', 'Max drawdown')} ${ctx.raw.y.toFixed(2)} %`,
+            },
+          },
+        },
+        scales: {
+          x: { ...commonScales.x, title: { display: true, text: 'CAGR % p.a.', color: colors.text } },
+          y: { ...commonScales.y, title: { display: true, text: '', color: colors.text } },
+        },
+      },
+    });
+    chartRefreshers.push(function () {
+      correlationChart.options.plugins.title.text = {% if vergleich_verfuegbar %}
+        T('CAGR gegen Max Drawdown im gemeinsamen Vergleichszeitraum ab {{ vergleich_beginn }}', 'CAGR against max drawdown over the common comparison period starting {{ vergleich_beginn }}')
+      {% else %}
+        T('CAGR gegen Max Drawdown (jeweils eigener Zeitraum)', 'CAGR against max drawdown (each over its own period)')
+      {% endif %};
+      correlationChart.options.scales.y.title.text = T('Max Drawdown %', 'Max drawdown %');
+      correlationChart.data.datasets[0].label = T('Strategien/Szenarien', 'Strategies/scenarios');
+      correlationChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
+  }
+</script>
+{% endblock %}

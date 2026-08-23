@@ -89,6 +89,17 @@ def _detail_html(tmp_path: Path, slug: str) -> str:
     return (tmp_path / f"{slug}.html").read_text(encoding="utf-8")
 
 
+def _seite(tmp_path: Path, name: str) -> str:
+    """Eine der ueber das Drei-Punkt-Menue erreichbaren Unterseiten (#88)."""
+    return (tmp_path / f"{name}.html").read_text(encoding="utf-8")
+
+
+def _summary_tabelle(tmp_path: Path) -> str:
+    """Die Vergleichstabelle steht seit #88 auf vergleich.html, nicht mehr auf
+    der Startseite."""
+    return _seite(tmp_path, "vergleich").split('<table class="summary-table">')[1].split("</table>")[0]
+
+
 def test_slug_transliterates_umlaute_and_strips_special_chars():
     assert _slug("Börsenweisheit: Sell in May") == "boersenweisheit-sell-in-may"
     assert _slug("Charttechnik: SMA-Crossover (10/40 Wochen)") == "charttechnik-sma-crossover-10-40-wochen"
@@ -98,7 +109,11 @@ def test_build_dashboard_renders_comparison_overview_with_correct_ranking(tmp_pa
     output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     html = output.read_text(encoding="utf-8")
 
-    assert "Übersicht: Rendite im Vergleich" in html
+    # Startseite zeigt nur noch das Balkendiagramm und verlinkt auf die
+    # vollstaendige Tabelle im Drei-Punkt-Menue (#88).
+    assert "Rendite im Vergleich" in html
+    assert 'href="vergleich.html"' in html
+    assert '<table class="summary-table">' not in html
     # Startseite verlinkt auf die je Strategie erzeugten Detailseiten statt auf
     # Anker innerhalb derselben Seite (#31).
     assert 'href="a-verdoppler.html"' in html
@@ -108,8 +123,7 @@ def test_build_dashboard_renders_comparison_overview_with_correct_ranking(tmp_pa
     # (kein Rebalancing, Schwelle ist unerreichbar hoch) -> identisches Ergebnis:
     # 999 investierbar (1000 - 1 Gebuehr) / 100 = 9.99 Einheiten, Endwert bei
     # Kurs 150 = 1498.50, Rendite (1498.50-1000)/1000 = +49.85%.
-    uebersicht = html.split('id="uebersicht"', 1)[1].split("</section>", 1)[0]
-    assert uebersicht.count("+49.85") == 2
+    assert _summary_tabelle(tmp_path).count("+49.85") == 2
 
 
 def test_build_dashboard_erzeugt_detailseite_je_strategie(tmp_path: Path):
@@ -147,10 +161,10 @@ def test_startseite_zeigt_nur_wertverlauf_alles_andere_auf_detailseite(tmp_path:
 
 def test_build_dashboard_summary_matches_detail_total_value(tmp_path: Path):
     output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    index_html = output.read_text(encoding="utf-8")
+    output.read_text(encoding="utf-8")
     detail_html = _detail_html(tmp_path, "a-verdoppler")
 
-    assert "1498.50" in index_html
+    assert "1498.50" in _seite(tmp_path, "vergleich")
     assert "1498.50" in detail_html
 
 
@@ -338,8 +352,8 @@ def test_max_drawdown_pct_misst_groessten_ruecksetzer():
 
 
 def test_summary_table_zeigt_volatilitaet_und_max_drawdown_spalten(tmp_path: Path):
-    output = build_dashboard(_auf_und_ab_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
-    html = output.read_text(encoding="utf-8")
+    build_dashboard(_auf_und_ab_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    html = _seite(tmp_path, "vergleich")
 
     assert "Volatilität % (ann.)" in html
     assert "Max Drawdown %" in html
@@ -460,8 +474,8 @@ def test_downside_deviation_ohne_verlustwochen_ist_null():
 
 
 def test_summary_table_zeigt_sharpe_und_sortino_spalten(tmp_path: Path):
-    output = build_dashboard(_auf_und_ab_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
-    html = output.read_text(encoding="utf-8")
+    build_dashboard(_auf_und_ab_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
+    html = _seite(tmp_path, "vergleich")
 
     assert "Sharpe" in html
     assert "Sortino" in html
@@ -828,8 +842,8 @@ def test_cagr_pct_ohne_tage_ist_null():
 
 
 def test_summary_table_sortiert_nach_cagr_und_zeigt_gesamtrendite_daneben(tmp_path: Path):
-    output = build_dashboard(_mehrjaehrige_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    html = output.read_text(encoding="utf-8")
+    build_dashboard(_mehrjaehrige_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = _seite(tmp_path, "vergleich")
     assert "CAGR % p.a." in html
     assert "Gesamtrendite %" in html
 
@@ -969,12 +983,12 @@ def test_allokierte_ticker_ist_die_vereinigung_ueber_alle_strategien():
 
 
 def test_build_dashboard_zeigt_dynamische_instrumentenzahl_statt_hartkodierter_17(tmp_path: Path):
-    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    html = output.read_text(encoding="utf-8")
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = _seite(tmp_path, "portfolio")
     # ZWEI_STRATEGIEN allokiert genau 1 Ticker ("T1") - die feste "17" aus dem
     # Template ist damit hier nicht mehr korrekt, dynamisch schon.
-    assert "denselben 1 Instrumenten" in html
-    assert "denselben 17 Instrumenten" not in html
+    assert "denselben 1\n" in html
+    assert "denselben 17" not in html
 
 
 def test_praemissen_seite_trennt_allokierte_von_nicht_allokierten_instrumenten(tmp_path: Path):
@@ -1322,12 +1336,7 @@ def test_uebersicht_zeigt_risikokennzahlen_aus_dem_gemeinsamen_zeitraum(tmp_path
     assert 0.0 < gemeinsam["max_drawdown_pct"] < 10.0
 
     build_dashboard(rows, [lang, spaet], output_path=tmp_path / "index.html")
-    tabelle = (
-        (tmp_path / "index.html")
-        .read_text(encoding="utf-8")
-        .split('<table class="summary-table">')[1]
-        .split("</table>")[0]
-    )
+    tabelle = _summary_tabelle(tmp_path)
 
     # In der Uebersicht steht der kleine (vergleichbare) Drawdown, nicht der grosse.
     assert f"{-gemeinsam['max_drawdown_pct']:.2f}" in tabelle
@@ -1345,12 +1354,7 @@ def test_ohne_gemeinsamen_zeitraum_bleibt_die_uebersicht_bei_den_eigenen_werten(
     Zeitraums, und die Spaltenzahl muss weiterhin zum Kopf passen."""
     rows = _lange_reihe(date(2020, 1, 6), _VERGLEICH_MIN_WOCHEN - 2, 1.005, "T1")
     build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    tabelle = (
-        (tmp_path / "index.html")
-        .read_text(encoding="utf-8")
-        .split('<table class="summary-table">')[1]
-        .split("</table>")[0]
-    )
+    tabelle = _summary_tabelle(tmp_path)
 
     assert "Vergleichszeitraum" not in tabelle
     kopf = len(re.findall(r"<th[ >]", tabelle))
@@ -1363,12 +1367,7 @@ def test_ohne_gemeinsamen_zeitraum_bleibt_die_uebersicht_bei_den_eigenen_werten(
 def test_spaltenzahl_passt_zum_tabellenkopf_mit_vergleichszeitraum(tmp_path: Path):
     rows = _lange_reihe(date(2020, 1, 6), 80, 1.005, "T1")
     build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    tabelle = (
-        (tmp_path / "index.html")
-        .read_text(encoding="utf-8")
-        .split('<table class="summary-table">')[1]
-        .split("</table>")[0]
-    )
+    tabelle = _summary_tabelle(tmp_path)
 
     assert "Vergleichszeitraum" in tabelle
     kopf = len(re.findall(r"<th[ >]", tabelle))
@@ -1381,11 +1380,11 @@ def test_spaltenzahl_passt_zum_tabellenkopf_mit_vergleichszeitraum(tmp_path: Pat
 # --- #79: Portfolio-Uebersicht (Ticker + Name) auf der Startseite ------------
 
 
-def test_startseite_listet_alle_instrumente_mit_kuerzel_und_namen(tmp_path: Path):
+def test_portfolio_seite_listet_alle_instrumente_mit_kuerzel_und_namen(tmp_path: Path):
     from boersenspiel.instruments import INSTRUMENTS
 
-    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    html = output.read_text(encoding="utf-8")
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = _seite(tmp_path, "portfolio")
 
     # Alle TICKERS erscheinen, nicht nur die von ZWEI_STRATEGIEN allokierten
     # ("T1") - die Liste soll unabhaengig von der Allokation zeigen, was
@@ -1400,12 +1399,8 @@ def test_startseite_listet_alle_instrumente_mit_kuerzel_und_namen(tmp_path: Path
 
 
 def test_uebersichtstabelle_hat_info_tooltips_an_den_kennzahl_spalten(tmp_path: Path):
-    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    tabelle = (
-        output.read_text(encoding="utf-8")
-        .split('<table class="summary-table">')[1]
-        .split("</table>")[0]
-    )
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    tabelle = _summary_tabelle(tmp_path)
     # Ein Tooltip je Kennzahl-Spalte im Tabellenkopf, mit erklaerendem Text -
     # kein leeres Icon ohne Erklaerung.
     assert tabelle.count('class="info-tip"') >= 7
@@ -1415,9 +1410,9 @@ def test_uebersichtstabelle_hat_info_tooltips_an_den_kennzahl_spalten(tmp_path: 
 # --- #82: Korrelationsgrafik Rendite (CAGR) gegen Risiko (Max Drawdown) -----
 
 
-def test_startseite_zeigt_korrelationsgrafik_rendite_gegen_drawdown(tmp_path: Path):
-    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
-    html = output.read_text(encoding="utf-8")
+def test_vergleichsseite_zeigt_korrelationsgrafik_rendite_gegen_drawdown(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = _seite(tmp_path, "vergleich")
 
     assert '<canvas id="correlation-chart"></canvas>' in html
     assert "correlation-chart" in html
@@ -1425,3 +1420,53 @@ def test_startseite_zeigt_korrelationsgrafik_rendite_gegen_drawdown(tmp_path: Pa
     assert "A: Verdoppler" in html
     assert "B: Verlierer" in html
     assert "type: 'scatter'" in html
+
+
+# --- #88: Einleitung auf der Startseite, Portfolio/Vergleich im Menue --------
+
+
+def test_startseite_hat_eine_einleitung_mit_grundidee_und_verweis_auf_praemissen(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    einleitung = html.split('id="einleitung"', 1)[1].split("</section>", 1)[0]
+    assert "Grundidee" in einleitung
+    # Mindestens zwei Toepfe (A/B) als Kern der Strategie benannt ...
+    assert "Topf A" in einleitung and "Topf B" in einleitung
+    # ... und der Verweis auf die Praemissen im Drei-Punkt-Menue.
+    assert 'href="praemissen.html"' in einleitung
+    assert "Drei-Punkt-Menü" in einleitung
+
+
+def test_portfolio_und_vergleich_stehen_auf_eigenen_seiten_statt_auf_der_startseite(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert (tmp_path / "portfolio.html").exists()
+    assert (tmp_path / "vergleich.html").exists()
+
+    # Auf der Startseite bleibt vom Vergleich nur das Balkendiagramm, die
+    # Instrumententabelle verschwindet ganz.
+    assert '<canvas id="summary-chart"></canvas>' in html
+    assert '<table class="summary-table">' not in html
+    assert '<table class="portfolio-table">' not in html
+    assert '<canvas id="correlation-chart"></canvas>' not in html
+
+    assert '<table class="summary-table">' in _seite(tmp_path, "vergleich")
+    assert '<table class="portfolio-table">' in _seite(tmp_path, "portfolio")
+
+
+def test_neue_seiten_sind_von_jeder_seite_aus_dem_menue_erreichbar(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    seiten = [
+        output.read_text(encoding="utf-8"),
+        _detail_html(tmp_path, "a-verdoppler"),
+        _seite(tmp_path, "praemissen"),
+        _seite(tmp_path, "vergleich"),
+        _seite(tmp_path, "portfolio"),
+    ]
+    for html in seiten:
+        menue = html.split('<details class="menu">', 1)[1].split("</details>", 1)[0]
+        assert 'href="vergleich.html"' in menue
+        assert 'href="portfolio.html"' in menue
+        assert 'href="praemissen.html"' in menue

@@ -1,0 +1,58 @@
+{% extends "base.html.j2" %}
+{% block title %}Das Portfolio &ndash; Barbell-Portfolio Dashboard{% endblock %}
+{% block meta_description %}Die Töpfe der Barbell-Strategien und alle wöchentlich abgerufenen Instrumente im Überblick.{% endblock %}
+{% block canonical %}https://s540d.github.io/Boersenspiel/portfolio.html{% endblock %}
+{% block header_extra %}<p class="back-link"><a href="index.html" data-i18n-en="&larr; Back to overview">&larr; Zur Übersicht</a></p>{% endblock %}
+{% block content %}
+  <section class="strategy" id="portfolio">
+    <h2 data-i18n-en="The Portfolio">Das Portfolio</h2>
+    <p class="hint" data-i18n-en="All strategies draw on the same {{ instrumente_anzahl }} instruments - only the weighting decides which of them a strategy actually holds.">
+      Alle Strategien speisen sich aus denselben {{ instrumente_anzahl }}
+      Instrumenten &ndash; welche davon eine Strategie tatsächlich hält,
+      entscheidet erst die Gewichtung.
+    </p>
+
+    <h3 data-i18n-en="The buckets">Die Töpfe</h3>
+    <ul class="hint">
+      <li data-i18n-en="Bucket A - Safety: broad bond ETF, money market, physical gold. The smaller share of the barbell (20-30%).">
+        <strong>Topf A &ndash; Sicherheit:</strong> breiter Anleihen-ETF,
+        Geldmarkt, physisches Gold. Der kleinere Teil des Barbells (20&ndash;30%).
+      </li>
+      <li data-i18n-en="Bucket B - Growth: broad equity ETFs, Nasdaq-100, semiconductors, emerging markets, Bitcoin. The larger share (60-80%).">
+        <strong>Topf B &ndash; Wachstum:</strong> breite Aktien-ETFs,
+        Nasdaq-100, Halbleiter, Schwellenländer, Bitcoin. Der größere Teil
+        (60&ndash;80%).
+      </li>
+      <li data-i18n-en="Bucket C - Individual stock satellite: only in the strategy &quot;Barbell 20/60/20 + Individual Stock Satellite&quot;. 10 equally weighted individual stocks instead of broad ETFs - deliberately volatile growth stocks plus two defensive blue chips (Coca-Cola, Roche) as a counterexample. Its 20 percentage points come out of bucket B, so the overall risk profile (80% risky / 20% safe) stays the same.">
+        <strong>Topf C &ndash; Einzelaktien-Satellit:</strong> nur in der
+        Strategie „Barbell 20/60/20 + Einzelaktien-Satellit". 10
+        gleichgewichtete Einzelaktien statt breiter ETFs &ndash; bewusst
+        volatile Wachstumswerte plus zwei defensive Blue Chips (Coca-Cola,
+        Roche) als Gegenbeispiel. Seine 20 Prozentpunkte kommen aus Topf B,
+        das Gesamtrisikoprofil (80% riskant / 20% sicher) bleibt damit gleich.
+      </li>
+    </ul>
+    <p class="hint" data-i18n-en="&quot;Satellite&quot; here means the usual core-satellite approach from portfolio theory: a smaller, concentrated addition alongside a broadly diversified core - not simply &quot;on top&quot;.">
+      „Satellit" meint dabei den gängigen Core-Satellite-Ansatz aus der
+      Portfoliotheorie: eine kleinere, konzentrierte Beimischung neben einem
+      breit gestreuten Kern &ndash; nicht einfach „zusätzlich".
+    </p>
+
+    <h3 data-i18n-en="All fetched data series">Alle abgerufenen Datenreihen</h3>
+    <p class="hint" data-i18n-en="These {{ portfolio_instrumente|length }} instruments are fetched weekly. Which strategy holds which of them is shown on the respective detail page under &quot;Bucket weighting&quot;.">
+      Diese {{ portfolio_instrumente|length }} Instrumente werden wöchentlich
+      abgerufen. Welche Strategie welches davon hält, zeigt die jeweilige
+      Detailseite unter „Topf-Gewichtung".
+    </p>
+    <div class="overflow-x">
+      <table class="portfolio-table">
+        <thead><tr><th class="text-left" data-i18n-en="Ticker">Kürzel</th><th class="text-left" data-i18n-en="Instrument">Instrument</th></tr></thead>
+        <tbody>
+        {% for i in portfolio_instrumente %}
+          <tr><td class="text-left">{{ i.ticker }}</td><td class="text-left">{{ i.name }}</td></tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}
