@@ -43,6 +43,31 @@
 {% endif %}
   <section class="strategy" id="uebersicht">
     <h2>Übersicht: Rendite im Vergleich</h2>
+    {% if vergleich_verfuegbar %}
+    <p class="hint">
+      <strong>Vergleichszeitraum:</strong> Jede Strategie wird nur über den Zeitraum
+      simuliert, in dem ihr komplettes Instrumentenset tatsächlich handelbar war
+      (letzte Spalte) &ndash; sonst würde ein 2026 zusammengestelltes Portfolio
+      rückwirkend ab 2006 gekauft. Diese Zeiträume sind aber unterschiedlich lang und
+      decken unterschiedliche Marktphasen ab; ihre CAGR-Werte lassen sich deshalb
+      <em>nicht</em> direkt gegeneinander stellen. Die Leitspalte
+      <strong>„CAGR % p.a. im Vergleichszeitraum"</strong> simuliert deshalb jede
+      Strategie zusätzlich ab <strong>{{ vergleich_beginn }}</strong> &ndash; dem
+      spätesten Startdatum aller hier gezeigten Strategien, ab dem also jede von
+      ihnen Kurse hat &ndash; jeweils frisch mit eigenem Startkapital. Nur diese
+      Spalte vergleicht Gleiches mit Gleichem, und nur nach ihr ist die Tabelle
+      sortiert.
+      {% if vergleich_benchmark %}
+      Die Spalte <strong>„Überrendite pp p.a."</strong> ist die Differenz dazu
+      gegenüber „{{ vergleich_benchmark }}" ({{ vergleich_benchmark_label }} % p.a.
+      im selben Zeitraum) &ndash; ein negativer Wert heißt, die Strategie hätte den
+      Index über diesen Zeitraum <em>nicht</em> geschlagen.
+      {% endif %}
+      Ein kurzer Vergleichszeitraum bleibt eine schmale Datenbasis: er zeigt, wie
+      sich die Strategien im selben Marktumfeld verhalten haben, nicht wie sie sich
+      künftig verhalten werden.
+    </p>
+    {% endif %}
     <p class="hint">
       CAGR (annualisierte Rendite, "% p.a.") ist die Leitkennzahl: über viele Jahre
       ist eine Gesamtrendite kaum lesbar und schlecht zwischen unterschiedlich langen
@@ -64,11 +89,15 @@
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <div class="overflow-x">
       <table class="summary-table">
-        <thead><tr><th>Strategie / Szenario</th><th>CAGR % p.a. (brutto)</th><th>Gesamtrendite % (brutto)</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Sharpe</th><th>Sortino</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th></tr></thead>
+        <thead><tr><th>Strategie / Szenario</th>{% if vergleich_verfuegbar %}<th>CAGR % p.a. im Vergleichszeitraum</th><th>&Uuml;berrendite pp p.a.</th>{% endif %}<th>CAGR % p.a. (eigener Zeitraum)</th><th>Gesamtrendite % (brutto)</th><th>Volatilität % (ann.)</th><th>Max Drawdown %</th><th>Sharpe</th><th>Sortino</th><th>Gewinn/Verlust &euro;</th><th>Endwert &euro;</th><th>Eigener Zeitraum</th></tr></thead>
         <tbody>
         {% for s in summary %}
           <tr>
             <td><a href="{{ s.id }}.html">{{ s.name }}</a></td>
+            {% if vergleich_verfuegbar %}
+            <td class="{{ ('positive' if s.vergleich_cagr_pct >= 0 else 'negative') if s.vergleich_cagr_pct is not none else '' }}"><strong>{{ s.vergleich_cagr_label }}</strong></td>
+            <td class="{{ ('positive' if s.alpha_pp >= 0 else 'negative') if s.alpha_pp is not none else '' }}">{{ s.alpha_pp_label }}</td>
+            {% endif %}
             <td class="{{ 'positive' if s.cagr_pct >= 0 else 'negative' }}">{{ s.cagr_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
             <td>{{ s.volatilitaet_label }}</td>
@@ -77,6 +106,7 @@
             <td class="{{ 'positive' if s.sortino_ratio >= 0 else 'negative' }}">{{ s.sortino_label }}</td>
             <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
             <td>{{ s.total_value }}</td>
+            <td class="hint-cell">{{ s.sim_beginn }} &ndash; {{ s.sim_ende }}<br>({{ s.sim_jahre_label }} Jahre)</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -153,14 +183,19 @@
       labels: {{ summary | map(attribute='name') | list | tojson }},
       datasets: [{
         label: 'CAGR % p.a.',
+        {% if vergleich_verfuegbar %}
+        data: {{ summary | map(attribute='vergleich_cagr_pct') | list | tojson }},
+        backgroundColor: {{ summary | map(attribute='vergleich_cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+        {% else %}
         data: {{ summary | map(attribute='cagr_pct') | list | tojson }},
         backgroundColor: {{ summary | map(attribute='cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+        {% endif %}
       }],
     },
     options: {
       indexAxis: 'y',
       responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Annualisierte Rendite (CAGR, % p.a.)', color: colors.text } },
+      plugins: { legend: { display: false }, title: { display: true, text: {% if vergleich_verfuegbar %}'Annualisierte Rendite (CAGR, % p.a.) im gemeinsamen Vergleichszeitraum ab {{ vergleich_beginn }}'{% else %}'Annualisierte Rendite (CAGR, % p.a.)'{% endif %}, color: colors.text } },
       scales: {
         x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
         y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },

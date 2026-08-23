@@ -455,6 +455,53 @@ def _cagr_pct(rendite_pct: float, tage: int) -> float:
     return (faktor ** (1 / jahre) - 1) * 100
 
 
+# --- Gemeinsamer Vergleichszeitraum (#73) -----------------------------------------
+#
+# _real_investierbarer_zeitraum() (F4, #63) schneidet die Historie JE STRATEGIE auf
+# den Zeitraum zu, ab dem deren komplettes Instrumentenset handelbar war. Das ist fuer
+# sich genommen richtig - es nimmt den Look-ahead-Bias heraus -, erzeugt aber ein
+# zweites, ebenso entscheidungsrelevantes Problem: die Zeitraeume unterscheiden sich
+# dann zwischen den Strategien erheblich. Der S&P-500-Benchmark braucht nur IUSA und
+# laeuft deshalb ueber die vollen 20 Jahre (ab 2006), waehrend jede Barbell-Strategie
+# erst 2021 beginnt, weil ein einziges ihrer Instrumente nicht frueher existiert.
+#
+# Eine nach CAGR sortierte Uebersichtstabelle stellte damit eine 20-Jahres-Rendite
+# (inkl. Finanzkrise und anschliessender Erholung) neben 5-Jahres-Renditen (inkl.
+# Baerenmarkt 2022) - und ausgerechnet die eine Zeile, an der jede Anlageentscheidung
+# haengt ("schlaegt die Strategie einfach den Index?"), war die nicht vergleichbare.
+# Gemessen an der realen Historie drehte das die Aussage fuer sechs von 15
+# Strategien/Szenarien.
+#
+# Diese Funktionen simulieren deshalb JEDE Strategie zusaetzlich auf dem spaetesten
+# gemeinsamen Startdatum aller angezeigten Strategien - frisch, mit eigenem
+# Startkapital, exakt nach demselben Muster wie _walk_forward_segmente() und
+# _zeitraum_presets(). Die Uebersichtstabelle sortiert danach.
+
+# Unter dieser Laenge ist ein gemeinsamer Zeitraum keine belastbare Aussage mehr -
+# dann entfaellt die Spalte, statt eine aus wenigen Wochen annualisierte Zahl zu
+# zeigen (dieselbe Zurueckhaltung wie bei _walk_forward_segmente()).
+_VERGLEICH_MIN_WOCHEN = 26
+
+
+def _gemeinsamer_beginn(strategie_rows: dict[str, list[PriceRow]]) -> date | None:
+    """Spaetestes Simulations-Startdatum ueber alle angezeigten Strategien - ab
+    diesem Datum hat JEDE von ihnen Kurse und ist damit vergleichbar."""
+    beginne = [rows[0].date for rows in strategie_rows.values() if rows]
+    return max(beginne) if beginne else None
+
+
+def _vergleichs_cagr_pct(
+    strategy: Strategy, rows: list[PriceRow], beginn: date
+) -> float | None:
+    """CAGR dieser Strategie, frisch simuliert ab ``beginn``. ``None``, wenn der
+    verbleibende Zeitraum zu kurz fuer eine belastbare Annualisierung ist."""
+    ausschnitt = [r for r in rows if r.date >= beginn]
+    if len(ausschnitt) < _VERGLEICH_MIN_WOCHEN:
+        return None
+    result = simulate(ausschnitt, strategy)
+    return _cagr_pct(_f(_rendite_pct(result, strategy)), _tage_zwischen(result))
+
+
 def _optimierungs_effekte(
     strategy: Strategy, rows: list[PriceRow], basis_cagr_pct: float, tage: int
 ) -> list[dict]:
@@ -609,6 +656,11 @@ def _build_strategy_view(
         "cash_max_label": f"{cash_max_pct:.1f}",
         "cash_max_datum": cash_max_datum or "–",
         "sim_beginn": points[0].date.isoformat(),
+        # #73: der tatsaechliche Zeitraum gehoert neben jede Renditezahl - ohne ihn
+        # ist nicht erkennbar, dass zwei Zeilen derselben Tabelle unterschiedlich
+        # lange und unterschiedliche Marktphasen abdecken koennen.
+        "sim_ende": points[-1].date.isoformat(),
+        "sim_jahre_label": f"{tage / 365.25:.1f}".replace(".", ","),
         "sim_ende": points[-1].date.isoformat(),
         "teil_von": strategy.teil_von,
         "labels_json": json.dumps(labels),
@@ -838,9 +890,59 @@ def build_dashboard(
         _build_strategy_view(s, simulate(strategie_rows[s.name], s), strategie_rows[s.name], carry_forward)
         for s in strategies
     ]
-    # Sortierung nach CAGR statt Gesamtrendite (F6b, #63): CAGR ist die Leitkennzahl
-    # der Uebersichtstabelle, die Reihenfolge soll dazu konsistent sein.
-    summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
+    # Gemeinsamer Vergleichszeitraum (#73): jede Strategie zusaetzlich ab dem
+    # spaetesten Startdatum aller angezeigten Strategien simulieren, damit die
+    # Uebersichtstabelle Gleiches mit Gleichem vergleicht. Siehe _gemeinsamer_beginn().
+    beginn = _gemeinsamer_beginn(strategie_rows)
+    benchmark_namen = {b.name for b in BENCHMARK_STRATEGIEN}
+    vergleich_cagr: dict[str, float | None] = {}
+    if beginn is not None:
+        for s in strategies:
+            vergleich_cagr[s.name] = _vergleichs_cagr_pct(s, strategie_rows[s.name], beginn)
+    # Referenzlinie fuer die Ueberrendite: die erste Benchmark-Strategie, die im
+    # gemeinsamen Zeitraum ueberhaupt eine Zahl liefert. Steht keine zur Verfuegung
+    # (kein Benchmark unter den angezeigten Strategien), entfaellt die Spalte still,
+    # statt gegen eine willkuerliche andere Strategie zu vergleichen.
+    benchmark_cagr: float | None = None
+    benchmark_label: str | None = None
+    for s in strategies:
+        if s.name in benchmark_namen and vergleich_cagr.get(s.name) is not None:
+            benchmark_cagr = vergleich_cagr[s.name]
+            benchmark_label = s.name
+            break
+
+    for view in views:
+        wert = vergleich_cagr.get(view["name"])
+        view["vergleich_cagr_pct"] = wert
+        view["vergleich_cagr_label"] = f"{wert:+.2f}" if wert is not None else "–"
+        if wert is None or benchmark_cagr is None or view["name"] in benchmark_namen:
+            view["alpha_pp"] = None
+            view["alpha_pp_label"] = "–"
+        else:
+            view["alpha_pp"] = wert - benchmark_cagr
+            view["alpha_pp_label"] = f"{wert - benchmark_cagr:+.2f}"
+
+    vergleich_kontext = {
+        "vergleich_beginn": beginn.isoformat() if beginn is not None else None,
+        "vergleich_ende": rows[-1].date.isoformat(),
+        "vergleich_benchmark": benchmark_label,
+        "vergleich_benchmark_label": (
+            f"{benchmark_cagr:+.2f}" if benchmark_cagr is not None else None
+        ),
+        "vergleich_verfuegbar": any(v["vergleich_cagr_pct"] is not None for v in views),
+    }
+
+    # Sortierung nach der Rendite im GEMEINSAMEN Zeitraum (#73), sonst - solange
+    # keiner ermittelbar ist - weiterhin nach CAGR ueber den jeweils eigenen
+    # Zeitraum (F6b, #63).
+    if vergleich_kontext["vergleich_verfuegbar"]:
+        summary = sorted(
+            views,
+            key=lambda v: (v["vergleich_cagr_pct"] is not None, v["vergleich_cagr_pct"] or 0.0),
+            reverse=True,
+        )
+    else:
+        summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
     learnings = derive_learnings(views)
     teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
 
@@ -877,6 +979,7 @@ def build_dashboard(
         # künftigen Instrumente-/Strategiewechsel mitzieht.
         instrumente_anzahl=len(_allokierte_ticker(strategies)),
         benchmark_optionen=[{"id": k, "label": v} for k, v in benchmark_optionen.items()],
+        **vergleich_kontext,
     )
 
     env = Environment(

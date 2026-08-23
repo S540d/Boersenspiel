@@ -20,8 +20,11 @@ from boersenspiel.dashboard import (
     _BTC_TICKER,
     _build_strategy_view,
     _cagr_pct,
+    _gemeinsamer_beginn,
     _downside_deviation,
     _jahre_zurueck,
+    _VERGLEICH_MIN_WOCHEN,
+    _vergleichs_cagr_pct,
     _max_drawdown_pct,
     _ohne_btc_fruehphase,
     _real_investierbarer_zeitraum,
@@ -948,3 +951,103 @@ def test_build_dashboard_rendert_benchmark_schalter_und_feste_skala(tmp_path: Pa
     assert 'id="benchmark-switch"' in detail_html
     assert f'data-benchmark="{_slug("Benchmark X")}"' in detail_html
     assert "suggestedMax:" not in detail_html
+
+
+# --- Gemeinsamer Vergleichszeitraum (#73) ------------------------------------
+
+
+def _lange_reihe(start: date, wochen: int, faktor_pro_woche: float, ticker: str) -> list[PriceRow]:
+    kurs = Decimal("100")
+    rows = []
+    for i in range(wochen):
+        rows.append(PriceRow(start + timedelta(weeks=i), {ticker: kurs}))
+        kurs = kurs * Decimal(str(faktor_pro_woche))
+    return rows
+
+
+def test_gemeinsamer_beginn_ist_das_spaeteste_startdatum():
+    a = [PriceRow(date(2020, 1, 6), {"T1": Decimal("100")})]
+    b = [PriceRow(date(2023, 5, 1), {"T2": Decimal("100")})]
+    assert _gemeinsamer_beginn({"A": a, "B": b}) == date(2023, 5, 1)
+    assert _gemeinsamer_beginn({}) is None
+    assert _gemeinsamer_beginn({"A": []}) is None
+
+
+def test_vergleichs_cagr_nutzt_nur_den_zeitraum_ab_dem_gemeinsamen_beginn():
+    # Erst 52 Wochen flach, danach 52 Wochen steigend. Die CAGR ueber die volle
+    # Historie muss deutlich unter der CAGR ab dem Anstieg liegen - sonst wuerde
+    # der Ausschnitt gar nicht wirken.
+    flach = [PriceRow(date(2020, 1, 6) + timedelta(weeks=i), {"T1": Decimal("100")}) for i in range(52)]
+    steigend = _lange_reihe(date(2021, 1, 4), 60, 1.01, "T1")
+    rows = flach + steigend
+    strategy = ZWEI_STRATEGIEN[0]
+
+    voll = _cagr_pct(
+        float(simulate(rows, strategy).value_history[-1].total_value / strategy.startkapital - 1) * 100,
+        (rows[-1].date - rows[0].date).days,
+    )
+    ausschnitt = _vergleichs_cagr_pct(strategy, rows, date(2021, 1, 4))
+
+    assert ausschnitt is not None
+    assert ausschnitt > voll + 10
+
+
+def test_vergleichs_cagr_entfaellt_bei_zu_kurzem_gemeinsamem_zeitraum():
+    rows = _lange_reihe(date(2020, 1, 6), _VERGLEICH_MIN_WOCHEN + 5, 1.01, "T1")
+    zu_kurz = rows[-(_VERGLEICH_MIN_WOCHEN - 1)].date
+    assert _vergleichs_cagr_pct(ZWEI_STRATEGIEN[0], rows, zu_kurz) is None
+    assert _vergleichs_cagr_pct(ZWEI_STRATEGIEN[0], rows, rows[0].date) is not None
+
+
+def test_uebersichtstabelle_zeigt_vergleichszeitraum_und_ueberrendite(tmp_path: Path):
+    # Zwei Strategien mit unterschiedlichem Simulationsbeginn: "Spaet" haelt ein
+    # Instrument, das erst spaeter einen Kurs hat, und beginnt deshalb spaeter.
+    # Genau diese Konstellation machte die CAGR-Spalten frueher unvergleichbar.
+    spaet = Strategy(
+        name="Spaet",
+        startkapital=Decimal("1000"),
+        toepfe=[
+            Topf(
+                name="Topf",
+                gewicht_gesamt=Decimal("1"),
+                sub_gewichte={"T1": Decimal("0.5"), "T2": Decimal("0.5")},
+            )
+        ],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    frueh = ZWEI_STRATEGIEN[0]
+
+    rows = []
+    kurs = Decimal("100")
+    start = date(2020, 1, 6)
+    for i in range(120):
+        preise = {"T1": kurs}
+        if i >= 40:
+            preise["T2"] = kurs
+        rows.append(PriceRow(start + timedelta(weeks=i), preise))
+        kurs = kurs * Decimal("1.005")
+
+    build_dashboard(rows, [frueh, spaet], output_path=tmp_path / "index.html")
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+
+    # Der gemeinsame Beginn ist der spaetere der beiden Simulationsbeginne.
+    gemeinsam = rows[40].date.isoformat()
+    assert gemeinsam in html
+    assert "im Vergleichszeitraum" in html
+    # Beide eigenen Zeitraeume stehen als eigene Spalte in der Tabelle.
+    assert rows[0].date.isoformat() in html
+    assert rows[-1].date.isoformat() in html
+
+
+def test_ohne_benchmark_strategie_entfaellt_die_ueberrendite_spalte(tmp_path: Path):
+    # ZWEI_STRATEGIEN enthaelt keine Strategie aus BENCHMARK_STRATEGIEN - dann
+    # gibt es keine Referenzlinie und die Ueberrendite bleibt leer, statt gegen
+    # eine willkuerlich gewaehlte andere Strategie zu rechnen.
+    rows = _lange_reihe(date(2020, 1, 6), 60, 1.005, "T1")
+    build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "index.html").read_text(encoding="utf-8")
+
+    assert "im Vergleichszeitraum" in html
+    assert "Überrendite pp p.a." not in html
