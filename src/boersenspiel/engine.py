@@ -141,6 +141,16 @@ class SimulationResult:
     tax_status: TaxStatus
     last_rebalance_date: date | None
     last_harvest_date: date | None
+    # Hypothetischer Sofortverkauf des GESAMTEN Depots zum Stichtag der letzten
+    # Kurszeile: was vom Depotwert bliebe nach Ordergebühren und Steuer auf die
+    # bislang UNREALISIERTEN Gewinne übrig. Siehe Kommentar an
+    # ``_liquidation_nach_steuer()`` weiter unten für die Berechnung. Rein
+    # zusätzliche Momentaufnahme - ändert nichts an ``tax_status`` (die bleibt
+    # eine Aussage über tatsächlich realisierte Trades) oder am simulierten
+    # Wertverlauf.
+    liquidationswert_nach_steuer: Decimal = Decimal(0)
+    liquidationssteuer: Decimal = Decimal(0)
+    liquidationsgebuehren: Decimal = Decimal(0)
 
 
 @dataclass
@@ -830,6 +840,67 @@ def simulate(
     )
     holdings = {t: positions[t].units for t in tickers}
 
+    # --- Sofortverkauf zum Stichtag der letzten Kurszeile -----------------------
+    #
+    # Was bliebe vom Depotwert, würde JETZT (der letzten Kurszeile) das gesamte
+    # Depot verkauft? ``total_value``/``values`` (aus der letzten Schleifeniteration
+    # oben) sind Bruttowerte - unrealisierte Gewinne stecken noch unversteuert in
+    # jeder Position, ``kumulierte_steuer`` erfasst nur bereits TATSÄCHLICH
+    # realisierte Trades (Rebalancing, Dezember-Harvest). Diese Rechnung spiegelt
+    # denselben Verkaufs-Mechanismus wie ``rebalance_to_targets()``: Gebühr
+    # mindert den realisierten Gewinn (``realized_gain = proceeds - cost_removed -
+    # gebuehr``), Teilfreistellung gilt symmetrisch für Gewinn/Verlust
+    # (``process_realized_gain``), und Instrumente mit Spekulationsfrist (#37,
+    # nur BTC-EUR) laufen über die getrennte Freigrenze statt den
+    # Sparerpauschbetrag/Verlustvortrag zu berühren - beides auf KOPIEN des
+    # Steuerledgers, damit ``tax_status`` unverändert eine Aussage über
+    # tatsächlich realisierte Gewinne bleibt.
+    gehaltene_ticker = [t for t in tickers if positions[t].units > 0]
+    liquidationsgebuehren = gebuehr * len(gehaltene_ticker)
+    liquidationssteuer = Decimal(0)
+    if opt.besteuerung:
+        freibetrag_liq = freibetrag_verbleibend
+        verlust_liq = verlustvortrag
+        spek_verlust_liq = spek_verlustvortrag
+        spek_gewinn_liq = spek_gewinn_jahr
+        for t in gehaltene_ticker:
+            gain_roh = values.get(t, Decimal(0)) - positions[t].cost_total - gebuehr
+            frist = _spekulationsfrist_tage(t)
+            if frist is not None:
+                haltedauer = Decimal(rows[-1].date.toordinal()) - positions[t].avg_kauf_tag_ordinal()
+                if haltedauer > frist:
+                    continue  # Frist abgelaufen -> steuerfrei, § 23 EStG
+                if gain_roh <= 0:
+                    spek_verlust_liq += -gain_roh
+                    continue
+                offset = min(gain_roh, spek_verlust_liq)
+                spek_verlust_liq -= offset
+                rest = gain_roh - offset
+                vorher = spek_gewinn_liq
+                spek_gewinn_liq += rest
+                steuer_vorher = (
+                    vorher * STEUERSATZ if vorher > SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR else Decimal(0)
+                )
+                steuer_nachher = (
+                    spek_gewinn_liq * STEUERSATZ
+                    if spek_gewinn_liq > SPEKULATIONSFRIST_FREIGRENZE_PRO_JAHR
+                    else Decimal(0)
+                )
+                liquidationssteuer += steuer_nachher - steuer_vorher
+                continue
+            gain = gain_roh * (1 - _teilfreistellung(t))
+            if gain <= 0:
+                verlust_liq += -gain
+                continue
+            offset_verlust = min(gain, verlust_liq)
+            verlust_liq -= offset_verlust
+            rest = gain - offset_verlust
+            offset_freibetrag = min(rest, freibetrag_liq)
+            freibetrag_liq -= offset_freibetrag
+            steuerpflichtig = rest - offset_freibetrag
+            liquidationssteuer += steuerpflichtig * STEUERSATZ
+    liquidationswert_nach_steuer = total_value - liquidationsgebuehren - liquidationssteuer
+
     return SimulationResult(
         strategy_name=strategy.name,
         value_history=value_history,
@@ -838,4 +909,7 @@ def simulate(
         tax_status=tax_status,
         last_rebalance_date=last_rebalance_date,
         last_harvest_date=last_harvest_date,
+        liquidationswert_nach_steuer=liquidationswert_nach_steuer,
+        liquidationssteuer=liquidationssteuer,
+        liquidationsgebuehren=liquidationsgebuehren,
     )

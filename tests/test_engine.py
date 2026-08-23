@@ -529,6 +529,116 @@ def test_btc_gewinn_nach_ablauf_der_spekulationsfrist_ist_steuerfrei():
     assert result.tax_status.freibetrag_verbleibend == Decimal("1000")
 
 
+# --- Sofortverkauf zum Stichtag (Liquidationswert nach Steuer) --------------
+
+
+def test_liquidationswert_zieht_steuer_auf_unrealisierten_gewinn_ab():
+    # Einzige Position 4GLD (0% Teilfreistellung), keine Rebalance-Verkaeufe,
+    # keine Ordergebuehr (isoliert die Steuerrechnung) - der komplette Gewinn
+    # bleibt bis zum Schluss unrealisiert und steckt nur in
+    # liquidationswert_nach_steuer, nicht in tax_status.kumulierte_steuer.
+    # Kauf: 100.000 / 100 = 1000 Einheiten, cost_total = 100.000.
+    # Verkaufswert: 1000 * 300 = 300.000 -> Gewinn 200.000.
+    # Nach Sparerpauschbetrag (1000): 199.000 * 26,375% = 52.486,25 Steuer.
+    strategy = Strategy(
+        name="Test-Liquidation-Kapitalertrag",
+        startkapital=Decimal("100000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"4GLD": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(ordergebuehren=False, steueroptimierung=False, fondskosten=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"4GLD": Decimal("100")}),
+        PriceRow(date(2024, 6, 1), {"4GLD": Decimal("300")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.value_history[-1].total_value == Decimal("300000")
+    assert result.tax_status.kumulierte_steuer == Decimal("0")  # nichts realisiert
+    assert result.liquidationsgebuehren == Decimal("0")
+    assert result.liquidationssteuer == Decimal("52486.25")
+    assert result.liquidationswert_nach_steuer == Decimal("247513.75")
+
+
+def test_liquidationswert_zieht_verkaufsgebuehr_je_gehaltenem_instrument_ab():
+    # Zwei gehaltene Instrumente -> zwei Verkaufsgebuehren (ORDERGEBUEHR = 1
+    # EUR je Trade). besteuerung=False isoliert den Gebuehren-Effekt: keine
+    # Steuer, nur die Gebuehr mindert den Nettowert.
+    strategy = Strategy(
+        name="Test-Liquidation-Gebuehr",
+        startkapital=Decimal("1000"),
+        toepfe=[
+            Topf(name="TopfX", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"4GLD": Decimal("1")}),
+            Topf(name="TopfY", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"EUNA": Decimal("1")}),
+        ],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("0.5"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(besteuerung=False, steueroptimierung=False, fondskosten=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"4GLD": Decimal("100"), "EUNA": Decimal("100")}),
+        PriceRow(date(2024, 6, 1), {"4GLD": Decimal("150"), "EUNA": Decimal("120")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.liquidationssteuer == Decimal("0")
+    assert result.liquidationsgebuehren == Decimal("2")  # ORDERGEBUEHR * 2 Instrumente
+    assert result.liquidationswert_nach_steuer == result.value_history[-1].total_value - Decimal("2")
+
+
+def test_liquidationswert_beruecksichtigt_spekulationsfrist_von_btc():
+    # BTC-EUR innerhalb der Spekulationsfrist (#37) mit einem Gewinn deutlich
+    # ueber der Freigrenze (1000 EUR) - der GESAMTE Gewinn wird steuerpflichtig
+    # (Kippgrenze, keine Teilfreistellung fuer BTC), landet aber im getrennten
+    # Freigrenzen-Topf statt den Sparerpauschbetrag zu verbrauchen.
+    # Kauf: 1000/100 = 10 Einheiten, cost_total = 1000. Verkauf: 10*300 = 3000
+    # -> Gewinn 2000, ueber der 1000er-Freigrenze -> 2000 * 26,375% = 527,50.
+    strategy = Strategy(
+        name="Test-Liquidation-BTC-Frist",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"BTC-EUR": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(ordergebuehren=False, steueroptimierung=False, fondskosten=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"BTC-EUR": Decimal("100")}),
+        PriceRow(date(2024, 6, 1), {"BTC-EUR": Decimal("300")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.liquidationssteuer == Decimal("527.50")
+    assert result.tax_status.freibetrag_verbleibend == Decimal("1000")  # unberuehrt
+    assert result.liquidationswert_nach_steuer == Decimal("3000") - Decimal("527.50")
+
+
+def test_liquidationswert_ohne_besteuerung_zieht_nur_gebuehren_ab():
+    strategy = Strategy(
+        name="Test-Liquidation-ohne-Besteuerung",
+        startkapital=Decimal("100000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"4GLD": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(besteuerung=False, steueroptimierung=False, fondskosten=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"4GLD": Decimal("100")}),
+        PriceRow(date(2024, 6, 1), {"4GLD": Decimal("300")}),
+    ]
+    result = simulate(rows, strategy)
+
+    assert result.liquidationssteuer == Decimal("0")
+    # ORDERGEBUEHR faellt unabhaengig von opt.besteuerung an (reine
+    # Steuerabschaltung, keine Gebuehrenbefreiung).
+    assert result.liquidationsgebuehren == Decimal("1")
+    assert result.liquidationswert_nach_steuer == result.value_history[-1].total_value - Decimal("1")
+
+
 def test_missing_price_in_later_row_values_with_last_known_price():
     # T2 fehlt in der mittleren Zeile - die Position darf nicht aus der Summe
     # herausfallen, sondern wird mit dem letzten bekannten Kurs bewertet.
