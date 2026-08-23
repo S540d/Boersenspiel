@@ -52,7 +52,7 @@ class Beitrag:
 
 @dataclass(frozen=True)
 class Optimierungen:
-    """Vier strategieübergreifende Simulationsmechanismen, die ``engine.simulate()``
+    """Fünf strategieübergreifende Simulationsmechanismen, die ``engine.simulate()``
     unabhängig von der jeweiligen Gewichtungsregel anwendet. Einzeln ein-/ausschaltbar,
     damit ihr isolierter Renditebeitrag messbar wird (siehe #17), statt nur geglaubt zu
     werden. Defaults erhalten das bisherige Verhalten exakt - eine Strategie ohne
@@ -63,6 +63,7 @@ class Optimierungen:
     rebalancing: bool = True  # periodische Rückführung auf die Zielgewichte
     ordergebuehren: bool = True  # False -> gebührenfreie Referenzrechnung
     besteuerung: bool = True  # False -> realisierte Gewinne fließen nicht in Freibetrag/Steuer-Tracking
+    fondskosten: bool = True  # False -> laufende Fondskosten (TER) bleiben unberücksichtigt (#76)
 
 
 @dataclass(frozen=True)
@@ -100,7 +101,7 @@ class Strategy:
     # Optional: Kurzbeschreibung der Strategie/des Szenarios fürs Dashboard (#26).
     # Leer bedeutet: keine Beschreibung wird angezeigt.
     beschreibung: str = ""
-    # Welche der vier Mechanismen aus ``Optimierungen`` für diese Strategie standardmäßig
+    # Welche der fünf Mechanismen aus ``Optimierungen`` für diese Strategie standardmäßig
     # greifen. ``engine.simulate()`` übernimmt diese, sofern ihr nicht explizit eine
     # andere ``Optimierungen``-Instanz übergeben wird (siehe #17).
     optimierungen: Optimierungen = field(default_factory=Optimierungen)

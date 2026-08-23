@@ -103,7 +103,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Ausschüttungsrendite %</th><th>Spekulationsfrist</th></tr></thead>
+        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Ausschüttungsrendite %</th><th>TER % p.a.</th><th>Spekulationsfrist</th></tr></thead>
         <tbody>
         {% for i in instrumente %}
           <tr>
@@ -115,6 +115,7 @@
             <td>{{ i.thesaurierend }}</td>
             <td>{{ i.ausschuettend }}</td>
             <td>{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (Platzhalter){% endif %}</td>
+            <td>{{ i.ter }}</td>
             <td>{{ i.spekulationsfrist }}</td>
           </tr>
         {% endfor %}
@@ -143,7 +144,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Ausschüttungsrendite %</th><th>Spekulationsfrist</th></tr></thead>
+        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Ausschüttungsrendite %</th><th>TER % p.a.</th><th>Spekulationsfrist</th></tr></thead>
         <tbody>
         {% for i in nicht_allokierte_instrumente %}
           <tr>
@@ -155,6 +156,7 @@
             <td>{{ i.thesaurierend }}</td>
             <td>{{ i.ausschuettend }}</td>
             <td>{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (Platzhalter){% endif %}</td>
+            <td>{{ i.ter }}</td>
             <td>{{ i.spekulationsfrist }}</td>
           </tr>
         {% endfor %}
@@ -169,7 +171,21 @@
       <div class="stat-tile"><div class="label">Kostenbasis</div><div class="value">Durchschnitt</div></div>
       <div class="stat-tile"><div class="label">Spread / Slippage</div><div class="value">nicht modelliert</div></div>
       <div class="stat-tile"><div class="label">Ausschüttungsrendite</div><div class="value">je Instrument</div></div>
+      <div class="stat-tile"><div class="label">Laufende Fondskosten (TER)</div><div class="value">je Instrument</div></div>
     </div>
+    <p class="hint">
+      Die <strong>laufenden Fondskosten (TER)</strong> jedes Fonds werden
+      wöchentlich anteilig (TER ÷ 52) vom Bestand abgezogen &ndash; als
+      Reduktion der Anteile, nicht als Barabfluss: der Anleger zahlt die TER
+      nicht aus der Tasche, sein Anteil am Fondsvermögen wird kleiner. Die
+      Kostenbasis bleibt deshalb unverändert. Einzelaktien, physisches Gold und
+      BTC tragen keine (Spalte „TER % p.a." oben). Ohne diese Modellierung wäre
+      der Verzicht nicht neutral gewesen, sondern gerichtet: die Sätze liegen um
+      eine Größenordnung auseinander, der Benchmark ist das günstigste
+      Instrument im Feld, und der Einzelaktien-Satellit trägt gar keine &ndash;
+      begünstigt worden wäre also ausgerechnet die konzentrierteste Variante
+      (<a href="https://github.com/S540d/Boersenspiel/issues/76">#76</a>).
+    </p>
     <p class="hint">
       Gekauft und verkauft wird zum Wochenschlusskurs, in beliebigen
       Bruchstücken, ohne Geld-Brief-Spanne und ohne Teilausführung. Gebühren des
@@ -351,7 +367,9 @@
       </li>
       <li>Inflation &ndash; alle Beträge sind nominal</li>
       <li>Geld-Brief-Spanne, Slippage, Teilausführungen, Handelsaussetzungen</li>
-      <li>Depot-, Ausgabeaufschlags- und Fondskosten (TER) &ndash; nur die Ordergebühr</li>
+      <li>Depot- und Ausgabeaufschlagskosten &ndash; die laufenden Fondskosten (TER) werden seit
+        <a href="https://github.com/S540d/Boersenspiel/issues/76">#76</a> modelliert (Tabelle oben),
+        Depotgebühren und Ausgabeaufschläge nicht</li>
       <li>Zinsen auf nicht investiertes Kapital</li>
       <li>Kapitalmaßnahmen wie Splits oder Fusionen über den Kursabruf hinaus</li>
       <li>Steuerliche Effekte über das Abgeltungsteuer- und § 23-Regime hinaus</li>

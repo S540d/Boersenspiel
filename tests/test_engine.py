@@ -13,7 +13,7 @@ Barbell-spezifischen Annahmen fest einprogrammiert hat.
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 from decimal import Decimal
 
 from boersenspiel.engine import simulate
@@ -398,7 +398,7 @@ def test_vorabpauschale_verbraucht_freibetrag_ohne_verkauf():
         ziel_topf="TopfX",
         ziel_gewicht=Decimal("1"),
         rebalancing_schwelle_pp=Decimal("100"),
-        optimierungen=Optimierungen(steueroptimierung=False),
+        optimierungen=Optimierungen(steueroptimierung=False, fondskosten=False),
     )
     rows = [
         PriceRow(date(2024, 1, 1), {"EUNL": Decimal("100")}),
@@ -765,7 +765,10 @@ def test_ausschuettende_instrumente_nutzen_ihre_eigene_rendite():
             ziel_topf="TopfX",
             ziel_gewicht=Decimal("1"),
             rebalancing_schwelle_pp=Decimal("100"),
-            optimierungen=Optimierungen(steueroptimierung=False),
+            # fondskosten=False: dieser Test prueft ausschliesslich die
+            # Ausschuettung, die TER der beiden ETFs wuerde den Endwert sonst
+            # zusaetzlich mindern (siehe eigene TER-Tests unten).
+            optimierungen=Optimierungen(steueroptimierung=False, fondskosten=False),
         )
         rows = [
             PriceRow(date(2024, 1, 1), {ticker: Decimal("100")}),
@@ -803,3 +806,71 @@ def test_ohne_hinterlegte_rendite_gilt_weiterhin_der_platzhalter():
         assert simulate(rows, strategy).value_history[-1].total_value == Decimal("1023.975")
     finally:
         del INSTRUMENTS["XTEST"]
+
+
+# --- Laufende Fondskosten / TER (#76) ---------------------------------------
+
+
+def _ter_strategie(ticker: str, fondskosten: bool) -> Strategy:
+    return Strategy(
+        name=f"Test-TER-{ticker}-{fondskosten}",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={ticker: Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+        optimierungen=Optimierungen(
+            steueroptimierung=False, besteuerung=False, fondskosten=fondskosten
+        ),
+    )
+
+
+def _ter_rows(ticker: str, wochen: int) -> list[PriceRow]:
+    return [
+        PriceRow(date(2024, 1, 1) + timedelta(weeks=i), {ticker: Decimal("100")})
+        for i in range(wochen)
+    ]
+
+
+def test_ter_mindert_den_bestand_woechentlich_pro_rata():
+    # EXXY: TER 0,46% p.a., thesaurierend (schuettet also nichts aus, was den
+    # Endwert ueberlagern wuerde). Bei konstantem Kurs ueber 53 Zeilen
+    # (= 52 Wochen Haltedauer, die erste Zeile ist der Kauftag) muss der
+    # Bestand um (1 - 0,0046/52)^52 schrumpfen - von Hand nachgerechnet.
+    rows = _ter_rows("EXXY", 53)
+    result = simulate(rows, _ter_strategie("EXXY", fondskosten=True))
+
+    einsatz = Decimal("999")  # 1000 minus 1 EUR Ordergebuehr
+    erwartet = einsatz * (1 - Decimal("0.0046") / Decimal(52)) ** 52
+    ist = result.value_history[-1].total_value
+    assert abs(ist - erwartet) < Decimal("0.0001")
+    # Groessenordnung: rund 0,46% weniger als ohne Kosten.
+    assert Decimal("0.0044") < (einsatz - ist) / einsatz < Decimal("0.0047")
+
+
+def test_ter_schalter_aus_reproduziert_das_verhalten_ohne_fondskosten():
+    rows = _ter_rows("EXXY", 53)
+    ohne = simulate(rows, _ter_strategie("EXXY", fondskosten=False))
+    assert ohne.value_history[-1].total_value == Decimal("999")
+
+
+def test_instrumente_ohne_ter_bleiben_unberuehrt():
+    # Einzelaktien und physisches Gold tragen keine Fondsgebuehr - fuer sie
+    # darf der Schalter nichts aendern.
+    for ticker in ("TSLA", "4GLD", "BTC-EUR"):
+        assert INSTRUMENTS[ticker].ter == Decimal("0"), ticker
+        rows = _ter_rows(ticker, 53)
+        mit = simulate(rows, _ter_strategie(ticker, fondskosten=True))
+        ohne = simulate(rows, _ter_strategie(ticker, fondskosten=False))
+        assert mit.value_history[-1].total_value == ohne.value_history[-1].total_value
+
+
+def test_teure_und_guenstige_fonds_werden_unterschiedlich_belastet():
+    # Der Kern des Befunds aus #76: die Saetze liegen um eine Groessenordnung
+    # auseinander (IBCI 0,09% gegen EXXY 0,46%; beide thesaurierend, damit die
+    # Ausschuettung den Vergleich nicht ueberlagert). Ohne TER waeren beide
+    # gleich - und der guenstige Baustein damit relativ zu schlecht dargestellt.
+    guenstig = simulate(_ter_rows("IBCI", 53), _ter_strategie("IBCI", fondskosten=True))
+    teuer = simulate(_ter_rows("EXXY", 53), _ter_strategie("EXXY", fondskosten=True))
+
+    assert guenstig.value_history[-1].total_value > teuer.value_history[-1].total_value

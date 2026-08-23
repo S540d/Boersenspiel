@@ -42,12 +42,13 @@ _STALE_STATUS = {"carried_forward", "missing"}
 TEMPLATE_DIR = Path(__file__).resolve().parent / "templates"
 DEFAULT_OUTPUT = Path(__file__).resolve().parents[2] / "docs" / "index.html"
 
-# Anzeigenamen der vier Optimierungs-Schalter (siehe strategies.Optimierungen / #17).
+# Anzeigenamen der fuenf Optimierungs-Schalter (siehe strategies.Optimierungen / #17).
 _OPTIMIERUNGS_LABELS: dict[str, str] = {
     "steueroptimierung": "Steueroptimierung (Dezember-Harvest)",
     "rebalancing": "Rebalancing",
     "ordergebuehren": "Ordergebühren",
     "besteuerung": "Besteuerung",
+    "fondskosten": "Laufende Fondskosten (TER)",
 }
 
 
@@ -554,7 +555,7 @@ def _vergleichs_cagr_pct(
 def _optimierungs_effekte(
     strategy: Strategy, rows: list[PriceRow], basis_cagr_pct: float, tage: int
 ) -> list[dict]:
-    """Effekt jedes der vier Optimierungs-Schalter (#17) als Leave-one-out-Differenz
+    """Effekt jedes der fuenf Optimierungs-Schalter (#17) als Leave-one-out-Differenz
     auf CAGR-Basis (F6c, #63): CAGR mit allen Schaltern wie konfiguriert minus CAGR
     mit genau diesem einen Schalter aus. Eine Differenz zweier Gesamtrenditen ist
     hier keine sinnvolle Prozentpunkt-Angabe, sobald sich Basis- und Vergleichslauf
@@ -852,6 +853,9 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 else "–"
             ),
             "dividendenrendite_platzhalter": inst.ausschuettend and inst.dividendenrendite is None,
+            # #76: laufende Fondskosten. "-" fuer Instrumente ohne Fondsmantel
+            # (Einzelaktien, physisches Gold, BTC).
+            "ter": f"{float(inst.ter) * 100:.2f}".replace(".", ",") if inst.ter else "–",
             "spekulationsfrist": (
                 f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
             ),

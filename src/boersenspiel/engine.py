@@ -82,6 +82,11 @@ def _spekulationsfrist_tage(ticker: str) -> int | None:
     return instrument.spekulationsfrist_tage if instrument is not None else None
 
 
+def _ter(ticker: str) -> Decimal:
+    instrument = INSTRUMENTS.get(ticker)
+    return instrument.ter if instrument is not None else Decimal(0)
+
+
 def _ausschuettend(ticker: str) -> bool:
     instrument = INSTRUMENTS.get(ticker)
     return instrument.ausschuettend if instrument is not None else False
@@ -390,6 +395,33 @@ def simulate(
                 continue
             process_realized_gain(dividende, t)
             pending_cash[t] += dividende
+
+    def apply_fondskosten(prices: dict[str, Decimal]) -> None:
+        """Laufende Fondskosten (TER) woechentlich pro rata (#76).
+
+        Real werden die Kosten dem Fondsvermoegen taeglich entnommen und
+        stecken damit bereits im Kurs. Die hier verwendete Kurshistorie ist
+        aber bewusst nur split-, nicht kostenbereinigt aufgebaut (#62), und
+        die Simulation modelliert die Ertragsseite (Ausschuettung,
+        Vorabpauschale) ohnehin separat - die Kostenseite gehoert
+        entsprechend daneben.
+
+        Umsetzung als Reduktion der Stueckzahl statt eines Cash-Abflusses: der
+        Anleger zahlt die TER nicht aus der Tasche, sein Anteil am
+        Fondsvermoegen wird kleiner. Die Kostenbasis bleibt deshalb bewusst
+        unveraendert - die TER ist keine steuerlich abzugsfaehige
+        Werbungskostenposition, sie mindert schlicht den Wert. Der Abzug
+        erfolgt nur, wo in dieser Zeile ein Kurs vorliegt, damit er nicht auf
+        eine Position wirkt, die es noch gar nicht gibt.
+        """
+        for t in tickers:
+            ter = _ter(t)
+            if ter <= 0 or t not in prices:
+                continue
+            pos = positions[t]
+            if pos.units <= 0:
+                continue
+            pos.units -= pos.units * ter / Decimal(52)
 
     def rebalance_to_targets(
         prices: dict[str, Decimal], trade_date: date, reason: str, weights: dict[str, Decimal]
@@ -743,6 +775,13 @@ def simulate(
                             if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
                                 last_rebalance_date = row.date
                             break
+
+        # Laufende Fondskosten fuer diese Woche (#76) - vor Dividende/Vorabpauschale/
+        # Harvest, damit alle nachfolgenden Schritte auf dem bereits um die Kosten
+        # gekuerzten Bestand rechnen. In der ersten Zeile (Initialkauf am
+        # Zeilendatum) faellt noch keine Haltedauer an.
+        if opt.fondskosten and i > 0:
+            apply_fondskosten(prices)
 
         if row.date in harvest_dates:
             apply_dividende()

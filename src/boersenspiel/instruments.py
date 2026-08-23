@@ -58,6 +58,18 @@ class Instrument:
     # Jahres. Das ist die verbleibende Vereinfachung - aber eine ungerichtete,
     # anders als ein einziger Satz für alle.
     dividendenrendite: Decimal | None = None
+    # Laufende Fondskosten (Total Expense Ratio) p.a. (#76). 0 fuer Einzelaktien,
+    # physisches Gold und BTC - dort faellt keine Fondsgebuehr an.
+    #
+    # Der Verzicht auf die TER war kein neutraler Verzicht, sondern eine gerichtete
+    # Verzerrung: die Saetze liegen um eine Groessenordnung auseinander (IUSA 0,07%
+    # gegen IQQ6 0,59%), der Benchmark ist das mit Abstand guenstigste Instrument im
+    # Feld, und der Einzelaktien-Satellit traegt gar keine - die Modellierung
+    # beguenstigte also ausgerechnet die konzentrierteste Variante und liess
+    # Themen-/Nischenprodukte guenstiger erscheinen, als sie sind.
+    #
+    # Werte gerundet aus den jeweiligen Anbieter-Fact-Sheets.
+    ter: Decimal = Decimal("0")
 
 
 # Teilfreistellungsquote für Aktienfonds-ETFs (>51% Aktienquote) nach § 20 InvStG.
@@ -72,6 +84,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00B4L5Y983",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0020"),
         ),
         Instrument(
             "EUNA",
@@ -79,6 +92,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00BDBRDM35",
             # Rentenfonds - keine Teilfreistellung (nur Aktienfonds).
             thesaurierend=True,
+            ter=Decimal("0.0010"),
         ),
         Instrument("4GLD", "Xetra-Gold", "DE000A0S9GB0"),
         Instrument(
@@ -87,6 +101,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "LU1829221024",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0023"),
         ),
         Instrument(
             "SEMI",
@@ -94,6 +109,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE000I8KRLL9",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0035"),
         ),
         Instrument(
             "EIMI",
@@ -101,6 +117,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00BKM4GZ66",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             thesaurierend=True,
+            ter=Decimal("0.0018"),
         ),
         Instrument("BTC-EUR", "Bitcoin", None, spekulationsfrist_tage=365),
         # Einzelaktien-Satellit (volatile Einzelwerte, siehe strategies.py
@@ -169,6 +186,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             # ueber dieses eine Instrument hinaus: IUSA ist die Vergleichslinie,
             # an der alle Strategien gemessen werden.
             dividendenrendite=Decimal("0.013"),
+            ter=Decimal("0.0007"),
         ),
         Instrument(
             "XEON",
@@ -176,6 +194,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             "LU0290358497",
             # Kein Aktienfonds -> keine Teilfreistellung.
             thesaurierend=True,
+            ter=Decimal("0.0010"),
         ),
         Instrument(
             "EXSA",
@@ -184,6 +203,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             ausschuettend=True,
             dividendenrendite=Decimal("0.030"),
+            ter=Decimal("0.0020"),
         ),
         Instrument(
             "IBCL",
@@ -193,6 +213,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             # Lange Euro-Staatsanleihen: der Kupon IST hier praktisch der
             # gesamte laufende Ertrag (#74).
             dividendenrendite=Decimal("0.026"),
+            ter=Decimal("0.0020"),
         ),
         Instrument(
             "IBCI",
@@ -201,6 +222,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             # Acc-Anteilsklasse (WKN A0HGV1), nicht Dist - siehe Verifikations-
             # Hinweis oben.
             thesaurierend=True,
+            ter=Decimal("0.0009"),
         ),
         Instrument(
             "IQQ6",
@@ -213,6 +235,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             ausschuettend=True,
             # REITs schuetten den Grossteil ihrer Ertraege aus (#74).
             dividendenrendite=Decimal("0.035"),
+            ter=Decimal("0.0059"),
         ),
         Instrument(
             "EXXY",
@@ -221,6 +244,7 @@ INSTRUMENTS: dict[str, Instrument] = {
             # Rohstofffonds -> keine Teilfreistellung. Acc-Anteilsklasse, nicht
             # Dist - siehe Verifikations-Hinweis oben.
             thesaurierend=True,
+            ter=Decimal("0.0046"),
         ),
     ]
 }
