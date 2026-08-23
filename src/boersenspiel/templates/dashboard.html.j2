@@ -49,7 +49,7 @@
 {% endif %}
   <section class="strategy" id="uebersicht">
     <h2 data-i18n-en="Return comparison">Rendite im Vergleich</h2>
-    <p class="hint" data-i18n-en="Annualized return (CAGR) of the main strategies and scenarios{% if vergleich_verfuegbar %}, over the common comparison period from {{ vergleich_beginn }} so the bars are actually comparable{% endif %}. Gross, before tax. The market-sayings scenarios have their own chart below; every run, including volatility, max drawdown, Sharpe and Sortino, is in the full table.">
+    <p class="hint" data-i18n-en="Annualized return (CAGR) of the main strategies and scenarios{% if vergleich_verfuegbar %}, over the common comparison period from {{ vergleich_beginn }} so the bars are actually comparable{% endif %}. Gross, before tax. The market-sayings scenarios have their own chart below; every run, including volatility, max drawdown, Sharpe and Sortino, is in the full table."data-erweitert="Annualisierte Rendite (CAGR) der wichtigsten Strategien und Szenarien, über den verlängerten Auswertezeitraum ab {{ erweitert_beginn }}. Brutto, vor Steuer. Die Börsenweisheiten-Szenarien haben weiter unten einen eigenen Chart; alle Läufe samt Volatilität, Max Drawdown, Sharpe und Sortino stehen in der vollständigen Tabelle." data-i18n-en-erweitert="Annualized return (CAGR) of the main strategies and scenarios, over the extended evaluation period from {{ erweitert_beginn }}. Gross, before tax. The market-sayings scenarios have their own chart below; every run, including volatility, max drawdown, Sharpe and Sortino, is in the full table.">
       Annualisierte Rendite (CAGR) der wichtigsten Strategien und
       Szenarien{% if vergleich_verfuegbar %}, über den gemeinsamen
       Vergleichszeitraum ab {{ vergleich_beginn }}, damit die Balken überhaupt
@@ -58,6 +58,14 @@
       Läufe samt Volatilität, Max Drawdown, Sharpe und Sortino stehen in der
       vollständigen Tabelle.
     </p>
+{% if erweitert_verfuegbar %}
+    <p class="hint" data-erweitert-nur hidden data-i18n-en="Extended evaluation period is on: all figures run over {{ erweitert_beginn }} to {{ erweitert_ende }} and rest on the assumption about missing prices described in the premises. Switch it off in the three-dot menu.">
+      <strong>Verlängerter Auswertezeitraum ist an:</strong> Alle Zahlen laufen
+      über {{ erweitert_beginn }} bis {{ erweitert_ende }} und beruhen auf der
+      in den Prämissen beschriebenen Annahme zu fehlenden Kursen. Ausschalten
+      im Drei-Punkt-Menü.
+    </p>
+{% endif %}
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <p class="detail-link"><a href="vergleich.html" data-i18n-en="All metrics compared &rarr;">Alle Kennzahlen im Vergleich &rarr;</a></p>
   </section>
@@ -168,12 +176,45 @@
         },
       },
     });
-    chartRefreshers.push(function () {
-      summaryChart.options.plugins.title.text = {% if vergleich_verfuegbar %}
+{% if erweitert_verfuegbar %}
+    // #91: dieselben Balken aus dem verlaengerten Auswertezeitraum.
+    const summaryEigen = summaryChart.data.datasets[0].data.slice();
+    const summaryErweitert = [
+      {% for s in chart_summary %}
+      {{ (s.erweitert.cagr_pct if s.erweitert else (s.vergleich_cagr_pct if vergleich_verfuegbar else s.cagr_pct)) | tojson }},
+      {% endfor %}
+    ];
+    const summaryLabelsEigen = summaryChart.data.labels.slice();
+    window.__erweitertRefresh.push(function (erweitert) {
+      // Die Balken sind nach der CAGR des Standard-Zeitraums sortiert - im
+      // verlaengerten Zeitraum gilt eine andere Reihenfolge.
+      let labels = summaryLabelsEigen;
+      let daten = summaryEigen;
+      if (erweitert) {
+        const paare = summaryLabelsEigen
+          .map((label, i) => ({ label, wert: summaryErweitert[i] }))
+          .sort((a, b) => b.wert - a.wert);
+        labels = paare.map((pk) => pk.label);
+        daten = paare.map((pk) => pk.wert);
+      }
+      summaryChart.data.labels = labels;
+      summaryChart.data.datasets[0].data = daten;
+      summaryChart.data.datasets[0].backgroundColor = daten.map((v) => v >= 0 ? colors.series3 : colors.series2);
+      summaryChart.options.plugins.title.text = erweitert
+        ? T('Annualisierte Rendite (CAGR, % p.a.) im verlängerten Auswertezeitraum ab {{ erweitert_beginn }}', 'Annualized return (CAGR, % p.a.) over the extended evaluation period from {{ erweitert_beginn }}')
+        : summaryTitelEigen();
+      summaryChart.update();
+    });
+{% endif %}
+    function summaryTitelEigen() {
+      return {% if vergleich_verfuegbar %}
         T('Annualisierte Rendite (CAGR, % p.a.) im gemeinsamen Vergleichszeitraum ab {{ vergleich_beginn }}', 'Annualized return (CAGR, % p.a.) over the common comparison period starting {{ vergleich_beginn }}')
       {% else %}
         T('Annualisierte Rendite (CAGR, % p.a.)', 'Annualized return (CAGR, % p.a.)')
       {% endif %};
+    }
+    chartRefreshers.push(function () {
+      summaryChart.options.plugins.title.text = summaryTitelEigen();
       summaryChart.update();
     });
     chartRefreshers[chartRefreshers.length - 1]();
@@ -265,6 +306,27 @@
     gruppenChart{{ loop.index }}.__baseDatasetCount = {{ gruppe.mitglieder|length }};
     gruppenChart{{ loop.index }}.__benchmarks = {{ gruppe.benchmarks_json | safe }};
     benchmarkCharts.push(gruppenChart{{ loop.index }});
+    // #91: dieser Chart hat keinen Zeitraum-Umschalter - der Schalter im
+    // Drei-Punkt-Menue tauscht deshalb Reihen, Skala und Benchmark direkt aus.
+    {
+      const eigen = {
+        labels: gruppenChart{{ loop.index }}.data.labels,
+        reihen: gruppenChart{{ loop.index }}.data.datasets.map((d) => d.data),
+        chart_max: {{ gruppe.chart_max }},
+        benchmarks: gruppenChart{{ loop.index }}.__benchmarks,
+      };
+      const erweitertDaten = {{ gruppe.erweitert_json | safe }};
+      if (erweitertDaten) {
+        window.__erweitertRefresh.push(function (erweitert) {
+          const q = erweitert ? erweitertDaten : eigen;
+          gruppenChart{{ loop.index }}.data.labels = q.labels;
+          q.reihen.forEach((reihe, i) => { gruppenChart{{ loop.index }}.data.datasets[i].data = reihe; });
+          gruppenChart{{ loop.index }}.options.scales.y.max = q.chart_max * 1.05;
+          gruppenChart{{ loop.index }}.__benchmarks = q.benchmarks;
+          applyBenchmarkDataset(gruppenChart{{ loop.index }});
+        });
+      }
+    }
     chartRefreshers.push(function () {
       gruppenChart{{ loop.index }}.options.plugins.title.text = T('Wertverlauf im Vergleich', 'Value history compared');
       gruppenChart{{ loop.index }}.update();
@@ -304,6 +366,12 @@
     });
     apply('alle');
     chartRefreshers.push(setRenditeText);
+    // #91: der Schalter im Drei-Punkt-Menue waehlt den bereits vorberechneten
+    // "Erweitert"-Preset (#80), wo es ihn gibt - Charts ohne zusaetzliche
+    // Historie bleiben auf "Gesamte Historie".
+    window.__erweitertRefresh.push(function (erweitert) {
+      apply(erweitert && byId['erweitert'] ? 'erweitert' : 'alle');
+    });
   }
 
   {% for s in strategies %}

@@ -30,6 +30,9 @@ from boersenspiel.dashboard import (
     _f,
     _GELDMARKT_TICKER,
     _jahre_zurueck,
+    _erweiterte_kennzahlen,
+    _erweiterte_rows,
+    _ERSATZBOND_TICKER,
     _mit_ersatzbond,
     _VERGLEICH_MIN_WOCHEN,
     _vergleichs_kennzahlen,
@@ -1554,3 +1557,105 @@ def test_startseite_verweist_fuers_kombinationsverfahren_auf_die_praemissen(tmp_
 def test_praemissen_ohne_zusammengesetzte_strategie_zeigen_keinen_kombinationsabschnitt(tmp_path: Path):
     build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     assert 'id="kombination"' not in _seite(tmp_path, "praemissen")
+
+
+# --- #91: verlaengerter Auswertezeitraum ------------------------------------
+
+
+def _rows_mit_ersatzbond(wochen: int = 120, ab_woche_t1: int = 60) -> list[PriceRow]:
+    """Der Ersatzbond hat von Anfang an Kurse, das Zielinstrument der Strategie
+    erst ab ``ab_woche_t1`` - genau die Konstellation, für die der verlängerte
+    Zeitraum überhaupt gedacht ist."""
+    start = date(2010, 1, 4)
+    rows = []
+    for i in range(wochen):
+        preise = {_ERSATZBOND_TICKER: Decimal("100") + Decimal(i) / 10}
+        if i >= ab_woche_t1:
+            preise["T1"] = Decimal("100") + Decimal(i)
+        rows.append(PriceRow(start + timedelta(weeks=i), preise))
+    return rows
+
+
+def test_erweiterte_rows_beginnen_beim_ersten_kurs_des_ersatzbonds():
+    start = date(2010, 1, 4)
+    rows = [
+        PriceRow(start, {"T1": Decimal("100")}),
+        PriceRow(start + timedelta(weeks=1), {"T1": Decimal("101")}),
+        PriceRow(start + timedelta(weeks=2), {"T1": Decimal("102"), _ERSATZBOND_TICKER: Decimal("100")}),
+    ]
+    erweitert = _erweiterte_rows(rows)
+
+    assert [r.date for r in erweitert] == [start + timedelta(weeks=2)]
+
+
+def test_erweiterte_kennzahlen_decken_mehr_historie_ab_als_der_eigene_zeitraum():
+    rows = _rows_mit_ersatzbond()
+    strategie = ZWEI_STRATEGIEN[0]
+    eigene_rows = _real_investierbarer_zeitraum(rows, strategie)
+    kennzahlen = _erweiterte_kennzahlen(strategie, rows)
+
+    assert kennzahlen is not None
+    assert kennzahlen["sim_beginn"] == rows[0].date.isoformat()
+    assert kennzahlen["sim_beginn"] < eigene_rows[0].date.isoformat()
+    # Anderer Zeitraum, andere Zahl - sonst waere der Schalter wirkungslos.
+    eigenes_ergebnis = simulate(eigene_rows, strategie)
+    eigene_rendite_pct = float(
+        (eigenes_ergebnis.value_history[-1].total_value - strategie.startkapital)
+        / strategie.startkapital
+        * 100
+    )
+    eigene_cagr = _cagr_pct(
+        eigene_rendite_pct, (eigene_rows[-1].date - eigene_rows[0].date).days
+    )
+    assert abs(kennzahlen["cagr_pct"] - eigene_cagr) > 0.01
+
+
+def test_erweiterte_kennzahlen_bei_zu_kurzer_historie_entfallen():
+    rows = _rows_mit_ersatzbond(wochen=_VERGLEICH_MIN_WOCHEN - 1, ab_woche_t1=2)
+
+    assert _erweiterte_kennzahlen(ZWEI_STRATEGIEN[0], rows) is None
+
+
+def test_schalter_fuer_verlaengerten_zeitraum_erscheint_und_liefert_zweitwerte(tmp_path: Path):
+    rows = _rows_mit_ersatzbond()
+    build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    index = (tmp_path / "index.html").read_text(encoding="utf-8")
+
+    # Schalter im Drei-Punkt-Menue jeder Seite ...
+    for html in (index, _seite(tmp_path, "vergleich"), _detail_html(tmp_path, "a-verdoppler")):
+        menue = html.split('<details class="menu">', 1)[1].split("</details>", 1)[0]
+        assert "data-erweitert-btn" in menue
+        # ... mit dem im Issue verlangten Verweis auf den Hinweis zu fehlenden Kursen.
+        assert 'href="praemissen.html#erweiterter-zeitraum"' in menue
+
+    # Zweitwerte stehen als data-Attribut in der Tabelle, werden also im Browser
+    # nur umgeschaltet statt neu gerechnet.
+    assert "data-erweitert=" in _summary_tabelle(tmp_path)
+    # Und der Hinweis steht tatsaechlich auf der Praemissen-Seite.
+    assert 'id="erweiterter-zeitraum"' in _seite(tmp_path, "praemissen")
+
+
+def test_verlaengerter_zeitraum_wird_nicht_persistiert(tmp_path: Path):
+    """#91: nach einem Neuladen soll der Schalter wieder aus sein - es darf also
+    nichts davon in den localStorage wandern (anders als bei der Sprache)."""
+    build_dashboard(_rows_mit_ersatzbond(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    skript = (tmp_path / "index.html").read_text(encoding="utf-8")
+    skript = skript.split("var erweitert = false;", 1)[1].split("</script>", 1)[0]
+
+    assert "localStorage" in skript  # die Sprache wird weiterhin gemerkt ...
+    assert "erweitert" not in skript.split("localStorage.setItem(", 1)[1].split(")", 1)[0]
+
+
+def test_ohne_zusaetzliche_historie_kein_schalter(tmp_path: Path):
+    """Bringt der verlängerte Zeitraum nichts (kein Ersatzbond in der Historie),
+    erscheint der Schalter gar nicht erst."""
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    # Der Schalter selbst wird nicht gerendert (die Mechanik in base.html.j2
+    # steht auf jeder Seite, findet dann aber schlicht keinen Button).
+    menue = html.split('<details class="menu">', 1)[1].split("</details>", 1)[0]
+    assert "data-erweitert-btn" not in menue
+    # In den Datenzeilen steht kein Zweitwert (die Spaltenkoepfe tragen ihre
+    # Zweitbeschriftung dagegen immer - ohne Schalter greift sie nie).
+    assert "data-erweitert=" not in _summary_tabelle(tmp_path).split("<tbody>", 1)[1]

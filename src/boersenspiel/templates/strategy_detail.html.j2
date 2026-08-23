@@ -7,20 +7,28 @@
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
     {% if s.beschreibung %}<p class="hint" data-i18n-en="{{ s.beschreibung_en }}">{{ s.beschreibung }}</p>{% endif %}
+{% if erweitert_verfuegbar %}
+    <p class="hint" data-erweitert-nur hidden data-i18n-en="Extended evaluation period is on: the figures on this page run over {{ erweitert_beginn }} to {{ erweitert_ende }} and rest on the assumption about missing prices described in the premises. Switch it off in the three-dot menu.">
+      <strong>Verlängerter Auswertezeitraum ist an:</strong> Die Zahlen auf
+      dieser Seite laufen über {{ erweitert_beginn }} bis {{ erweitert_ende }}
+      und beruhen auf der in den Prämissen beschriebenen Annahme zu fehlenden
+      Kursen. Ausschalten im Drei-Punkt-Menü.
+    </p>
+{% endif %}
     <div class="stat-row">
-      <div class="stat-tile"><div class="label" data-i18n-en="Total value">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Total value">Gesamtwert</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.total_value }} €"{% endif %}>{{ s.total_value }} &euro;</div></div>
       <div class="stat-tile"><div class="label" data-i18n-en="Starting capital">Startkapital</div><div class="value">{{ s.startkapital }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Total trades">Trades gesamt</div><div class="value">{{ s.trade_count }}</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Last rebalance">Letztes Rebalancing</div><div class="value">{{ s.last_rebalance_date }}</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Last Dec. harvest">Letzter Dez.-Harvest</div><div class="value">{{ s.last_harvest_date }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Total trades">Trades gesamt</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.trade_count }}"{% endif %}>{{ s.trade_count }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Last rebalance">Letztes Rebalancing</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.last_rebalance_date }}"{% endif %}>{{ s.last_rebalance_date }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Last Dec. harvest">Letzter Dez.-Harvest</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.last_harvest_date }}"{% endif %}>{{ s.last_harvest_date }}</div></div>
     </div>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label" data-i18n-en="Gross return % (CAGR p.a.)">Bruttorendite % (CAGR p.a.)</div><div class="value">{{ s.cagr_label }}</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Estimated net return % (CAGR p.a.)">Geschätzte Nettorendite % (CAGR p.a.)</div><div class="value">{{ s.netto_cagr_label }}</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Allowance used ({{ s.tax.year }})">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value">{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Allowance remaining">Freibetrag verbleibend</div><div class="value">{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Loss carryforward">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Cumulative tax (informational only)">Kumulierte Steuer (nur nachrichtlich)</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Gross return % (CAGR p.a.)">Bruttorendite % (CAGR p.a.)</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.cagr_label }}"{% endif %}>{{ s.cagr_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Estimated net return % (CAGR p.a.)">Geschätzte Nettorendite % (CAGR p.a.)</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.netto_cagr_label }}"{% endif %}>{{ s.netto_cagr_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Allowance used ({{ s.tax.year }})">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.tax.freibetrag_verbraucht }} €"{% endif %}>{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Allowance remaining">Freibetrag verbleibend</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.tax.freibetrag_verbleibend }} €"{% endif %}>{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Loss carryforward">Verlustvortrag</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.tax.verlustvortrag }} €"{% endif %}>{{ s.tax.verlustvortrag }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Cumulative tax (informational only)">Kumulierte Steuer (nur nachrichtlich)</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.tax.kumulierte_steuer }} €"{% endif %}>{{ s.tax.kumulierte_steuer }} &euro;</div></div>
     </div>
     <p class="hint" data-i18n-en="All return and value figures on this page are gross values (before tax) - the cumulative tax is tracked for information but is never subtracted from the simulated portfolio value. The &quot;estimated net return&quot; above subtracts the cumulative tax once from the final value to give a rough order of magnitude; in reality taxes are due at different points throughout the year, not as a single deduction at the end (#63, F6a).">
       Alle Rendite- und Wertangaben auf dieser Seite sind
@@ -32,10 +40,10 @@
       nicht als einmaliger Abzug am Ende (#63, F6a).
     </p>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label" data-i18n-en="Value after tax on immediate sale">Wert nach Steuern beim sofortigen Verkauf<span class="info-tip" tabindex="0" title="Hypothetischer Verkauf des GESAMTEN Depots zum Stichtag der letzten Kurszeile: Bruttoendwert minus Ordergebühren minus Steuer auf die bislang unrealisierten Gewinne jeder noch gehaltenen Position (Sparerpauschbetrag/Verlustvortrag bzw. bei BTC die eigene Spekulationsfrist-Freigrenze werden dabei berücksichtigt)." data-i18n-en-title="Hypothetical sale of the ENTIRE portfolio as of the last price row: gross final value minus order fees minus tax on the unrealized gains of every position still held (the savings allowance/loss carryforward, or BTC's own speculation-period exemption threshold, are taken into account).">i</span></div><div class="value">{{ s.liquidationswert_label }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="of which: tax on unrealized gains">davon Steuer auf unrealisierte Gewinne</div><div class="value">{{ s.liquidationssteuer_label }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="of which: order fees">davon Ordergebühren</div><div class="value">{{ s.liquidationsgebuehren_label }} &euro;</div></div>
-      <div class="stat-tile"><div class="label" data-i18n-en="Return % after full taxation">Rendite % nach vollständiger Versteuerung</div><div class="value">{{ s.liquidations_rendite_pct_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Value after tax on immediate sale">Wert nach Steuern beim sofortigen Verkauf<span class="info-tip" tabindex="0" title="Hypothetischer Verkauf des GESAMTEN Depots zum Stichtag der letzten Kurszeile: Bruttoendwert minus Ordergebühren minus Steuer auf die bislang unrealisierten Gewinne jeder noch gehaltenen Position (Sparerpauschbetrag/Verlustvortrag bzw. bei BTC die eigene Spekulationsfrist-Freigrenze werden dabei berücksichtigt)." data-i18n-en-title="Hypothetical sale of the ENTIRE portfolio as of the last price row: gross final value minus order fees minus tax on the unrealized gains of every position still held (the savings allowance/loss carryforward, or BTC's own speculation-period exemption threshold, are taken into account).">i</span></div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.liquidationswert_label }} €"{% endif %}>{{ s.liquidationswert_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="of which: tax on unrealized gains">davon Steuer auf unrealisierte Gewinne</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.liquidationssteuer_label }} €"{% endif %}>{{ s.liquidationssteuer_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="of which: order fees">davon Ordergebühren</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.liquidationsgebuehren_label }} €"{% endif %}>{{ s.liquidationsgebuehren_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Return % after full taxation">Rendite % nach vollständiger Versteuerung</div><div class="value"{% if s.erweitert %} data-erweitert="{{ s.erweitert.liquidations_rendite_pct_label }}"{% endif %}>{{ s.liquidations_rendite_pct_label }}</div></div>
     </div>
     <p class="hint" data-i18n-en="The difference to the &quot;estimated net return&quot; above: that one only subtracts the tax already actually realized (from rebalancing and December-harvest sales) from the final value. &quot;Value after tax on immediate sale&quot; goes a step further and additionally accounts for the tax that would become due on the still unrealized gains of the currently held positions if the entire portfolio were sold today - plus the order fees that would incur. That's the more realistic answer to &quot;what actually remains of the capital invested&quot;.">
       Der Unterschied zur "Geschätzten Nettorendite" oben: die zieht nur die
@@ -332,6 +340,11 @@
       btn.addEventListener('click', () => apply(btn.dataset.preset));
     });
     apply('alle');
+    // #91: Schalter im Drei-Punkt-Menue waehlt den "Erweitert"-Preset (#80),
+    // wo es ihn fuer diese Strategie gibt.
+    window.__erweitertRefresh.push(function (erweitert) {
+      apply(erweitert && byId['erweitert'] ? 'erweitert' : 'alle');
+    });
 
     const benchmarkSwitchEl = document.getElementById('benchmark-switch');
     if (benchmarkSwitchEl) {

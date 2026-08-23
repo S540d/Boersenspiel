@@ -503,6 +503,40 @@ inkrementell fortgeschrieben).
   gemeinsame Y-Achsen-Skalierung nur innerhalb der Gruppe), sowie je Strategie
   nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit gemeinsamer
   Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
+  **Verlängerter Auswertezeitraum (#91):** Ein Schalter im Drei-Punkt-Menü
+  (`data-erweitert-btn`) stellt ALLE angezeigten Zahlen auf einen gemeinsamen,
+  deutlich längeren Zeitraum um — die Historie ab dem ersten Kurs des
+  Ersatzbonds (`_erweiterte_rows()`, aktuell `IBCL` ab 2007-05-18) mit der
+  Ersatzbond-Annahme aus #80 statt des je Strategie zugeschnittenen
+  F4-Zeitraums (#63). Gerechnet wird beim Build:
+  `_erweiterte_kennzahlen(strategy, rows)` liefert je Strategie ein zweites,
+  bewusst schlankeres Bündel Anzeige-Labels (keine Leave-one-out-Effekte, keine
+  Walk-Forward-Segmente, keine Presets — nur was der Schalter tatsächlich
+  austauscht), im View unter `view["erweitert"]`. Im Browser wird nur
+  umgeschaltet: Textknoten über `data-erweitert` (bzw.
+  `data-i18n-en-erweitert` für Englisch), Charts über in
+  `window.__erweitertRefresh` registrierte Funktionen — die Wertverlauf-Charts
+  wählen dabei den ohnehin vorhandenen „Erweitert"-Preset (#80), der
+  Gruppen-Chart der Börsenweisheiten (der keinen Preset-Umschalter hat) bekommt
+  seine Reihen aus `gruppe.erweitert_json`. Tabelle und Balkendiagramm werden
+  dabei neu sortiert, weil die Reihenfolge des Standard-Zeitraums nicht mehr
+  passt. **Bewusst nicht persistiert** (Owner-Vorgabe): der Zustand lebt nur in
+  einer JS-Variablen, nach dem Neuladen ist der Schalter wieder aus — anders
+  als die Sprachwahl, die im `localStorage` steht. `_erweiterte_kennzahlen()`
+  läuft für JEDE Strategie (auch wo keine Historie dazukommt), damit im
+  eingeschalteten Zustand wirklich jede Tabellenzeile denselben Zeitraum
+  abdeckt; der Schalter selbst erscheint nur (`erweitert_verfuegbar`), wenn
+  mindestens eine Strategie dadurch länger wird. Die Prämissen-Seite erklärt
+  die Annahme unter `id="erweiterter-zeitraum"`, das Menü verlinkt direkt
+  dorthin.
+  **Sprach- und Zeitraum-Umschaltung teilen sich eine Textfunktion**
+  (`applyTexts()` in `base.html.j2`): beide ersetzen den Text derselben
+  Elemente, getrennte Mechanismen würden sich gegenseitig überschreiben. Je
+  Element gilt: Grundtext = Deutsch/eigener Zeitraum, `data-i18n-en` =
+  Englisch, `data-erweitert` = Deutsch/verlängert,
+  `data-i18n-en-erweitert` = beides. Elemente mit einem `.info-tip`-Kind
+  bekommen nur ihren eigenen Textknoten ersetzt statt `textContent` — vorher
+  verschwand das Info-Icon (#81) beim ersten Sprachwechsel.
   **Zwei eigene Seiten statt Startseiten-Abschnitten (#88):**
   `templates/vergleich.html.j2` (`docs/vergleich.html`) trägt die nach CAGR
   sortierte Übersichtstabelle (Zeilen verlinken auf die Detailseiten), die
@@ -604,7 +638,11 @@ inkrementell fortgeschrieben).
   Berechnung, die vollständig beim Build passiert.
   `templates/praemissen.html.j2` (`docs/praemissen.html`, über das
   Drei-Punkt-Menü von jeder Seite erreichbar) sammelt die Prämissen, auf
-  denen alle Zahlen beruhen — Datenbasis und Zeitraum, Instrumententabelle
+  denen alle Zahlen beruhen — seit #93 auch das Kombinationsverfahren
+  zusammengesetzter Strategien (`id="kombination"`, Regelliste aus
+  `Strategy.beitraege` abgeleitet) und seit #91 die Ersatzbond-Annahme hinter
+  dem verlängerten Auswertezeitraum (`id="erweiterter-zeitraum"`) —
+  Datenbasis und Zeitraum, Instrumententabelle
   mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
   Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
   nicht Modellierten (jahresgenaue Dividendenhistorien — je Instrument gilt
@@ -773,6 +811,21 @@ inkrementell fortgeschrieben).
     nirgends vorkommt (`test_ohne_gemeinsamen_zeitraum_...`), ein zu
     ausführlicher Tooltip-Text an einer immer gerenderten Spalte hätte das
     sonst unbeabsichtigt verletzt.
+  - CAGR-Balkendiagramm der Startseite (#92): zeigt nur Strategien mit
+    `Strategy.im_startseiten_chart` (Default `True`, rein darstellerisch).
+    Mit allen 16 Läufen dünnte Chart.js die Achsenbeschriftungen aus — es
+    standen mehr Balken da als Namen. Abgewählt sind die Börsenweisheiten (die
+    direkt darunter ihren eigenen Gruppen-Chart haben), „Barbell 20/80 (breiter
+    diversifiziert)" und der Cost-Average-Einstieg; sie bleiben in der
+    Vergleichstabelle, mit Detailseite und Wertverlauf-Chart. Zusätzlich
+    `autoSkip: false`, damit jeder verbleibende Balken seinen Namen behält.
+  - Gruppen-Chart der Börsenweisheiten (#90/#93): sechs Linien brauchen sechs
+    Farben — `--series-5/6/7` ergänzt (hell und dunkel), `--series-4` bleibt
+    der Benchmark-Overlay-Linie vorbehalten, die im selben Chart liegt. Der
+    Chart hängt seit #93 selbst am Benchmark-Schalter (#72); dessen
+    `applyBenchmarkDataset()` schreibt die Overlay-Linie deshalb hinter
+    `chart.__baseDatasetCount` statt fest auf Position 1, sonst würde sie ein
+    Mitglied überschreiben. Der Schalter steht jetzt ÜBER dem Abschnitt.
   - Korrelationsgrafik (#82): ein Chart.js-Scatter-Chart
     (`#correlation-chart`, seit #88 auf `docs/vergleich.html` statt auf der
     Startseite), x-Achse

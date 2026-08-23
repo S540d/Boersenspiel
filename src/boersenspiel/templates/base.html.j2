@@ -212,6 +212,14 @@
   .menu nav .menu-hint { display: block; padding: 4px 10px 8px; color: var(--text-muted); font-size: 0.75rem; }
   .menu nav .menu-divider { height: 1px; background: var(--border); margin: 4px 2px; }
   .menu nav .lang-switch { display: flex; gap: 4px; padding: 4px 6px 6px; }
+  .menu nav .erweitert-switch { display: flex; padding: 4px 6px 2px; }
+  .menu nav .erweitert-switch button {
+    flex: 1; font: inherit; font-size: 0.86rem; text-align: left; cursor: pointer;
+    padding: 8px 10px; border-radius: 5px; border: 1px solid var(--border);
+    background: var(--page); color: var(--text-primary);
+  }
+  .menu nav .erweitert-switch button:hover { border-color: var(--series-1); }
+  .menu nav .erweitert-switch button.active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
   .menu nav .lang-switch button {
     flex: 1; font: inherit; font-size: 0.82rem; cursor: pointer; padding: 5px 8px; border-radius: 5px;
     border: 1px solid var(--border); background: var(--page); color: var(--text-secondary);
@@ -221,7 +229,7 @@
 </style>
 </head>
 <body>
-<script>window.__i18nRefresh = [];</script>
+<script>window.__i18nRefresh = []; window.__erweitertRefresh = [];</script>
 <header>
   <div class="header-bar">
     <div>
@@ -239,6 +247,20 @@
         <span class="menu-hint" data-i18n-en="Buckets and the instruments behind them">Töpfe und die Instrumente dahinter</span>
         <a href="praemissen.html" data-i18n-en="Premises &amp; Assumptions">Prämissen &amp; Annahmen</a>
         <span class="menu-hint" data-i18n-en="What the numbers are based on">Worauf die Zahlen beruhen</span>
+{% if erweitert_verfuegbar %}
+        <div class="menu-divider"></div>
+        <div class="erweitert-switch">
+          <button type="button" data-erweitert-btn aria-pressed="false" data-i18n-en="Extended evaluation period" data-i18n-en-erweitert="Extended evaluation period: on" data-erweitert="Verlängerter Auswertezeitraum: an">Verlängerter Auswertezeitraum</button>
+        </div>
+        <span class="menu-hint" data-i18n-en="All figures over {{ erweitert_jahre_label }} years instead of each strategy's own period. Only works with an assumption about missing prices - see &quot;Missing prices and the extended evaluation period&quot; in the premises. Resets when the page is reloaded.">
+          Alle Zahlen über {{ erweitert_jahre_label }} Jahre statt über den
+          eigenen Zeitraum jeder Strategie. Das geht nur mit einer Annahme zu
+          fehlenden Kursen &ndash; beachte den Hinweis „Fehlende Kurse und der
+          verlängerte Auswertezeitraum" in den Prämissen. Nach einem Neuladen
+          ist der Schalter wieder aus.
+        </span>
+        <a href="praemissen.html#erweiterter-zeitraum" data-i18n-en="Note on missing prices">Hinweis zu fehlenden Kursen</a>
+{% endif %}
         <div class="menu-divider"></div>
         <div class="lang-switch" role="group" aria-label="Sprache / Language">
           <button type="button" data-lang-btn="de">Deutsch</button>
@@ -259,30 +281,86 @@
 {% block scripts %}{% endblock %}
 <script>
   (function () {
-    function applyLanguage(lang) {
+    // Eine gemeinsame Textfunktion fuer beide Schalter im Drei-Punkt-Menue:
+    // Sprache (#87) und verlaengerter Auswertezeitraum (#91). Beide ersetzen den
+    // textContent derselben Elemente - getrennte Mechanismen wuerden sich
+    // gegenseitig ueberschreiben. Je Element gilt:
+    //   Grundtext im HTML            = Deutsch, eigener Zeitraum
+    //   data-i18n-en                 = Englisch, eigener Zeitraum
+    //   data-erweitert               = Deutsch, verlaengerter Zeitraum
+    //   data-i18n-en-erweitert       = Englisch, verlaengerter Zeitraum
+    var lang = 'de';
+    // Bewusst NICHT persistiert (#91): nach einem Neuladen wieder aus.
+    var erweitert = false;
+
+    function textFuer(el) {
+      var en = lang === 'en';
+      if (erweitert && el.dataset.erweitert !== undefined) {
+        return en && el.dataset.i18nEnErweitert !== undefined
+          ? el.dataset.i18nEnErweitert
+          : el.dataset.erweitert;
+      }
+      return en && el.dataset.i18nEn !== undefined ? el.dataset.i18nEn : el.dataset.i18nDe;
+    }
+
+    // Ein Element wie <th>CAGR<span class="info-tip">i</span></th> traegt neben
+    // seinem Text ein Kind-Element. Wuerde hier textContent ersetzt, waere das
+    // Info-Icon (#81) nach dem ersten Umschalten weg - deshalb in diesem Fall
+    // nur den eigenen Textknoten anfassen.
+    function textKnoten(el) {
+      if (el.firstChild && el.firstChild.nodeType === 3 && el.querySelector('.info-tip')) {
+        return el.firstChild;
+      }
+      return null;
+    }
+
+    function applyTexts() {
       document.documentElement.setAttribute('lang', lang === 'en' ? 'en' : 'de');
-      document.querySelectorAll('[data-i18n-en]').forEach(function (el) {
-        if (el.dataset.i18nDe === undefined) el.dataset.i18nDe = el.textContent;
-        el.textContent = lang === 'en' ? el.dataset.i18nEn : el.dataset.i18nDe;
+      document.querySelectorAll('[data-i18n-en], [data-erweitert]').forEach(function (el) {
+        var knoten = textKnoten(el);
+        if (el.dataset.i18nDe === undefined) {
+          el.dataset.i18nDe = knoten ? knoten.nodeValue : el.textContent;
+        }
+        if (knoten) { knoten.nodeValue = textFuer(el); } else { el.textContent = textFuer(el); }
+      });
+      // Nur im verlaengerten Auswertezeitraum sichtbare Hinweise (#91).
+      document.querySelectorAll('[data-erweitert-nur]').forEach(function (el) {
+        el.hidden = !erweitert;
       });
       document.querySelectorAll('[data-i18n-en-title]').forEach(function (el) {
         if (el.dataset.i18nDeTitle === undefined) el.dataset.i18nDeTitle = el.getAttribute('title') || '';
         el.setAttribute('title', lang === 'en' ? el.dataset.i18nEnTitle : el.dataset.i18nDeTitle);
       });
-      (window.__i18nRefresh || []).forEach(function (fn) {
-        try { fn(lang); } catch (e) { /* ein defekter Chart-Refresh darf die anderen nicht blockieren */ }
-      });
       document.querySelectorAll('[data-lang-btn]').forEach(function (btn) {
         btn.classList.toggle('active', btn.dataset.langBtn === lang);
       });
-      try { localStorage.setItem('boersenspiel-lang', lang); } catch (e) { /* privater Modus o.ae. */ }
+      document.querySelectorAll('[data-erweitert-btn]').forEach(function (btn) {
+        btn.classList.toggle('active', erweitert);
+        btn.setAttribute('aria-pressed', erweitert ? 'true' : 'false');
+      });
+      (window.__i18nRefresh || []).forEach(function (fn) {
+        try { fn(lang); } catch (e) { /* ein defekter Chart-Refresh darf die anderen nicht blockieren */ }
+      });
+      (window.__erweitertRefresh || []).forEach(function (fn) {
+        try { fn(erweitert); } catch (e) { /* dito */ }
+      });
     }
+
     document.querySelectorAll('[data-lang-btn]').forEach(function (btn) {
-      btn.addEventListener('click', function () { applyLanguage(btn.dataset.langBtn); });
+      btn.addEventListener('click', function () {
+        lang = btn.dataset.langBtn;
+        try { localStorage.setItem('boersenspiel-lang', lang); } catch (e) { /* privater Modus o.ae. */ }
+        applyTexts();
+      });
     });
-    var savedLang = 'de';
-    try { savedLang = localStorage.getItem('boersenspiel-lang') || 'de'; } catch (e) { /* privater Modus o.ae. */ }
-    applyLanguage(savedLang);
+    document.querySelectorAll('[data-erweitert-btn]').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        erweitert = !erweitert;
+        applyTexts();
+      });
+    });
+    try { lang = localStorage.getItem('boersenspiel-lang') || 'de'; } catch (e) { /* privater Modus o.ae. */ }
+    applyTexts();
   })();
 </script>
 </body>
