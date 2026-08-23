@@ -167,6 +167,17 @@
   }
   .benchmark-switch button:hover { color: var(--text-primary); }
   .benchmark-switch button.active { background: var(--series-2); border-color: var(--series-2); color: #fff; }
+  /* Info-Tooltips an Tabellenüberschriften (#81): natives title-Attribut statt
+     JS-Tooltip, damit die Erklärung ohne zusätzliches Skript per Hover/Fokus
+     erscheint und auch mit Tastatur/Screenreader erreichbar bleibt. */
+  .info-tip {
+    display: inline-flex; align-items: center; justify-content: center;
+    width: 13px; height: 13px; border-radius: 50%;
+    background: var(--text-muted); color: var(--surface-1);
+    font-size: 0.62rem; font-weight: 700; font-style: normal;
+    text-transform: none; letter-spacing: normal; margin-left: 4px;
+    cursor: help; vertical-align: middle;
+  }
   .back-link { margin: 0; font-size: 0.9rem; }
   .header-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .menu { position: relative; flex: none; }
