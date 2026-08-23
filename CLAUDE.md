@@ -455,6 +455,32 @@ inkrementell fortgeschrieben).
   Steuerbar über den fünften `Optimierungen`-Schalter `fondskosten`. Bestehende
   handgerechnete Engine-Tests, die ETFs verwenden, setzen `fondskosten=False`,
   damit sie weiterhin genau ihren eigenen Mechanismus prüfen.
+  **Liquidationswert nach Steuer (Sofortverkauf zum Stichtag):** `kumulierte_
+  steuer` (siehe oben) erfasst nur bereits TATSÄCHLICH realisierte Trades
+  (Rebalancing, Dezember-Harvest) — der Anteil des Endwerts, der noch in
+  unrealisierten Gewinnen laufender Positionen steckt, bleibt dort unversteuert.
+  `SimulationResult` führt deshalb drei zusätzliche Felder
+  (`liquidationswert_nach_steuer`/`liquidationssteuer`/`liquidationsgebuehren`):
+  ein hypothetischer Verkauf des GESAMTEN Depots zum Stichtag der letzten
+  Kurszeile, berechnet direkt im Anschluss an die Hauptschleife in
+  `simulate()` (braucht Zugriff auf `positions[t].cost_total`/
+  `avg_kauf_tag_ordinal()`, die nicht Teil von `SimulationResult` sind — daher
+  kein Darstellungsschicht-Mechanismus wie sonst üblich). Spiegelt denselben
+  Verkaufsmechanismus wie `rebalance_to_targets()`: Ordergebühr mindert den
+  realisierten Gewinn (`gain_roh = wert - cost_total - gebuehr`), Teilfreistellung
+  gilt symmetrisch für Gewinn/Verlust, und Instrumente mit Spekulationsfrist
+  (#37, BTC-EUR) laufen über die getrennte Freigrenze statt den
+  Sparerpauschbetrag/Verlustvortrag zu berühren. Rechnet dabei bewusst auf
+  KOPIEN von `freibetrag_verbleibend`/`verlustvortrag`/`spek_verlustvortrag`/
+  `spek_gewinn_jahr` statt die nonlocal-Variablen zu mutieren — `tax_status`
+  bleibt dadurch unverändert eine Aussage über tatsächlich realisierte Gewinne,
+  die neuen Felder sind eine rein additive Momentaufnahme obendrauf.
+  `dashboard._build_strategy_view()` zeigt das Ergebnis auf der Detailseite in
+  der Box „Wert nach Steuern beim sofortigen Verkauf" — bewusst zusätzlich zur
+  „Geschätzten Nettorendite" (F6a) statt als deren Ersatz: F6a zieht nur die
+  bereits realisierte Steuer ab, diese Box zusätzlich die auf die noch
+  unrealisierten Gewinne UND die Verkaufsgebühren, ist also die realistischere
+  Antwort auf „was bleibt vom eingesetzten Kapital tatsächlich übrig".
 - `dashboard.py` + `templates/` — reine Darstellungsschicht, rendert
   `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
   Strategie(n) aus `STRATEGIES`. Seit #31 mehrere Seitentypen statt einer

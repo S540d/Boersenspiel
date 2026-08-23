@@ -31,6 +31,23 @@
       real fallen Steuern unterjährig zu unterschiedlichen Zeitpunkten an,
       nicht als einmaliger Abzug am Ende (#63, F6a).
     </p>
+    <div class="stat-row">
+      <div class="stat-tile"><div class="label">Wert nach Steuern beim sofortigen Verkauf<span class="info-tip" tabindex="0" title="Hypothetischer Verkauf des GESAMTEN Depots zum Stichtag der letzten Kurszeile: Bruttoendwert minus Ordergebühren minus Steuer auf die bislang unrealisierten Gewinne jeder noch gehaltenen Position (Sparerpauschbetrag/Verlustvortrag bzw. bei BTC die eigene Spekulationsfrist-Freigrenze werden dabei berücksichtigt).">i</span></div><div class="value">{{ s.liquidationswert_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">davon Steuer auf unrealisierte Gewinne</div><div class="value">{{ s.liquidationssteuer_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">davon Ordergebühren</div><div class="value">{{ s.liquidationsgebuehren_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label">Rendite % nach vollständiger Versteuerung</div><div class="value">{{ s.liquidations_rendite_pct_label }}</div></div>
+    </div>
+    <p class="hint">
+      Der Unterschied zur "Geschätzten Nettorendite" oben: die zieht nur die
+      bereits <em>tatsächlich realisierte</em> Steuer (aus Rebalancing- und
+      Dezember-Harvest-Verkäufen) vom Endwert ab. Der "Wert nach Steuern beim
+      sofortigen Verkauf" geht einen Schritt weiter und rechnet zusätzlich die
+      Steuer, die auf die noch <em>unrealisierten</em> Gewinne der aktuell
+      gehaltenen Positionen fällig würde, wenn das komplette Depot heute
+      verkauft würde &ndash; plus die dafür anfallenden Ordergebühren. Das ist
+      die realistischere Antwort auf "was bleibt vom eingesetzten Kapital
+      tatsächlich übrig".
+    </p>
     {% if s.zeitraum_presets %}
     <h3>Kennzahlen nach Betrachtungszeitraum</h3>
     <p class="hint">

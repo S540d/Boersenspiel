@@ -781,6 +781,18 @@ def _build_strategy_view(
     else:
         netto_rendite_pct = Decimal(0)
     netto_cagr_pct = _cagr_pct(_f(netto_rendite_pct), tage)
+    # Sofortverkauf zum Stichtag der letzten Kurszeile: anders als die "geschätzte
+    # Nettorendite" oben (die nur die bereits TATSÄCHLICH realisierte Steuer vom
+    # Bruttoendwert abzieht) zieht result.liquidationswert_nach_steuer zusätzlich
+    # Ordergebühren und Steuer auf die bislang UNREALISIERTEN Gewinne jeder noch
+    # gehaltenen Position ab (engine.simulate(), berechnet auf Kopien des
+    # Steuerledgers - siehe Kommentar dort) - die realistischere Antwort auf "was
+    # bleibt vom eingesetzten Kapital, wenn ich heute alles verkaufe".
+    liquidationswert = result.liquidationswert_nach_steuer
+    if strategy.startkapital > 0:
+        liquidations_rendite_pct = (liquidationswert - strategy.startkapital) / strategy.startkapital * 100
+    else:
+        liquidations_rendite_pct = Decimal(0)
     volatilitaet_pct = _volatilitaet_pct(total_values)
     max_drawdown_pct = _max_drawdown_pct(total_values)
     risikofreier_zins_pct = _risikofreier_zins_pct(rows)
@@ -825,6 +837,10 @@ def _build_strategy_view(
         "cagr_label": f"{cagr_pct:+.2f}",
         "netto_rendite_pct_label": f"{netto_rendite_pct:+.2f}",
         "netto_cagr_label": f"{netto_cagr_pct:+.2f}",
+        "liquidationswert_label": f"{liquidationswert:.2f}",
+        "liquidationssteuer_label": f"{result.liquidationssteuer:.2f}",
+        "liquidationsgebuehren_label": f"{result.liquidationsgebuehren:.2f}",
+        "liquidations_rendite_pct_label": f"{liquidations_rendite_pct:+.2f}",
         "gewinn_label": f"{gewinn:+.2f}",
         "volatilitaet_pct": volatilitaet_pct,
         "volatilitaet_label": f"{volatilitaet_pct:.2f}",

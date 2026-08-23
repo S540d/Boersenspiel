@@ -13,6 +13,8 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import pytest
+
 import boersenspiel.dashboard as dashboard_module
 from boersenspiel.dashboard import (
     _allokierte_ticker,
@@ -919,6 +921,42 @@ def test_netto_rendite_liegt_unter_der_bruttorendite_wenn_steuer_anfaellt():
     brutto = float(view["cagr_label"].replace(",", "."))
     netto = float(view["netto_cagr_label"].replace(",", "."))
     assert netto < brutto
+
+
+# --- Wert nach Steuern beim sofortigen Verkauf (Liquidationswert) -----------
+
+
+def test_build_strategy_view_uebernimmt_den_liquidationswert_aus_dem_ergebnis():
+    rows = [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("1000"), "T2": Decimal("100")}),
+    ]
+    result = simulate(rows, GROSSER_GEWINN_STRATEGY)
+    view = _build_strategy_view(GROSSER_GEWINN_STRATEGY, result, rows)
+
+    assert float(view["liquidationswert_label"]) == pytest.approx(float(result.liquidationswert_nach_steuer), abs=0.01)
+    assert float(view["liquidationssteuer_label"]) == pytest.approx(float(result.liquidationssteuer), abs=0.01)
+    assert float(view["liquidationsgebuehren_label"]) == pytest.approx(float(result.liquidationsgebuehren), abs=0.01)
+    # Gesamtwert - Steuer - Gebuehren muss exakt den ausgewiesenen Liquidationswert ergeben.
+    gesamtwert = float(result.value_history[-1].total_value)
+    assert gesamtwert - float(view["liquidationssteuer_label"]) - float(view["liquidationsgebuehren_label"]) == float(
+        view["liquidationswert_label"]
+    )
+    # Bei diesem grossen unrealisierten Rebalance-Gewinn ist die Steuer > 0,
+    # der Liquidationswert liegt also unter dem Bruttoendwert.
+    assert float(view["liquidationssteuer_label"]) > 0
+    assert float(view["liquidationswert_label"]) < gesamtwert
+
+
+def test_build_dashboard_zeigt_liquidationsbox_auf_detailseite(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "a-verdoppler")
+
+    assert "Wert nach Steuern beim sofortigen Verkauf" in detail_html
+    assert "Rendite % nach vollständiger Versteuerung" in detail_html
+    # Nur auf der Detailseite, nicht auf der Startseite (#31-Trennung).
+    index_html = (tmp_path / "index.html").read_text(encoding="utf-8")
+    assert "Wert nach Steuern beim sofortigen Verkauf" not in index_html
 
 
 # --- #66: veraltete Instrumentenzahl, unallokierte Instrumente unerklaert ----------
