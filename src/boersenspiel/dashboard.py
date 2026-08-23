@@ -1312,6 +1312,19 @@ def build_dashboard(
         detail_path = output_path.parent / f"{view['id']}.html"
         detail_path.write_text(detail_html, encoding="utf-8")
 
+    # #88: Vergleichstabelle und Portfolio-Uebersicht stehen nicht mehr auf der
+    # Startseite, sondern als eigene, ueber das Drei-Punkt-Menue erreichbare
+    # Seiten - die Startseite bleibt damit auf Einleitung, Key Learnings und
+    # Wertverlaeufe beschraenkt. Beide Seiten leiten sich vollstaendig aus
+    # denselben Views/common_context ab, es wird nichts zusaetzlich simuliert.
+    vergleich_html = env.get_template("vergleich.html.j2").render(
+        summary=summary, **common_context
+    )
+    (output_path.parent / "vergleich.html").write_text(vergleich_html, encoding="utf-8")
+
+    portfolio_html = env.get_template("portfolio.html.j2").render(**common_context)
+    (output_path.parent / "portfolio.html").write_text(portfolio_html, encoding="utf-8")
+
     praemissen_html = env.get_template("praemissen.html.j2").render(
         **_praemissen_kontext(rows, strategies, views), **common_context
     )

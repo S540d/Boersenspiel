@@ -488,11 +488,14 @@ inkrementell fortgeschrieben).
   einmal per Jinja-Vererbung (`{% extends %}` + Blocks `title`/
   `header_extra`/`content`/`scripts`) und enthält das Drei-Punkt-Menü
   (`<details class="menu">`, reines CSS/HTML ohne JS), über das von **jeder**
-  Seite die Übersicht und die Prämissen-Seite erreichbar sind;
+  Seite die Übersicht, die Vergleichs-, die Portfolio- und die Prämissen-Seite
+  erreichbar sind;
   `templates/dashboard.html.j2` (die
-  Startseite `docs/index.html`) zeigt die strategieübergreifende
-  Vergleichsübersicht ("Übersicht: Rendite im Vergleich" - Balkendiagramm +
-  nach Rendite sortierte Tabelle, Zeilen verlinken auf die Detailseite),
+  Startseite `docs/index.html`) beginnt seit #88 mit einer Einleitung
+  ("Worum es hier geht": warum überhaupt, die Grundidee der mindestens zwei
+  Töpfe A/B, Verweis auf die Prämissen im Drei-Punkt-Menü) und zeigt vom
+  strategieübergreifenden Vergleich nur noch das CAGR-**Balkendiagramm** samt
+  Link auf `vergleich.html`;
   darunter (#30) je Gruppe zusammengesetzter Strategien mit Unterszenarien
   (aktuell: die Börsenweisheiten) einen eigenen "<Kombi-Name> im Vergleich"-
   Abschnitt mit einem Mehrfach-Linienchart aus `_teilszenario_gruppen()`
@@ -500,6 +503,21 @@ inkrementell fortgeschrieben).
   gemeinsame Y-Achsen-Skalierung nur innerhalb der Gruppe), sowie je Strategie
   nur Name, Kurzbeschreibung und den Wertverlauf-Chart (mit gemeinsamer
   Y-Achsen-Skalierung über alle Strategien hinweg, siehe unten);
+  **Zwei eigene Seiten statt Startseiten-Abschnitten (#88):**
+  `templates/vergleich.html.j2` (`docs/vergleich.html`) trägt die nach CAGR
+  sortierte Übersichtstabelle (Zeilen verlinken auf die Detailseiten), die
+  Korrelationsgrafik CAGR-gegen-Max-Drawdown (#82) und - bewusst UNTER den
+  Daten statt davor, damit ein Erstbesucher nicht erst vier Absätze lesen muss -
+  den Abschnitt "Wie die Zahlen zu lesen sind" (Vergleichszeitraum,
+  Überrendite, Kennzahl-Definitionen). `templates/portfolio.html.j2`
+  (`docs/portfolio.html`) trägt die Topf-Erklärung (A/B/C) und die Tabelle aller
+  wöchentlich abgerufenen Instrumente (#79). Beide Seiten leiten sich
+  vollständig aus denselben `views`/`common_context` ab wie die Startseite -
+  `build_dashboard()` simuliert dafür nichts zusätzlich. Die Vergleichsseite
+  bringt ihren eigenen kleinen Chart.js-Vorspann mit (`colors`/`commonScales`/
+  `T()`/`chartRefreshers`), weil `const`-Deklarationen im globalen Skript-Scope
+  seitenweit eindeutig sein müssen - dieselbe Duplizierung wie in
+  `strategy_detail.html.j2`.
   `templates/strategy_detail.html.j2` rendert für **jede** Strategie/jedes
   Szenario eine eigene `docs/<slug>.html` mit allem anderen (Kennzahl-
   Kacheln, Steuer-Stats, Topf-Gewichtung Ist/Ziel, Instrumententabelle) plus
@@ -739,7 +757,8 @@ inkrementell fortgeschrieben).
   - `common_context["portfolio_instrumente"]` (#79) listet ALLE
     `instruments.TICKERS` (nicht nur die allokierten, anders als
     `instrumente_anzahl`/#66) mit Ticker und ausgeschriebenem Namen in einer
-    Tabelle im Abschnitt „Das Portfolio" der Startseite — beantwortet direkt
+    Tabelle im Abschnitt „Das Portfolio" (seit #88 auf `docs/portfolio.html`
+    statt auf der Startseite) — beantwortet direkt
     "was wird da eigentlich wöchentlich abgerufen?", unabhängig davon, ob ein
     Instrument aktuell in einer Strategie/einem Szenario steckt.
   - Info-Tooltips (#81): jede Kennzahl-Spaltenüberschrift der
@@ -755,7 +774,8 @@ inkrementell fortgeschrieben).
     ausführlicher Tooltip-Text an einer immer gerenderten Spalte hätte das
     sonst unbeabsichtigt verletzt.
   - Korrelationsgrafik (#82): ein Chart.js-Scatter-Chart
-    (`#correlation-chart`) direkt unter dem CAGR-Balkendiagramm, x-Achse
+    (`#correlation-chart`, seit #88 auf `docs/vergleich.html` statt auf der
+    Startseite), x-Achse
     CAGR % p.a., y-Achse Max Drawdown % (negativ dargestellt, wie in der
     Tabelle) — je Strategie/Szenario ein Punkt, aus denselben `summary`-Werten
     wie die Übersichtstabelle (Vergleichszeitraum-Werte, falls verfügbar,
