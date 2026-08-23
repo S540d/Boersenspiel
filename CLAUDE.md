@@ -438,6 +438,22 @@ inkrementell fortgeschrieben).
     Maßnahmen ausschließlich den Abgeltungsteuer-Topf optimieren.
     Vereinfachung: Besteuerung mit dem pauschalen `STEUERSATZ` statt dem
     tatsächlich anzuwendenden persönlichen Einkommensteuersatz.
+  **Ausschüttungsrendite je Instrument (#74):** `Instrument.dividendenrendite`
+  (optional, `None` → Rückfall auf `DIVIDENDENRENDITE_PLATZHALTER`) löst den
+  einen Pauschalsatz für alle ausschüttenden Instrumente ab. Sieben
+  Satelliten-Aktien (TSLA, RIVN, PLTR, MSTR, SEDG, LITE, S92) stehen jetzt auf
+  `ausschuettend=False`, weil sie real keine Dividende zahlen — vorher bekamen
+  sie jährlich 2,5% geschenkt; umgekehrt waren die Anleihen-/Immobilien-ETFs
+  und `IUSA` (die Benchmark-Vergleichslinie) zu niedrig angesetzt. Beim
+  Ergänzen eines ausschüttenden Instruments also einen belegten Satz setzen,
+  statt den Platzhalter greifen zu lassen.
+  **Laufende Fondskosten (#76):** `Instrument.ter` (Default `0`), in
+  `engine.simulate()` wöchentlich pro rata (`ter/52`) als Reduktion der
+  **Stückzahl** abgezogen, nicht als Barabfluss — die Kostenbasis bleibt
+  bewusst unverändert (die TER ist keine steuerlich abzugsfähige Position).
+  Steuerbar über den fünften `Optimierungen`-Schalter `fondskosten`. Bestehende
+  handgerechnete Engine-Tests, die ETFs verwenden, setzen `fondskosten=False`,
+  damit sie weiterhin genau ihren eigenen Mechanismus prüfen.
 - `dashboard.py` + `templates/` — reine Darstellungsschicht, rendert
   `engine.simulate()`-Ergebnisse für alle (oder eine ausgewählte)
   Strategie(n) aus `STRATEGIES`. Seit #31 mehrere Seitentypen statt einer
@@ -630,6 +646,31 @@ inkrementell fortgeschrieben).
   einzige Möglichkeit, überhaupt eine Netto-Größenordnung auszuweisen. Beide
   Werte stehen nebeneinander auf jeder Detailseite, mit Fußnote; die
   Übersichtstabelle bleibt bei den (klar so beschrifteten) Bruttowerten.
+  **Gemeinsamer Vergleichszeitraum (#73):** `_real_investierbarer_zeitraum()`
+  schneidet je Strategie unterschiedlich zu — der S&P-500-Benchmark läuft über
+  20 Jahre (ab 2006), jede Barbell-Strategie erst ab 2021. Eine nach CAGR
+  sortierte Übersichtstabelle stellte damit Unvergleichbares nebeneinander,
+  ausgerechnet in der Zeile, an der jede Anlageentscheidung hängt.
+  `_gemeinsamer_beginn()` liefert das späteste Startdatum aller angezeigten
+  Strategien, `_vergleichs_cagr_pct()` simuliert jede Strategie ab diesem
+  Datum frisch (analog `_walk_forward_segmente()`/`_zeitraum_presets()`);
+  `build_dashboard()` legt daraus `vergleich_cagr_*` und `alpha_pp_*` (gegen
+  die erste verfügbare Strategie aus `BENCHMARK_STRATEGIEN`) in jede View und
+  sortiert die Übersicht danach. Unter `_VERGLEICH_MIN_WOCHEN` entfällt die
+  Spalte still, statt aus wenigen Wochen zu annualisieren. **Wichtig:** Die
+  Risikospalten (Volatilität/Max-Drawdown/Sharpe/Sortino) beziehen sich
+  weiterhin auf den jeweils eigenen Zeitraum — die Tabelle weist ihn deshalb
+  je Zeile mit aus.
+  **Risikofreier Zins (#75):** `_risikofreier_zins_pct(rows)` leitet ihn aus
+  dem EUR-Geldmarkt-ETF `_GELDMARKT_TICKER` (`XEON`, durchgehende Historie
+  seit 2007) über exakt den ausgewerteten Zeitraum ab, statt ihn zu
+  hinterlegen — dasselbe Prinzip wie bei `_praemissen_kontext()`: nichts
+  hinterlegen, was gegenüber den Daten veralten kann.
+  `_RISIKOFREIER_ZINS_PLATZHALTER` ist nur noch Rückfallwert (fehlender Ticker
+  oder Zeitraum unter `_ZINS_MIN_WOCHEN`). **Einheiten-Falle:**
+  `_wochenrenditen()` liefert Brüche, `_sharpe_ratio()`/`_sortino_ratio()`
+  rechnen intern in Brüchen (trotz der `_pct`-Namen), der Zins kommt dagegen
+  in Prozentpunkten herein und wird vor dem Abzug durch 100 geteilt.
 - `learnings.py` — leitet die Sektion "Key Learnings" (ganz oben im Dashboard)
   bei jedem Build neu aus den Strategie-Views ab. **Keine hinterlegten
   Erkenntnis-Texte:** fest ist nur die Fragestellung je Regel (reine Funktion
