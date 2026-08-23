@@ -11,19 +11,20 @@ statisches Dashboard (Chart.js) auf GitHub Pages. Default-Branch ist `main`
 (ursprünglich hieß er `claude/pflichtenheft-umsetzung-planen-6kf05s`, da das
 Repo leer angelegt wurde, und wurde nachträglich zu `main` umbenannt).
 
-**README.md ist bewusst ein Marketing-/Onboarding-Dokument, kein
-technisches Referenzdokument** (Überarbeitung im Anschluss an #64): kurzer
-Pitch, ein Screenshot der Vergleichstabelle (`assets/dashboard-comparison.png`),
-Quickstart, ein Verweis darauf, dass das Dashboard sich selbst erklärt
-(Detailseiten + Prämissen-Seite), und eine kurze Contributing-Sektion. Alles
-Tiefergehende — Engine-Modellierungsentscheidungen, Steuerdetails,
-Architektur-Diagramm, vollständige Szenario-Tabellen, bekannte
-Einschränkungen — wurde bewusst entfernt bzw. zieht stattdessen die
-Prämissen-Seite (`docs/praemissen.html`, live erreichbar über das
-Drei-Punkt-Menü) oder dieses CLAUDE.md als Quelle. Beim Ergänzen von README.md
-deshalb nicht wieder implementierungsnahe Details zurückschreiben, die die
-Dashboard-Seiten bereits selbst (und aktueller) zeigen — stattdessen dorthin
-verlinken.
+**README.md ist ein technisches Referenzdokument** (kurzzeitig im Zuge von
+#64-Nachfolgearbeit zu einem kurzen Marketing-/Onboarding-Dokument
+umgeschrieben, auf Wunsch des Owners aber wieder auf die ausführliche
+technische Fassung zurückgesetzt): Architektur-Diagramm, Engine-
+Modellierungsentscheidungen, volle Steuerlogik, Szenario-Tabellen und
+bekannte Einschränkungen stehen direkt im README, nicht nur verlinkt auf die
+Dashboard-Seiten. Ein `## Portfolio overview`-Abschnitt listet alle 24
+Instrumente mit der Strategie, die sie tatsächlich hält. Die Ableitung aus
+dem ursprünglichen Anforderungsdokument (Pflichtenheft) wurde auf
+Owner-Wunsch aus dem README gestrichen — das Dokument ist ohnehin nicht Teil
+dieses Repos und für externe Leser nicht nachprüfbar; die wenigen Stellen, die
+zuvor explizit "requirements document"/"Pflichtenheft" zitiert hatten (Tax-
+Logic-Absatz, Guiding-Principle-Überschrift, "Adding a strategy"), wurden neutral
+umformuliert statt die Aussage selbst zu streichen.
 
 ## Commands
 
@@ -87,10 +88,14 @@ inkrementell fortgeschrieben).
   18. Instrument nicht still beide Workflows unmöglich macht.
   **Darstellung nicht allokierter Instrumente (#66):** Weder das Dashboard
   noch die Prämissen-Seite leiten eine Instrumentenzahl mehr aus einer
-  hartkodierten Konstante ab (die README nennt seit ihrer Überarbeitung im
-  Zuge der #64-Nachfolgearbeit wieder eine Momentaufnahme-Zahl in der
-  Marketing-Einleitung — bewusst, weil sie kein technisches Dokument mehr
-  ist; verbindlich bleiben Dashboard und Prämissen-Seite).
+  hartkodierten Konstante ab. Die README enthält seit der #64-Nachfolgearbeit
+  einen `## Portfolio overview`-Abschnitt mit einer statischen Tabelle aller
+  24 Ticker samt der Strategie, die sie hält — bewusst als lesbare Übersicht
+  für Menschen, aber dadurch eine hartkodierte Momentaufnahme, die bei einer
+  künftigen Strategie-Änderung von Hand nachgezogen werden muss (anders als
+  Dashboard/Prämissen-Seite, die sich bei jedem Build automatisch aus
+  `Strategy.alle_ticker_gewichte()` ableiten). Beim Ändern der
+  Ticker-zu-Strategie-Zuordnung also auch diese README-Tabelle prüfen.
   `dashboard._allokierte_ticker(strategies)` leitet die
   Menge der tatsächlich einer Strategie/einem Szenario zugeordneten Ticker
   generisch aus `Strategy.alle_ticker_gewichte()` ab; `dashboard.html.j2`
