@@ -140,6 +140,7 @@ SELL_IN_MAY = Strategy(
         "go away'."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
+    im_startseiten_chart=False,
 )
 
 
@@ -197,6 +198,7 @@ BUY_AND_HOLD = Strategy(
         "combined as a quote vote alongside the other rules (see #27)."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
+    im_startseiten_chart=False,
 )
 
 
@@ -239,6 +241,7 @@ SANTA_CLAUS_RALLY = Strategy(
         "otherwise the normal barbell distribution."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
+    im_startseiten_chart=False,
 )
 
 
@@ -292,6 +295,7 @@ BUY_THE_DIP = Strategy(
         "applies."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
+    im_startseiten_chart=False,
 )
 
 
@@ -359,6 +363,7 @@ CUT_LOSSES = Strategy(
         "short'), other growth instruments are left untouched."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
+    im_startseiten_chart=False,
 )
 
 
@@ -449,6 +454,10 @@ def _weisheiten_strategy(name: str, weisheiten: tuple[Weisheit, ...], **kwargs) 
 BOERSENWEISHEITEN = _weisheiten_strategy(
     BOERSENWEISHEITEN_NAME,
     WEISHEITEN,
+    # #92: die Boersenweisheiten haben auf der Startseite mit
+    # "<Kombi-Name> im Vergleich" einen eigenen Chart - im
+    # CAGR-Balkendiagramm daruber tauchen sie deshalb nicht mehr auf.
+    im_startseiten_chart=False,
     beschreibung=(
         "Fasst die fünf Börsenweisheiten oben zu einer Strategie zusammen: jede votiert "
         "für eine Wachstumsquote (oder enthält sich), die Ziel-Quote ist das "
@@ -740,6 +749,7 @@ COST_AVERAGE_ENTRY = Strategy(
     rebalancing_schwelle_pp=Decimal("5"),
     rebalancing_schwelle_relativ=Decimal("0.25"),
     gewichte_fn=cost_average_gewichte,
+    im_startseiten_chart=False,
     beschreibung=(
         "Statt das Startkapital sofort komplett zu investieren, wird die "
         "Wachstumsquote über die ersten 10 Wochen linear von 0% auf die normale "

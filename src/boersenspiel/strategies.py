@@ -125,6 +125,16 @@ class Strategy:
     # nichts an der Simulation. Default False = fließt normal ins gemeinsame
     # Chart-Maximum ein.
     eigene_chart_skala: bool = False
+    # Optional: False nimmt diese Strategie/dieses Szenario aus dem
+    # CAGR-Balkendiagramm der Startseite heraus (#92). Rein darstellerisch: die
+    # Zeile bleibt in der Vergleichstabelle, bekommt weiter ihre Detailseite und
+    # ihren Wertverlauf-Chart, taucht nur in dem einen Übersichts-Balkendiagramm
+    # nicht mehr auf. Hintergrund: mit allen 16 Läufen war das Diagramm so dicht,
+    # dass Chart.js nur noch jede zweite Achsenbeschriftung zeichnete - es
+    # standen also mehr Balken da als Namen. Owner-Auswahl zu #92; die
+    # Börsenweisheiten haben mit "<Kombi-Name> im Vergleich" ohnehin einen
+    # eigenen Chart auf derselben Seite.
+    im_startseiten_chart: bool = True
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""
@@ -318,6 +328,7 @@ BARBELL_20_60_20_SATELLIT = Strategy(
 
 BARBELL_20_80_DIVERSIFIZIERT = Strategy(
     name="Barbell 20/80 (breiter diversifiziert)",
+    im_startseiten_chart=False,
     startkapital=Decimal("10000"),
     toepfe=[
         Topf(

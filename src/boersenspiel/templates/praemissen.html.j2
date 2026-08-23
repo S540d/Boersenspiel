@@ -246,6 +246,86 @@
       </table>
     </div>
 
+{% if zusammengesetzte %}
+    <h3 id="kombination" data-i18n-en="Composite strategies: how the combination works">Zusammengesetzte Strategien: wie kombiniert wird</h3>
+    <p class="hint" data-i18n-en="Some strategies are not a rule of their own but a combination of several. They are computed in two steps, once per week:">
+      Manche Strategien sind keine eigene Regel, sondern eine Kombination
+      mehrerer Regeln. Sie werden in zwei Schritten gerechnet, einmal pro Woche:
+    </p>
+    <ol class="hint">
+      <li data-i18n-en="Every rule proposes an equity quota for that week - or abstains, if its condition does not apply this week (a seasonal rule has nothing to say in March). The target quota is the arithmetic mean of the proposals actually made. Two rules contradicting each other therefore cancel each other out in part, instead of one of them winning.">
+        Jede Regel schlägt für diese Woche eine Aktienquote vor &ndash; oder
+        enthält sich, wenn ihre Bedingung diese Woche nicht greift (eine
+        saisonale Regel hat im März nichts zu sagen). Die Ziel-Quote ist das
+        arithmetische Mittel der tatsächlich abgegebenen Vorschläge. Zwei
+        Regeln, die sich widersprechen, heben sich damit teilweise auf, statt
+        dass eine von ihnen gewinnt.
+      </li>
+      <li data-i18n-en="Rules that act per instrument rather than on the overall quota (a trailing stop, for instance) are applied afterwards to the resulting weights.">
+        Regeln, die nicht auf die Gesamtquote, sondern auf einzelne Instrumente
+        wirken (etwa ein Trailing-Stop), werden danach auf die so entstandenen
+        Gewichte angewendet.
+      </li>
+    </ol>
+    <p class="hint" data-i18n-en="The share attributable to each individual rule is measured leave-one-out: the same strategy is simulated once more without exactly that one rule, and the difference in CAGR is its contribution. It is shown on the detail page of the composite strategy. Note that a rule can behave differently on its own than inside the combination - as its own scenario it applies its rule alone, inside the combination it is only one vote among several.">
+      Was die einzelne Regel beiträgt, wird per Leave-one-out gemessen: dieselbe
+      Strategie läuft noch einmal ohne genau diese eine Regel, die Differenz der
+      CAGR ist ihr Beitrag. Er steht auf der Detailseite der zusammengesetzten
+      Strategie. Wichtig: Eine Regel kann sich allein anders verhalten als in
+      der Kombination &ndash; als eigenes Szenario setzt sie ihre Regel
+      durchgängig um, in der Kombination ist sie nur eine Stimme von mehreren.
+    </p>
+    <div class="overflow-x">
+      <table>
+        <thead><tr><th class="text-left" data-i18n-en="Composite strategy">Zusammengesetzte Strategie</th><th class="text-left" data-i18n-en="Combined rules">Kombinierte Regeln</th></tr></thead>
+        <tbody>
+        {% for z in zusammengesetzte %}
+          <tr>
+            <td class="text-left"><a href="{{ z.id }}.html">{{ z.name }}</a></td>
+            <td class="text-left">{{ z.regeln | join("; ") }}</td>
+          </tr>
+        {% endfor %}
+        </tbody>
+      </table>
+    </div>
+{% endif %}
+
+{% if erweitert_verfuegbar %}
+    <h3 id="erweiterter-zeitraum" data-i18n-en="Missing prices and the extended evaluation period">Fehlende Kurse und der verlängerte Auswertezeitraum</h3>
+    <p class="hint" data-i18n-en="Not every instrument has existed for as long as the price history goes back - Bitcoin, Rivian and most of the ETFs only start somewhere in the middle. By default every strategy is therefore only evaluated from the point at which all of its target instruments actually had prices (column &quot;simulation start&quot; above). That is honest, but short: several strategies lose more than a decade of history that way.">
+      Nicht jedes Instrument gibt es so lange, wie die Kurshistorie zurückreicht
+      &ndash; Bitcoin, Rivian und die meisten ETFs fangen erst irgendwo in der
+      Mitte an. Standardmäßig wird eine Strategie deshalb erst ab dem Zeitpunkt
+      ausgewertet, ab dem alle ihre Zielinstrumente tatsächlich Kurse hatten
+      (Spalte „Simulationsbeginn" oben). Das ist ehrlich, aber kurz: mehreren
+      Strategien fehlt so über ein Jahrzehnt Historie.
+    </p>
+    <p class="hint" data-i18n-en="The switch &quot;Extended evaluation period&quot; in the three-dot menu trades that for one additional assumption: the capital of a target instrument that did not yet exist is treated as invested in {{ ersatzbond_ticker }} (euro government bonds, 15-30 years) until it does - deliberately the same bond ETF for every strategy and scenario, so the runs stay comparable with each other. With it switched on, every figure on the page runs over {{ erweitert_beginn }} to {{ erweitert_ende }} ({{ erweitert_jahre_label }} years), the same window for all strategies. The period starts at the first price of that very bond ETF; before that the assumption would have nothing to stand on. The switch is deliberately not remembered - after a reload the page is back on the default periods.">
+      Der Schalter <strong>„Verlängerter Auswertezeitraum"</strong> im
+      Drei-Punkt-Menü tauscht das gegen eine zusätzliche Annahme ein: Das
+      Kapital eines noch nicht existierenden Zielinstruments gilt bis zu dessen
+      Verfügbarkeit als in <strong>{{ ersatzbond_ticker }}</strong>
+      (Euro-Staatsanleihen 15&ndash;30 Jahre) angelegt &ndash; bewusst derselbe
+      Anleihe-ETF für jede Strategie und jedes Szenario, damit die Läufe
+      untereinander vergleichbar bleiben. Eingeschaltet laufen alle Zahlen der
+      Seite über {{ erweitert_beginn }} bis {{ erweitert_ende }}
+      ({{ erweitert_jahre_label }} Jahre), für jede Strategie derselbe
+      Ausschnitt. Der Zeitraum beginnt beim ersten Kurs genau dieses
+      Anleihe-ETFs; davor hätte die Annahme nichts, worauf sie stehen könnte.
+      Der Schalter wird bewusst nicht gemerkt &ndash; nach einem Neuladen
+      gelten wieder die Standard-Zeiträume.
+    </p>
+    <p class="hint" data-i18n-en="What this does not fix: the instruments were still selected in hindsight (see &quot;The most important thing first&quot;). A portfolio put together in 2026 did not exist in 2007, whatever the capital is assumed to have been parked in. The extended period shows how the rules would have behaved over more market phases - not what someone would actually have earned. The exclusion of the Bitcoin early phase before {{ btc_fruehphase_ende }} stays in force here too.">
+      Was das <em>nicht</em> repariert: Die Instrumente sind weiterhin im
+      Nachhinein ausgewählt (siehe „Das Wichtigste zuerst"). Ein 2026
+      zusammengestelltes Portfolio gab es 2007 nicht, egal worin das Kapital
+      angeblich geparkt war. Der verlängerte Zeitraum zeigt, wie sich die Regeln
+      über mehr Marktphasen verhalten hätten &ndash; nicht, was jemand
+      tatsächlich verdient hätte. Der Ausschluss der Bitcoin-Frühphase vor
+      {{ btc_fruehphase_ende }} gilt auch hier.
+    </p>
+{% endif %}
+
     <h3 data-i18n-en="Cash and uninvested capital">Cash und ungenutztes Kapital</h3>
     <p class="hint" data-i18n-en="No strategy has its own cash target allocation. When a scenario switches to &quot;defensive&quot; (e.g. &quot;Sell in May&quot;, SMA death cross, trailing stop), the capital moves entirely into bucket A (safety) - bucket A takes on the cash role, instead of an unremunerated cash position or one carrying a made-up interest rate. A genuine cash position would have two downsides: it would need a fictional interest rate instead of one derivable from the price history, and it would duplicate bucket A without a purpose of its own.">
       Keine Strategie hat eine eigene Cash-Zielallokation. Schaltet ein

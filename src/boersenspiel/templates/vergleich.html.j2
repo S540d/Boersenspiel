@@ -6,7 +6,16 @@
 {% block content %}
   <section class="strategy" id="uebersicht">
     <h2 data-i18n-en="Return comparison">Rendite im Vergleich</h2>
-    <p class="hint" data-i18n-en="All strategies and scenarios in one table{% if vergleich_verfuegbar %}, computed over the same period from {{ vergleich_beginn }} so the rows are actually comparable{% endif %}. Sorted by annualized return (CAGR). What the individual columns mean is explained below the table.">
+{% if erweitert_verfuegbar %}
+    <p class="hint" data-erweitert-nur hidden data-i18n-en="Extended evaluation period is on: every row runs over {{ erweitert_beginn }} to {{ erweitert_ende }} - the same window for all of them - and rests on the assumption about missing prices described in the premises. Switch it off in the three-dot menu.">
+      <strong>Verlängerter Auswertezeitraum ist an:</strong> Jede Zeile läuft
+      über {{ erweitert_beginn }} bis {{ erweitert_ende }} &ndash; für alle
+      derselbe Ausschnitt &ndash; und beruht auf der in den Prämissen
+      beschriebenen Annahme zu fehlenden Kursen. Ausschalten im
+      Drei-Punkt-Menü.
+    </p>
+{% endif %}
+    <p class="hint" data-i18n-en="All strategies and scenarios in one table{% if vergleich_verfuegbar %}, computed over the same period from {{ vergleich_beginn }} so the rows are actually comparable{% endif %}. Sorted by annualized return (CAGR). What the individual columns mean is explained below the table." data-erweitert="Alle Strategien und Szenarien in einer Tabelle, gerechnet über den verlängerten Auswertezeitraum ab {{ erweitert_beginn }} - für jede Zeile derselbe Ausschnitt. Sortiert nach annualisierter Rendite (CAGR). Was die einzelnen Spalten bedeuten, steht unter der Tabelle." data-i18n-en-erweitert="All strategies and scenarios in one table, computed over the extended evaluation period from {{ erweitert_beginn }} - the same window for every row. Sorted by annualized return (CAGR). What the individual columns mean is explained below the table.">
       Alle Strategien und Szenarien in einer Tabelle{% if vergleich_verfuegbar %},
       gerechnet über denselben Zeitraum ab {{ vergleich_beginn }}, damit die Zeilen
       überhaupt vergleichbar sind{% endif %}. Sortiert nach annualisierter Rendite
@@ -23,7 +32,7 @@
     <div class="summary-chart-box"><canvas id="correlation-chart"></canvas></div>
     <div class="overflow-x">
       <table class="summary-table">
-        <thead><tr><th data-i18n-en="Strategy / scenario">Strategie / Szenario</th>{% if vergleich_verfuegbar %}<th data-i18n-en="CAGR % p.a. (comparison period)">CAGR % p.a. (Vergleichszeitraum)<span class="info-tip" tabindex="0" title="Annualisierte Rendite (Compound Annual Growth Rate): die konstante jährliche Wachstumsrate, die über den gemeinsamen Vergleichszeitraum auf denselben Endwert führt. Vergleichbar auch bei unterschiedlich langen Zeiträumen, anders als die Gesamtrendite." data-i18n-en-title="Annualized return (Compound Annual Growth Rate): the constant yearly growth rate that leads to the same final value over the common comparison period. Comparable even across periods of different length, unlike the total return.">i</span></th><th data-i18n-en="Excess return pp p.a.">&Uuml;berrendite pp p.a.<span class="info-tip" tabindex="0" title="Differenz der CAGR gegenüber dem Benchmark (S&P 500) im selben Vergleichszeitraum, in Prozentpunkten. Positiv = die Strategie hat den Index über diesen Zeitraum geschlagen, negativ = nicht." data-i18n-en-title="Difference of the CAGR versus the benchmark (S&P 500) over the same comparison period, in percentage points. Positive = the strategy beat the index over this period, negative = it did not.">i</span></th>{% endif %}<th data-i18n-en="Volatility % (ann.)">Volatilität % (ann.)<span class="info-tip" tabindex="0" title="Annualisierte Standardabweichung der wöchentlichen Renditen - ein Maß für die Schwankungsbreite des Wertverlaufs. Höher bedeutet unruhiger, nicht zwangsläufig schlechter." data-i18n-en-title="Annualized standard deviation of weekly returns - a measure of how much the value history swings. Higher means choppier, not necessarily worse.">i</span></th><th data-i18n-en="Max drawdown %">Max Drawdown %<span class="info-tip" tabindex="0" title="Der größte prozentuale Rückgang vom bisherigen Höchststand des Portfoliowerts während des Betrachtungszeitraums - der schlimmste Verlust, den ein Anleger tatsächlich ausgehalten hätte." data-i18n-en-title="The largest percentage decline from the portfolio's previous high during the viewing period - the worst loss an investor would actually have had to endure.">i</span></th><th>Sharpe<span class="info-tip" tabindex="0" title="Sharpe-Ratio: annualisierte Überrendite über dem risikofreien Zins, geteilt durch die gesamte Volatilität. Höher ist besser; negativ heißt, das Risiko hat sich gegenüber risikolosem Parken nicht gelohnt." data-i18n-en-title="Sharpe ratio: annualized excess return over the risk-free rate, divided by the overall volatility. Higher is better; negative means the risk taken didn't pay off compared to risk-free parking.">i</span></th><th>Sortino<span class="info-tip" tabindex="0" title="Sortino-Ratio: wie Sharpe, aber es zählt nur die Streuung der Verlustwochen als Risiko (Schwankung nach oben wird nicht bestraft). Meist etwas höher als die Sharpe-Ratio derselben Strategie." data-i18n-en-title="Sortino ratio: like Sharpe, but only the dispersion of losing weeks counts as risk (upside swings are not penalized). Usually somewhat higher than the same strategy's Sharpe ratio.">i</span></th><th data-i18n-en="CAGR % p.a. (own period)">CAGR % p.a. (eigener Zeitraum)<span class="info-tip" tabindex="0" title="Annualisierte Rendite über den eigenen, individuell längsten handelbaren Zeitraum dieser Strategie (kann für jede Zeile unterschiedlich lang sein) - Nebenspalte, nicht direkt mit anderen Zeilen vergleichbar." data-i18n-en-title="Annualized return over this strategy's own, individually longest tradable period (can be a different length for each row) - a secondary column, not directly comparable across rows.">i</span></th><th data-i18n-en="Total return % (gross)">Gesamtrendite % (brutto)<span class="info-tip" tabindex="0" title="Gesamte prozentuale Wertsteigerung über den eigenen Zeitraum, vor Steuer. Bei langen Zeiträumen praktisch unlesbar (z. B. mehrere Tausend Prozent) - die CAGR-Spalten sind deshalb die Leitkennzahl." data-i18n-en-title="Total percentage increase in value over the strategy's own period, before tax. Practically unreadable over long periods (e.g. several thousand percent) - which is why the CAGR columns are the leading metric.">i</span></th><th data-i18n-en="Profit/loss &euro;">Gewinn/Verlust &euro;</th><th data-i18n-en="Final value &euro;">Endwert &euro;</th><th data-i18n-en="Own period">Eigener Zeitraum<span class="info-tip" tabindex="0" title="Der Zeitraum, ab dem für diese Strategie tatsächlich alle ihre Zielinstrumente handelbar waren (kein rückwirkender Kauf eines 2026 zusammengestellten Portfolios ab 2006)." data-i18n-en-title="The period from which all of this strategy's target instruments were actually tradable (no retroactive purchase of a portfolio put together in 2026, starting in 2006).">i</span></th></tr></thead>
+        <thead><tr><th data-i18n-en="Strategy / scenario">Strategie / Szenario</th>{% if vergleich_verfuegbar %}<th data-i18n-en="CAGR % p.a. (comparison period)" data-erweitert="CAGR % p.a. (verlängerter Zeitraum)" data-i18n-en-erweitert="CAGR % p.a. (extended period)">CAGR % p.a. (Vergleichszeitraum)<span class="info-tip" tabindex="0" title="Annualisierte Rendite (Compound Annual Growth Rate): die konstante jährliche Wachstumsrate, die über den gemeinsamen Vergleichszeitraum auf denselben Endwert führt. Vergleichbar auch bei unterschiedlich langen Zeiträumen, anders als die Gesamtrendite." data-i18n-en-title="Annualized return (Compound Annual Growth Rate): the constant yearly growth rate that leads to the same final value over the common comparison period. Comparable even across periods of different length, unlike the total return.">i</span></th><th data-i18n-en="Excess return pp p.a.">&Uuml;berrendite pp p.a.<span class="info-tip" tabindex="0" title="Differenz der CAGR gegenüber dem Benchmark (S&P 500) im selben Vergleichszeitraum, in Prozentpunkten. Positiv = die Strategie hat den Index über diesen Zeitraum geschlagen, negativ = nicht." data-i18n-en-title="Difference of the CAGR versus the benchmark (S&P 500) over the same comparison period, in percentage points. Positive = the strategy beat the index over this period, negative = it did not.">i</span></th>{% endif %}<th data-i18n-en="Volatility % (ann.)">Volatilität % (ann.)<span class="info-tip" tabindex="0" title="Annualisierte Standardabweichung der wöchentlichen Renditen - ein Maß für die Schwankungsbreite des Wertverlaufs. Höher bedeutet unruhiger, nicht zwangsläufig schlechter." data-i18n-en-title="Annualized standard deviation of weekly returns - a measure of how much the value history swings. Higher means choppier, not necessarily worse.">i</span></th><th data-i18n-en="Max drawdown %">Max Drawdown %<span class="info-tip" tabindex="0" title="Der größte prozentuale Rückgang vom bisherigen Höchststand des Portfoliowerts während des Betrachtungszeitraums - der schlimmste Verlust, den ein Anleger tatsächlich ausgehalten hätte." data-i18n-en-title="The largest percentage decline from the portfolio's previous high during the viewing period - the worst loss an investor would actually have had to endure.">i</span></th><th>Sharpe<span class="info-tip" tabindex="0" title="Sharpe-Ratio: annualisierte Überrendite über dem risikofreien Zins, geteilt durch die gesamte Volatilität. Höher ist besser; negativ heißt, das Risiko hat sich gegenüber risikolosem Parken nicht gelohnt." data-i18n-en-title="Sharpe ratio: annualized excess return over the risk-free rate, divided by the overall volatility. Higher is better; negative means the risk taken didn't pay off compared to risk-free parking.">i</span></th><th>Sortino<span class="info-tip" tabindex="0" title="Sortino-Ratio: wie Sharpe, aber es zählt nur die Streuung der Verlustwochen als Risiko (Schwankung nach oben wird nicht bestraft). Meist etwas höher als die Sharpe-Ratio derselben Strategie." data-i18n-en-title="Sortino ratio: like Sharpe, but only the dispersion of losing weeks counts as risk (upside swings are not penalized). Usually somewhat higher than the same strategy's Sharpe ratio.">i</span></th><th data-i18n-en="CAGR % p.a. (own period)" data-erweitert="CAGR % p.a. (verlängerter Zeitraum)" data-i18n-en-erweitert="CAGR % p.a. (extended period)">CAGR % p.a. (eigener Zeitraum)<span class="info-tip" tabindex="0" title="Annualisierte Rendite über den eigenen, individuell längsten handelbaren Zeitraum dieser Strategie (kann für jede Zeile unterschiedlich lang sein) - Nebenspalte, nicht direkt mit anderen Zeilen vergleichbar." data-i18n-en-title="Annualized return over this strategy's own, individually longest tradable period (can be a different length for each row) - a secondary column, not directly comparable across rows.">i</span></th><th data-i18n-en="Total return % (gross)">Gesamtrendite % (brutto)<span class="info-tip" tabindex="0" title="Gesamte prozentuale Wertsteigerung über den eigenen Zeitraum, vor Steuer. Bei langen Zeiträumen praktisch unlesbar (z. B. mehrere Tausend Prozent) - die CAGR-Spalten sind deshalb die Leitkennzahl." data-i18n-en-title="Total percentage increase in value over the strategy's own period, before tax. Practically unreadable over long periods (e.g. several thousand percent) - which is why the CAGR columns are the leading metric.">i</span></th><th data-i18n-en="Profit/loss &euro;">Gewinn/Verlust &euro;</th><th data-i18n-en="Final value &euro;">Endwert &euro;</th><th data-i18n-en="Own period" data-erweitert="Verlängerter Zeitraum" data-i18n-en-erweitert="Extended period">Eigener Zeitraum<span class="info-tip" tabindex="0" title="Der Zeitraum, ab dem für diese Strategie tatsächlich alle ihre Zielinstrumente handelbar waren (kein rückwirkender Kauf eines 2026 zusammengestellten Portfolios ab 2006)." data-i18n-en-title="The period from which all of this strategy's target instruments were actually tradable (no retroactive purchase of a portfolio put together in 2026, starting in 2006).">i</span></th></tr></thead>
         <tbody>
         {% for s in summary %}
           <tr>
@@ -31,25 +40,25 @@
             {% if vergleich_verfuegbar %}
             {# Rendite UND Risiko aus dem gemeinsamen Vergleichszeitraum (#73/#78) -
                nur so gehoeren die Zahlen einer Zeile ueberhaupt zusammen. #}
-            <td class="{{ ('positive' if s.vergleich_cagr_pct >= 0 else 'negative') if s.vergleich_cagr_pct is not none else '' }}"><strong>{{ s.vergleich_cagr_label or '–' }}</strong></td>
-            <td class="{{ ('positive' if s.alpha_pp >= 0 else 'negative') if s.alpha_pp is not none else '' }}">{{ s.alpha_pp_label }}</td>
-            <td>{{ s.vergleich_volatilitaet_label or '–' }}</td>
-            <td class="{{ 'negative' if s.vergleich_max_drawdown_pct else '' }}">{{ s.vergleich_max_drawdown_label or '–' }}</td>
-            <td class="{{ ('positive' if s.vergleich_sharpe_ratio >= 0 else 'negative') if s.vergleich_sharpe_ratio is not none else '' }}">{{ s.vergleich_sharpe_label or '–' }}</td>
-            <td class="{{ ('positive' if s.vergleich_sortino_ratio >= 0 else 'negative') if s.vergleich_sortino_ratio is not none else '' }}">{{ s.vergleich_sortino_label or '–' }}</td>
+            <td class="{{ ('positive' if s.vergleich_cagr_pct >= 0 else 'negative') if s.vergleich_cagr_pct is not none else '' }}"><strong{% if s.erweitert %} data-erweitert="{{ s.erweitert.cagr_label }}"{% endif %}>{{ s.vergleich_cagr_label or '–' }}</strong></td>
+            <td class="{{ ('positive' if s.alpha_pp >= 0 else 'negative') if s.alpha_pp is not none else '' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.alpha_pp_label }}"{% endif %}>{{ s.alpha_pp_label }}</td>
+            <td{% if s.erweitert %} data-erweitert="{{ s.erweitert.volatilitaet_label }}"{% endif %}>{{ s.vergleich_volatilitaet_label or '–' }}</td>
+            <td class="{{ 'negative' if s.vergleich_max_drawdown_pct else '' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.max_drawdown_label }}"{% endif %}>{{ s.vergleich_max_drawdown_label or '–' }}</td>
+            <td class="{{ ('positive' if s.vergleich_sharpe_ratio >= 0 else 'negative') if s.vergleich_sharpe_ratio is not none else '' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.sharpe_label }}"{% endif %}>{{ s.vergleich_sharpe_label or '–' }}</td>
+            <td class="{{ ('positive' if s.vergleich_sortino_ratio >= 0 else 'negative') if s.vergleich_sortino_ratio is not none else '' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.sortino_label }}"{% endif %}>{{ s.vergleich_sortino_label or '–' }}</td>
             {% else %}
             {# Kein gemeinsamer Zeitraum ermittelbar - dann gelten durchgehend die
                Werte des jeweils eigenen Zeitraums, klar so beschriftet. #}
-            <td>{{ s.volatilitaet_label }}</td>
-            <td class="{{ 'negative' if s.max_drawdown_pct else '' }}">{{ s.max_drawdown_label }}</td>
-            <td class="{{ 'positive' if s.sharpe_ratio >= 0 else 'negative' }}">{{ s.sharpe_label }}</td>
-            <td class="{{ 'positive' if s.sortino_ratio >= 0 else 'negative' }}">{{ s.sortino_label }}</td>
+            <td{% if s.erweitert %} data-erweitert="{{ s.erweitert.volatilitaet_label }}"{% endif %}>{{ s.volatilitaet_label }}</td>
+            <td class="{{ 'negative' if s.max_drawdown_pct else '' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.max_drawdown_label }}"{% endif %}>{{ s.max_drawdown_label }}</td>
+            <td class="{{ 'positive' if s.sharpe_ratio >= 0 else 'negative' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.sharpe_label }}"{% endif %}>{{ s.sharpe_label }}</td>
+            <td class="{{ 'positive' if s.sortino_ratio >= 0 else 'negative' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.sortino_label }}"{% endif %}>{{ s.sortino_label }}</td>
             {% endif %}
-            <td class="{{ 'positive' if s.cagr_pct >= 0 else 'negative' }}">{{ s.cagr_label }}</td>
-            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.rendite_pct_label }}</td>
-            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}">{{ s.gewinn_label }}</td>
-            <td>{{ s.total_value }}</td>
-            <td class="hint-cell">{{ s.sim_beginn }} &ndash; {{ s.sim_ende }}<br>(<span data-i18n-en="{{ s.sim_jahre_label }} years">{{ s.sim_jahre_label }} Jahre</span>)</td>
+            <td class="{{ 'positive' if s.cagr_pct >= 0 else 'negative' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.cagr_label }}"{% endif %}>{{ s.cagr_label }}</td>
+            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.rendite_pct_label }}"{% endif %}>{{ s.rendite_pct_label }}</td>
+            <td class="{{ 'positive' if s.rendite_pct >= 0 else 'negative' }}"{% if s.erweitert %} data-erweitert="{{ s.erweitert.gewinn_label }}"{% endif %}>{{ s.gewinn_label }}</td>
+            <td{% if s.erweitert %} data-erweitert="{{ s.erweitert.total_value }}"{% endif %}>{{ s.total_value }}</td>
+            <td class="hint-cell"><span{% if s.erweitert %} data-erweitert="{{ s.erweitert.sim_beginn }} – {{ s.erweitert.sim_ende }}"{% endif %}>{{ s.sim_beginn }} &ndash; {{ s.sim_ende }}</span><br>(<span data-i18n-en="{{ s.sim_jahre_label }} years"{% if s.erweitert %} data-erweitert="{{ s.erweitert.sim_jahre_label }} Jahre" data-i18n-en-erweitert="{{ s.erweitert.sim_jahre_label }} years"{% endif %}>{{ s.sim_jahre_label }} Jahre</span>)</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -171,6 +180,42 @@
         },
       },
     });
+{% if erweitert_verfuegbar %}
+  // #91: Die Tabelle ist nach der CAGR des Standard-Zeitraums sortiert - im
+  // verlaengerten Zeitraum stimmt diese Reihenfolge nicht mehr, deshalb wird
+  // sie beim Umschalten neu geordnet (und beim Ausschalten wiederhergestellt).
+  {
+    const tbody = document.querySelector('table.summary-table tbody');
+    if (tbody) {
+      const zeilenOriginal = Array.from(tbody.children);
+      const cagrSpalte = 1;  // erste Kennzahl-Spalte nach dem Namen
+      const zahl = (text) => parseFloat((text || '').replace('+', '')) || 0;
+      window.__erweitertRefresh.push(function (erweitert) {
+        const zeilen = zeilenOriginal.slice();
+        if (erweitert) {
+          zeilen.sort((a, b) => zahl(b.children[cagrSpalte].textContent) - zahl(a.children[cagrSpalte].textContent));
+        }
+        zeilen.forEach((tr) => tbody.appendChild(tr));
+      });
+    }
+  }
+
+    // #91: derselbe Punkt, aber aus dem verlaengerten Auswertezeitraum.
+    const correlationEigen = correlationChart.data.datasets[0].data.map((p) => ({ ...p }));
+    const correlationErweitert = [
+      {% for s in summary %}
+      {
+        x: {{ (s.erweitert.cagr_pct if s.erweitert else (s.vergleich_cagr_pct if vergleich_verfuegbar else s.cagr_pct)) | tojson }},
+        y: {{ (-((s.erweitert.max_drawdown_pct if s.erweitert else (s.vergleich_max_drawdown_pct if vergleich_verfuegbar else s.max_drawdown_pct)) or 0.0)) | tojson }},
+        name: {{ s.name | tojson }},
+      },
+      {% endfor %}
+    ];
+    window.__erweitertRefresh.push(function (erweitert) {
+      correlationChart.data.datasets[0].data = erweitert ? correlationErweitert : correlationEigen;
+      correlationChart.update();
+    });
+{% endif %}
     chartRefreshers.push(function () {
       correlationChart.options.plugins.title.text = {% if vergleich_verfuegbar %}
         T('CAGR gegen Max Drawdown im gemeinsamen Vergleichszeitraum ab {{ vergleich_beginn }}', 'CAGR against max drawdown over the common comparison period starting {{ vergleich_beginn }}')

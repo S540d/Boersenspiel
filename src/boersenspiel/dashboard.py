@@ -597,6 +597,26 @@ def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list
                 "id": _slug(eltern_name),
                 "mitglieder": mitglieder,
                 "chart_max": max(alle_werte) if alle_werte else 0.0,
+                # #93: der Gruppen-Chart hing bisher als einziger Wertverlauf-Chart
+                # nicht am Benchmark-Schalter (#72). Die Reihen der uebergeordneten
+                # Strategie passen ohne Datumsabgleich, weil alle Mitglieder ueber
+                # dieselben `rows` simuliert werden (gleiches Instrumentenset).
+                "benchmarks_json": json.dumps(eltern_view["benchmarks"]),
+                # #91: dieselbe Grafik ueber den verlaengerten Auswertezeitraum,
+                # sofern jedes Mitglied dort eine Reihe hat (sonst haetten die
+                # Datensaetze unterschiedliche Laengen).
+                "erweitert_json": json.dumps(
+                    {
+                        "labels": mitglieder[0]["erweitert"]["labels"],
+                        "reihen": [m["erweitert"]["total_values"] for m in mitglieder],
+                        "chart_max": max(
+                            max(m["erweitert"]["total_values"]) for m in mitglieder
+                        ),
+                        "benchmarks": eltern_view["erweitert"]["benchmarks"],
+                    }
+                    if all(m.get("erweitert") for m in mitglieder)
+                    else None
+                ),
             }
         )
     return gruppen
@@ -753,6 +773,101 @@ def _optimierungs_effekte(
             }
         )
     return effekte
+
+
+def _erweiterte_rows(rows: list[PriceRow]) -> list[PriceRow]:
+    """Historie für den verlängerten Auswertezeitraum (#91).
+
+    Beginnt beim ersten Kurs des Ersatzbonds (`_ERSATZBOND_TICKER`), weil erst
+    ab da die Annahme trägt, auf der der ganze Modus beruht: Kapital, dessen
+    Zielinstrument es noch nicht gibt, liegt bis dahin in genau diesem einen
+    Anleihe-ETF (#80). Davor gäbe es weder die Zielinstrumente noch den Ersatz,
+    das Kapital hinge also in der Luft.
+    """
+    return [r for r in rows if _ERSATZBOND_TICKER in r.prices]
+
+
+def _erweiterte_kennzahlen(strategy: Strategy, rows: list[PriceRow]) -> dict | None:
+    """Dieselbe Strategie über den verlängerten Zeitraum (#91), als fertige
+    Anzeige-Labels.
+
+    Bewusst schlanker als ``_build_strategy_view()``: nur die Zahlen, die der
+    Schalter im Drei-Punkt-Menü tatsächlich austauscht - keine
+    Leave-one-out-Effekte, keine Walk-Forward-Segmente, keine Presets. Die
+    Strategie läuft dabei über ``_mit_ersatzbond()``, also mit derselben
+    Annahme wie der „Erweitert"-Preset der Wertverlauf-Charts.
+    """
+    if len(rows) < _VERGLEICH_MIN_WOCHEN:
+        return None
+    erweiterte_strategie = _mit_ersatzbond(strategy)
+    result = simulate(rows, erweiterte_strategie)
+    points = result.value_history
+    if not points:
+        return None
+    total_values = [_f(vp.total_value) for vp in points]
+    tage = _tage_zwischen(result)
+    rendite_pct = _rendite_pct(result, erweiterte_strategie)
+    cagr_pct = _cagr_pct(_f(rendite_pct), tage)
+    gewinn = points[-1].total_value - erweiterte_strategie.startkapital
+    zins_pct = _risikofreier_zins_pct(rows)
+    if erweiterte_strategie.startkapital > 0:
+        netto_endwert = points[-1].total_value - result.tax_status.kumulierte_steuer
+        netto_rendite_pct = (
+            (netto_endwert - erweiterte_strategie.startkapital)
+            / erweiterte_strategie.startkapital
+            * 100
+        )
+        liquidations_rendite_pct = (
+            (result.liquidationswert_nach_steuer - erweiterte_strategie.startkapital)
+            / erweiterte_strategie.startkapital
+            * 100
+        )
+    else:
+        netto_rendite_pct = Decimal(0)
+        liquidations_rendite_pct = Decimal(0)
+    max_drawdown_pct = _max_drawdown_pct(total_values)
+    return {
+        "cagr_pct": cagr_pct,
+        "cagr_label": f"{cagr_pct:+.2f}",
+        "rendite_pct_label": f"{rendite_pct:+.2f}",
+        "netto_cagr_label": f"{_cagr_pct(_f(netto_rendite_pct), tage):+.2f}",
+        "gewinn_label": f"{gewinn:+.2f}",
+        "total_value": f"{points[-1].total_value:.2f}",
+        "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
+        "max_drawdown_label": f"{-max_drawdown_pct:.2f}" if max_drawdown_pct else "0.00",
+        "max_drawdown_pct": max_drawdown_pct,
+        "sharpe_label": f"{_sharpe_ratio(total_values, zins_pct):.2f}",
+        "sortino_label": f"{_sortino_ratio(total_values, zins_pct):.2f}",
+        "risikofreier_zins_label": f"{zins_pct:.2f}".replace(".", ","),
+        "trade_count": len(result.trades),
+        "last_rebalance_date": (
+            result.last_rebalance_date.isoformat() if result.last_rebalance_date else "-"
+        ),
+        "last_harvest_date": (
+            result.last_harvest_date.isoformat() if result.last_harvest_date else "-"
+        ),
+        "tax": {
+            "freibetrag_verbraucht": f"{result.tax_status.freibetrag_verbraucht:.2f}",
+            "freibetrag_verbleibend": f"{result.tax_status.freibetrag_verbleibend:.2f}",
+            "verlustvortrag": f"{result.tax_status.verlustvortrag:.2f}",
+            "kumulierte_steuer": f"{result.tax_status.kumulierte_steuer:.2f}",
+        },
+        "liquidationswert_label": f"{result.liquidationswert_nach_steuer:.2f}",
+        "liquidationssteuer_label": f"{result.liquidationssteuer:.2f}",
+        "liquidationsgebuehren_label": f"{result.liquidationsgebuehren:.2f}",
+        "liquidations_rendite_pct_label": f"{liquidations_rendite_pct:+.2f}",
+        "sim_beginn": points[0].date.isoformat(),
+        "sim_ende": points[-1].date.isoformat(),
+        "sim_jahre_label": f"{tage / 365.25:.1f}".replace(".", ","),
+        # Wertreihe fuer die Charts, die keinen Zeitraum-Preset haben (der
+        # Gruppen-Chart der Boersenweisheiten, #30) - die uebrigen
+        # Wertverlauf-Charts schalten stattdessen auf den bereits vorhandenen
+        # "Erweitert"-Preset um (#80).
+        "labels": [vp.date.isoformat() for vp in points],
+        "total_values": total_values,
+        "chart_max": max(total_values) if total_values else 0.0,
+        "benchmarks": _benchmark_reihen(rows, erweiterte_strategie),
+    }
 
 
 def _build_strategy_view(
@@ -951,6 +1066,7 @@ def _build_strategy_view(
         # Strategy.eigene_chart_skala) - own_chart_max ist dabei bewusst NUR das
         # Maximum der eigenen Wertreihe, unabhaengig von allen anderen Strategien.
         "eigene_chart_skala": strategy.eigene_chart_skala,
+        "im_startseiten_chart": strategy.im_startseiten_chart,
         "own_chart_max": max(total_values) if total_values else 0.0,
     }
 
@@ -1116,6 +1232,20 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "walk_forward_min_wochen": _WALK_FORWARD_MIN_WOCHEN_PRO_SEGMENT,
         "cash_ueberall_null": cash_ueberall_null,
         "btc_fruehphase_ende": _BTC_FRUEHPHASE_ENDE.isoformat(),
+        # #93: das Kombinationsverfahren zusammengesetzter Strategien gehoert
+        # nachpruefbar auf diese Seite - der Startseiten-Abschnitt verweist
+        # darauf, statt es dort in einem Absatz zu erklaeren. Die Regelnamen
+        # kommen aus `Strategy.beitraege`, damit die Liste nicht gegenueber
+        # scenarios.py veraltet.
+        "zusammengesetzte": [
+            {
+                "name": s_.name,
+                "id": _slug(s_.name),
+                "regeln": [b.name for b in s_.beitraege],
+            }
+            for s_ in strategies
+            if s_.beitraege
+        ],
     }
 
 
@@ -1210,6 +1340,45 @@ def build_dashboard(
             view["alpha_pp"] = wert - benchmark_cagr
             view["alpha_pp_label"] = f"{wert - benchmark_cagr:+.2f}"
 
+    # Verlaengerter Auswertezeitraum (#91): dieselben Strategien noch einmal ueber
+    # die Historie ab dem ersten Kurs des Ersatzbonds, mit dessen Annahme (#80)
+    # statt des auf "alle Zielinstrumente handelbar" zugeschnittenen Zeitraums
+    # (F4/#63). Der Schalter im Drei-Punkt-Menue tauscht damit die angezeigten
+    # Zahlen aus - berechnet wird beides beim Build, im Browser wird nur
+    # umgeschaltet. Alle Strategien laufen hier ueber DIESELBE Historie, ein
+    # gemeinsamer Vergleichszeitraum entsteht also von selbst.
+    erweiterte_rows = _erweiterte_rows(rows_ohne_btc_fruehphase)
+    erweitert_verfuegbar = False
+    for view, s_ in zip(views, strategies):
+        # Bewusst fuer JEDE Strategie, auch wo dadurch keine Historie dazukommt
+        # (z. B. der S&P-500-Benchmark, dessen Instrument fast alles abdeckt):
+        # nur dann deckt im eingeschalteten Zustand wirklich jede Zeile der
+        # Tabelle exakt denselben Zeitraum ab. Der Schalter selbst erscheint nur,
+        # wenn mindestens eine Strategie dadurch laenger wird - sonst waere er
+        # ein Umschalter ohne Wirkung.
+        view["erweitert"] = _erweiterte_kennzahlen(s_, erweiterte_rows)
+        erweitert_verfuegbar = erweitert_verfuegbar or (
+            view["erweitert"] is not None
+            and bool(erweiterte_rows)
+            and erweiterte_rows[0].date < strategie_rows[s_.name][0].date
+        )
+    erweitert_benchmark_cagr = next(
+        (
+            view["erweitert"]["cagr_pct"]
+            for view in views
+            if view["name"] in benchmark_namen and view["erweitert"] is not None
+        ),
+        None,
+    )
+    for view in views:
+        k = view["erweitert"]
+        if k is None:
+            continue
+        if erweitert_benchmark_cagr is None or view["name"] in benchmark_namen:
+            k["alpha_pp_label"] = "–"
+        else:
+            k["alpha_pp_label"] = f"{k['cagr_pct'] - erweitert_benchmark_cagr:+.2f}"
+
     # Der risikofreie Zins des Vergleichszeitraums gilt fuer ALLE Zeilen gleich (es
     # ist derselbe Zeitraum) - deshalb einmal im Seitenkontext statt je View.
     vergleich_zins = next(
@@ -1220,6 +1389,16 @@ def build_dashboard(
             f"{vergleich_zins:.2f}".replace(".", ",") if vergleich_zins is not None else None
         ),
         "vergleich_beginn": beginn.isoformat() if beginn is not None else None,
+        # #91: Kontext fuer den Schalter "Verlängerter Auswertezeitraum".
+        "erweitert_verfuegbar": erweitert_verfuegbar,
+        "erweitert_beginn": erweiterte_rows[0].date.isoformat() if erweiterte_rows else None,
+        "erweitert_ende": erweiterte_rows[-1].date.isoformat() if erweiterte_rows else None,
+        "erweitert_jahre_label": (
+            f"{(erweiterte_rows[-1].date - erweiterte_rows[0].date).days / 365.25:.0f}"
+            if erweiterte_rows
+            else None
+        ),
+        "ersatzbond_ticker": _ERSATZBOND_TICKER,
         "vergleich_ende": rows[-1].date.isoformat(),
         "vergleich_benchmark": benchmark_label,
         "vergleich_benchmark_label": (
@@ -1298,6 +1477,11 @@ def build_dashboard(
     index_html = index_template.render(
         strategies=views,
         summary=summary,
+        # #92: das CAGR-Balkendiagramm der Startseite zeigt nur die Strategien
+        # mit `im_startseiten_chart` - mit allen Läufen standen dort mehr Balken
+        # als Achsenbeschriftungen (Chart.js duennt die Beschriftungen aus). Die
+        # vollstaendige Liste bleibt in `summary` (Tabelle auf vergleich.html).
+        chart_summary=[v for v in summary if v["im_startseiten_chart"]],
         learnings=learnings,
         wert_chart_max=wert_chart_max,
         teilszenario_gruppen=teilszenario_gruppen,

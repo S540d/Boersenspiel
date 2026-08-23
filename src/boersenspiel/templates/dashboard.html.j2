@@ -49,29 +49,26 @@
 {% endif %}
   <section class="strategy" id="uebersicht">
     <h2 data-i18n-en="Return comparison">Rendite im Vergleich</h2>
-    <p class="hint" data-i18n-en="Annualized return (CAGR) per strategy and scenario{% if vergleich_verfuegbar %}, over the common comparison period from {{ vergleich_beginn }} so the bars are actually comparable{% endif %}. Gross, before tax. The full table with volatility, max drawdown, Sharpe and Sortino is one click away.">
-      Annualisierte Rendite (CAGR) je Strategie und Szenario{% if vergleich_verfuegbar %},
-      über den gemeinsamen Vergleichszeitraum ab {{ vergleich_beginn }}, damit die
-      Balken überhaupt vergleichbar sind{% endif %}. Brutto, vor Steuer. Die
-      vollständige Tabelle mit Volatilität, Max Drawdown, Sharpe und Sortino
-      ist einen Klick entfernt.
+    <p class="hint" data-i18n-en="Annualized return (CAGR) of the main strategies and scenarios{% if vergleich_verfuegbar %}, over the common comparison period from {{ vergleich_beginn }} so the bars are actually comparable{% endif %}. Gross, before tax. The market-sayings scenarios have their own chart below; every run, including volatility, max drawdown, Sharpe and Sortino, is in the full table."data-erweitert="Annualisierte Rendite (CAGR) der wichtigsten Strategien und Szenarien, über den verlängerten Auswertezeitraum ab {{ erweitert_beginn }}. Brutto, vor Steuer. Die Börsenweisheiten-Szenarien haben weiter unten einen eigenen Chart; alle Läufe samt Volatilität, Max Drawdown, Sharpe und Sortino stehen in der vollständigen Tabelle." data-i18n-en-erweitert="Annualized return (CAGR) of the main strategies and scenarios, over the extended evaluation period from {{ erweitert_beginn }}. Gross, before tax. The market-sayings scenarios have their own chart below; every run, including volatility, max drawdown, Sharpe and Sortino, is in the full table.">
+      Annualisierte Rendite (CAGR) der wichtigsten Strategien und
+      Szenarien{% if vergleich_verfuegbar %}, über den gemeinsamen
+      Vergleichszeitraum ab {{ vergleich_beginn }}, damit die Balken überhaupt
+      vergleichbar sind{% endif %}. Brutto, vor Steuer. Die
+      Börsenweisheiten-Szenarien haben weiter unten einen eigenen Chart; alle
+      Läufe samt Volatilität, Max Drawdown, Sharpe und Sortino stehen in der
+      vollständigen Tabelle.
     </p>
+{% if erweitert_verfuegbar %}
+    <p class="hint" data-erweitert-nur hidden data-i18n-en="Extended evaluation period is on: all figures run over {{ erweitert_beginn }} to {{ erweitert_ende }} and rest on the assumption about missing prices described in the premises. Switch it off in the three-dot menu.">
+      <strong>Verlängerter Auswertezeitraum ist an:</strong> Alle Zahlen laufen
+      über {{ erweitert_beginn }} bis {{ erweitert_ende }} und beruhen auf der
+      in den Prämissen beschriebenen Annahme zu fehlenden Kursen. Ausschalten
+      im Drei-Punkt-Menü.
+    </p>
+{% endif %}
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <p class="detail-link"><a href="vergleich.html" data-i18n-en="All metrics compared &rarr;">Alle Kennzahlen im Vergleich &rarr;</a></p>
   </section>
-{% for gruppe in teilszenario_gruppen %}
-  <section class="strategy" id="gruppe-{{ gruppe.id }}">
-    <h2><span data-i18n-en="{{ gruppe.name }} compared">{{ gruppe.name }} im Vergleich</span></h2>
-    <p class="hint" data-i18n-en="Value history of the combined strategy and its {{ gruppe.mitglieder|length - 1 }} sub-scenarios in one chart, instead of scattered among all the other strategies/scenarios - a direct comparison of how the arithmetic mean of the individual votes (combined strategy) performs relative to each individual vote (#30).">
-      Wertverlauf der Kombi-Strategie und ihrer {{ gruppe.mitglieder|length - 1 }}
-      Unterszenarien in einem Chart, statt verstreut zwischen allen übrigen
-      Strategien/Szenarien - direkter Vergleich, wie das arithmetische Mittel
-      der Einzelvoten (Kombi-Strategie) im Verhältnis zu jedem einzelnen Votum
-      abschneidet (#30).
-    </p>
-    <div class="chart-box-large"><canvas id="gruppen-chart-{{ loop.index }}"></canvas></div>
-  </section>
-{% endfor %}
 {% if benchmark_optionen %}
   <div class="benchmark-switch" id="benchmark-switch">
     <span data-i18n-en="Show a benchmark in the value-history charts:">Benchmark in den Wertverlauf-Charts einblenden:</span>
@@ -81,6 +78,22 @@
     {% endfor %}
   </div>
 {% endif %}
+{% for gruppe in teilszenario_gruppen %}
+  <section class="strategy" id="gruppe-{{ gruppe.id }}">
+    <h2><span data-i18n-en="{{ gruppe.name }} compared">{{ gruppe.name }} im Vergleich</span></h2>
+    <p class="hint" data-i18n-en="The thick line is the combination of all {{ gruppe.mitglieder|length - 1 }} rules, the thin ones are the same rules on their own. The combination follows no single rule: each rule proposes an equity quota per week, and what gets traded is the average of those proposals. So two rules that contradict each other partly cancel out instead of one of them winning. That makes it readable whether throwing the rules together beats each rule by itself.">
+      Die dicke Linie ist die Kombination aus allen
+      {{ gruppe.mitglieder|length - 1 }} Regeln, die dünnen sind dieselben
+      Regeln einzeln. Die Kombination folgt keiner Regel allein: jede Regel
+      schlägt pro Woche eine Aktienquote vor, gehandelt wird der Mittelwert
+      dieser Vorschläge. Zwei Regeln, die sich widersprechen, heben sich damit
+      teilweise auf, statt dass eine gewinnt. So lässt sich ablesen, ob das
+      Zusammenwerfen mehr bringt als jede Regel für sich.
+    </p>
+    <p class="detail-link"><a href="praemissen.html#kombination" data-i18n-en="How the combination is computed &rarr;">Wie die Kombination genau rechnet &rarr;</a></p>
+    <div class="chart-box-large"><canvas id="gruppen-chart-{{ loop.index }}"></canvas></div>
+  </section>
+{% endfor %}
 {% for s in strategies %}
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
@@ -107,6 +120,9 @@
     series2: cssVar('--series-2'),
     series3: cssVar('--series-3'),
     series4: cssVar('--series-4'),
+    series5: cssVar('--series-5'),
+    series6: cssVar('--series-6'),
+    series7: cssVar('--series-7'),
     grid: cssVar('--grid'),
     axis: cssVar('--axis'),
     text: cssVar('--text-secondary'),
@@ -136,15 +152,15 @@
     const summaryChart = new Chart(document.getElementById('summary-chart'), {
       type: 'bar',
       data: {
-        labels: {{ summary | map(attribute='name') | list | tojson }},
+        labels: {{ chart_summary | map(attribute='name') | list | tojson }},
         datasets: [{
           label: 'CAGR % p.a.',
           {% if vergleich_verfuegbar %}
-          data: {{ summary | map(attribute='vergleich_cagr_pct') | list | tojson }},
-          backgroundColor: {{ summary | map(attribute='vergleich_cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+          data: {{ chart_summary | map(attribute='vergleich_cagr_pct') | list | tojson }},
+          backgroundColor: {{ chart_summary | map(attribute='vergleich_cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
           {% else %}
-          data: {{ summary | map(attribute='cagr_pct') | list | tojson }},
-          backgroundColor: {{ summary | map(attribute='cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+          data: {{ chart_summary | map(attribute='cagr_pct') | list | tojson }},
+          backgroundColor: {{ chart_summary | map(attribute='cagr_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
           {% endif %}
         }],
       },
@@ -154,22 +170,109 @@
         plugins: { legend: { display: false }, title: { display: true, text: '', color: colors.text } },
         scales: {
           x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-          y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+          // autoSkip aus (#92): Chart.js liess sonst Beschriftungen weg, sobald
+          // die Balken eng standen - es gab mehr Balken als Namen.
+          y: { grid: { color: colors.grid }, ticks: { color: colors.text, autoSkip: false }, border: { color: colors.axis } },
         },
       },
     });
-    chartRefreshers.push(function () {
-      summaryChart.options.plugins.title.text = {% if vergleich_verfuegbar %}
+{% if erweitert_verfuegbar %}
+    // #91: dieselben Balken aus dem verlaengerten Auswertezeitraum.
+    const summaryEigen = summaryChart.data.datasets[0].data.slice();
+    const summaryErweitert = [
+      {% for s in chart_summary %}
+      {{ (s.erweitert.cagr_pct if s.erweitert else (s.vergleich_cagr_pct if vergleich_verfuegbar else s.cagr_pct)) | tojson }},
+      {% endfor %}
+    ];
+    const summaryLabelsEigen = summaryChart.data.labels.slice();
+    window.__erweitertRefresh.push(function (erweitert) {
+      // Die Balken sind nach der CAGR des Standard-Zeitraums sortiert - im
+      // verlaengerten Zeitraum gilt eine andere Reihenfolge.
+      let labels = summaryLabelsEigen;
+      let daten = summaryEigen;
+      if (erweitert) {
+        const paare = summaryLabelsEigen
+          .map((label, i) => ({ label, wert: summaryErweitert[i] }))
+          .sort((a, b) => b.wert - a.wert);
+        labels = paare.map((pk) => pk.label);
+        daten = paare.map((pk) => pk.wert);
+      }
+      summaryChart.data.labels = labels;
+      summaryChart.data.datasets[0].data = daten;
+      summaryChart.data.datasets[0].backgroundColor = daten.map((v) => v >= 0 ? colors.series3 : colors.series2);
+      summaryChart.options.plugins.title.text = erweitert
+        ? T('Annualisierte Rendite (CAGR, % p.a.) im verlängerten Auswertezeitraum ab {{ erweitert_beginn }}', 'Annualized return (CAGR, % p.a.) over the extended evaluation period from {{ erweitert_beginn }}')
+        : summaryTitelEigen();
+      summaryChart.update();
+    });
+{% endif %}
+    function summaryTitelEigen() {
+      return {% if vergleich_verfuegbar %}
         T('Annualisierte Rendite (CAGR, % p.a.) im gemeinsamen Vergleichszeitraum ab {{ vergleich_beginn }}', 'Annualized return (CAGR, % p.a.) over the common comparison period starting {{ vergleich_beginn }}')
       {% else %}
         T('Annualisierte Rendite (CAGR, % p.a.)', 'Annualized return (CAGR, % p.a.)')
       {% endif %};
+    }
+    chartRefreshers.push(function () {
+      summaryChart.options.plugins.title.text = summaryTitelEigen();
       summaryChart.update();
     });
     chartRefreshers[chartRefreshers.length - 1]();
   }
 
-  const gruppenSeriesColors = [colors.series1, colors.series2, colors.series3, colors.series4];
+  // Benchmark-Overlay-Schalter (#72): EIN zentraler Schalter fuer alle
+  // szenariospezifischen Wertverlauf-Charts auf dieser Seite statt eines
+  // Schalters je Chart. `chart.__benchmarks` haelt die fuer den jeweils
+  // AKTUELL angezeigten Zeitraum passenden Kandidaten (siehe initZeitraumSwitch
+  // unten, das dieses Feld beim Preset-Wechsel neu setzt); die Auswahl selbst
+  // (`currentBenchmarkId`) ist global, weil ein einzelner Schalter alle Charts
+  // steuert. Wichtig (Owner-Vorgabe #72): die Y-Achse bleibt dabei unveraendert
+  // - deshalb ein fixes `max` statt `suggestedMax` auf allen betroffenen Charts
+  // (siehe unten): eine Benchmark-Linie, die ueber das bisherige Maximum
+  // hinausschiesst, wird vom Chart einfach oben abgeschnitten statt die Skala
+  // zu strecken.
+  let currentBenchmarkId = 'none';
+  const benchmarkCharts = [];
+
+  function applyBenchmarkDataset(chart) {
+    // Der Gruppen-Chart (#93) bringt mehrere eigene Linien mit - die
+    // Benchmark-Linie haengt sich deshalb hinter __baseDatasetCount an, statt
+    // fest auf Position 1 zu schreiben und dort ein Mitglied zu ueberschreiben.
+    const basis = chart.__baseDatasetCount || 1;
+    const kandidaten = chart.__benchmarks || [];
+    const bench = kandidaten.find((b) => b.id === currentBenchmarkId);
+    if (bench) {
+      chart.data.datasets[basis] = {
+        label: bench.label,
+        data: bench.total_values,
+        borderColor: colors.series4,
+        backgroundColor: colors.series4,
+        borderWidth: 1.5,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.15,
+      };
+    } else {
+      chart.data.datasets.length = basis;
+    }
+    chart.update();
+  }
+
+  const benchmarkSwitchEl = document.getElementById('benchmark-switch');
+  if (benchmarkSwitchEl) {
+    benchmarkSwitchEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        currentBenchmarkId = btn.dataset.benchmark;
+        benchmarkSwitchEl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+        benchmarkCharts.forEach(applyBenchmarkDataset);
+      });
+    });
+  }
+
+  const gruppenSeriesColors = [
+    colors.series1, colors.series2, colors.series3,
+    colors.series5, colors.series6, colors.series7,
+  ];
 
   {% for gruppe in teilszenario_gruppen %}
   {
@@ -196,10 +299,34 @@
         plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: '', color: colors.text } },
         scales: {
           x: commonScales.x,
-          y: { ...commonScales.y, min: 0, suggestedMax: {{ gruppe.chart_max }} * 1.05 },
+          y: { ...commonScales.y, min: 0, max: {{ gruppe.chart_max }} * 1.05 },
         },
       },
     });
+    gruppenChart{{ loop.index }}.__baseDatasetCount = {{ gruppe.mitglieder|length }};
+    gruppenChart{{ loop.index }}.__benchmarks = {{ gruppe.benchmarks_json | safe }};
+    benchmarkCharts.push(gruppenChart{{ loop.index }});
+    // #91: dieser Chart hat keinen Zeitraum-Umschalter - der Schalter im
+    // Drei-Punkt-Menue tauscht deshalb Reihen, Skala und Benchmark direkt aus.
+    {
+      const eigen = {
+        labels: gruppenChart{{ loop.index }}.data.labels,
+        reihen: gruppenChart{{ loop.index }}.data.datasets.map((d) => d.data),
+        chart_max: {{ gruppe.chart_max }},
+        benchmarks: gruppenChart{{ loop.index }}.__benchmarks,
+      };
+      const erweitertDaten = {{ gruppe.erweitert_json | safe }};
+      if (erweitertDaten) {
+        window.__erweitertRefresh.push(function (erweitert) {
+          const q = erweitert ? erweitertDaten : eigen;
+          gruppenChart{{ loop.index }}.data.labels = q.labels;
+          q.reihen.forEach((reihe, i) => { gruppenChart{{ loop.index }}.data.datasets[i].data = reihe; });
+          gruppenChart{{ loop.index }}.options.scales.y.max = q.chart_max * 1.05;
+          gruppenChart{{ loop.index }}.__benchmarks = q.benchmarks;
+          applyBenchmarkDataset(gruppenChart{{ loop.index }});
+        });
+      }
+    }
     chartRefreshers.push(function () {
       gruppenChart{{ loop.index }}.options.plugins.title.text = T('Wertverlauf im Vergleich', 'Value history compared');
       gruppenChart{{ loop.index }}.update();
@@ -207,51 +334,6 @@
     chartRefreshers[chartRefreshers.length - 1]();
   }
   {% endfor %}
-
-  // Benchmark-Overlay-Schalter (#72): EIN zentraler Schalter fuer alle
-  // szenariospezifischen Wertverlauf-Charts auf dieser Seite statt eines
-  // Schalters je Chart. `chart.__benchmarks` haelt die fuer den jeweils
-  // AKTUELL angezeigten Zeitraum passenden Kandidaten (siehe initZeitraumSwitch
-  // unten, das dieses Feld beim Preset-Wechsel neu setzt); die Auswahl selbst
-  // (`currentBenchmarkId`) ist global, weil ein einzelner Schalter alle Charts
-  // steuert. Wichtig (Owner-Vorgabe #72): die Y-Achse bleibt dabei unveraendert
-  // - deshalb ein fixes `max` statt `suggestedMax` auf allen betroffenen Charts
-  // (siehe unten): eine Benchmark-Linie, die ueber das bisherige Maximum
-  // hinausschiesst, wird vom Chart einfach oben abgeschnitten statt die Skala
-  // zu strecken.
-  let currentBenchmarkId = 'none';
-  const benchmarkCharts = [];
-
-  function applyBenchmarkDataset(chart) {
-    const kandidaten = chart.__benchmarks || [];
-    const bench = kandidaten.find((b) => b.id === currentBenchmarkId);
-    if (bench) {
-      chart.data.datasets[1] = {
-        label: bench.label,
-        data: bench.total_values,
-        borderColor: colors.series4,
-        backgroundColor: colors.series4,
-        borderWidth: 1.5,
-        borderDash: [6, 4],
-        pointRadius: 0,
-        tension: 0.15,
-      };
-    } else {
-      chart.data.datasets.length = 1;
-    }
-    chart.update();
-  }
-
-  const benchmarkSwitchEl = document.getElementById('benchmark-switch');
-  if (benchmarkSwitchEl) {
-    benchmarkSwitchEl.querySelectorAll('button').forEach((btn) => {
-      btn.addEventListener('click', () => {
-        currentBenchmarkId = btn.dataset.benchmark;
-        benchmarkSwitchEl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
-        benchmarkCharts.forEach(applyBenchmarkDataset);
-      });
-    });
-  }
 
   // Zeitraum-Presets (#54, Variante B): jeder Preset ist bereits fertig aus einer
   // eigenen engine.simulate()-Neu-Simulation (frisches Startkapital, siehe
@@ -284,6 +366,12 @@
     });
     apply('alle');
     chartRefreshers.push(setRenditeText);
+    // #91: der Schalter im Drei-Punkt-Menue waehlt den bereits vorberechneten
+    // "Erweitert"-Preset (#80), wo es ihn gibt - Charts ohne zusaetzliche
+    // Historie bleiben auf "Gesamte Historie".
+    window.__erweitertRefresh.push(function (erweitert) {
+      apply(erweitert && byId['erweitert'] ? 'erweitert' : 'alle');
+    });
   }
 
   {% for s in strategies %}
