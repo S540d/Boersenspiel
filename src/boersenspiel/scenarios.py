@@ -134,6 +134,11 @@ SELL_IN_MAY = Strategy(
         "Von Mai bis September (inklusive) 100% defensiv (Topf A), sonst normale "
         "Barbell-Verteilung. Testet die Börsenweisheit 'Sell in May and go away'."
     ),
+    beschreibung_en=(
+        "100% defensive (bucket A) from May through September inclusive, otherwise "
+        "the normal barbell distribution. Tests the market saying 'Sell in May and "
+        "go away'."
+    ),
     teil_von=BOERSENWEISHEITEN_NAME,
 )
 
@@ -182,6 +187,15 @@ BUY_AND_HOLD = Strategy(
         "Dauervotum/dämpfender Anker, weil sich 'gar nicht umschichten' nicht als "
         "Quoten-Votum neben den anderen Regeln kombinieren lässt (siehe #27)."
     ),
+    beschreibung_en=(
+        "The initial allocation is never actively rebalanced ('time in the market "
+        "beats timing the market'). The December tax mechanism stays active like "
+        "for the other strategies. In the combined 'All five market sayings "
+        "combined' scenario, the same saying works differently: there it is the "
+        "only rule that always votes for the normal barbell quote and acts as a "
+        "permanent, dampening anchor, because 'never reshuffle' cannot itself be "
+        "combined as a quote vote alongside the other rules (see #27)."
+    ),
     teil_von=BOERSENWEISHEITEN_NAME,
 )
 
@@ -219,6 +233,10 @@ SANTA_CLAUS_RALLY = Strategy(
     beschreibung=(
         "In Dezember und Januar Wachstumsquote auf 95% hochgefahren ('Santa Claus "
         "Rally'), sonst normale Barbell-Verteilung."
+    ),
+    beschreibung_en=(
+        "Growth quota raised to 95% in December and January ('Santa Claus Rally'), "
+        "otherwise the normal barbell distribution."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
 )
@@ -267,6 +285,11 @@ BUY_THE_DIP = Strategy(
     beschreibung=(
         "Liegt der MSCI-World-ETF mehr als 10% unter seinem 20-Wochen-Hoch, "
         "Wachstumsquote auf 95% hochfahren ('buy the dip'), sonst normale Verteilung."
+    ),
+    beschreibung_en=(
+        "If the MSCI World ETF is more than 10% below its 20-week high, the growth "
+        "quota is raised to 95% ('buy the dip'), otherwise the normal distribution "
+        "applies."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
 )
@@ -329,6 +352,11 @@ CUT_LOSSES = Strategy(
         "Trailing-Stop je Wachstums-Instrument: fällt eines mehr als 15% unter sein "
         "eigenes 20-Wochen-Hoch, wird nur dieses auf 0% gesetzt ('cut your losses "
         "short'), andere Wachstums-Instrumente bleiben unangetastet."
+    ),
+    beschreibung_en=(
+        "A trailing stop per growth instrument: if one falls more than 15% below "
+        "its own 20-week high, only that instrument is set to 0% ('cut your losses "
+        "short'), other growth instruments are left untouched."
     ),
     teil_von=BOERSENWEISHEITEN_NAME,
 )
@@ -427,6 +455,12 @@ BOERSENWEISHEITEN = _weisheiten_strategy(
         "arithmetische Mittel der abgegebenen Voten. 'Cut your losses short, let your "
         "winners run' wirkt danach zusätzlich als Instrument-Overlay."
     ),
+    beschreibung_en=(
+        "Combines the five market sayings above into one strategy: each votes for a "
+        "growth quota (or abstains), the target quota is the arithmetic mean of the "
+        "votes cast. 'Cut your losses short, let your winners run' then additionally "
+        "acts as a per-instrument overlay."
+    ),
     beitraege=tuple(
         Beitrag(
             name=weisheit.spruch,
@@ -479,6 +513,11 @@ CHART_SMA_CROSSOVER = Strategy(
         "unter dem 40-Wochen-Durchschnitt ('Death Cross'), 100% defensiv, sonst "
         "('Golden Cross'/normal) reguläre Barbell-Gewichte."
     ),
+    beschreibung_en=(
+        "A chart-based trend indicator on the MSCI World ETF: if the 10-week "
+        "average is below the 40-week average ('death cross'), 100% defensive, "
+        "otherwise ('golden cross'/normal) regular barbell weights."
+    ),
 )
 
 
@@ -518,6 +557,12 @@ CHART_SMA_CROSSOVER_KURZ = Strategy(
         "10/40 Wochen, entspricht 21/100 statt 50/200 Handelstagen) für ein "
         "reaktionsschnelleres Signal - Erweiterung des Golden-/Death-Cross-Ansatzes "
         "aus #28."
+    ),
+    beschreibung_en=(
+        "Like 'SMA crossover (10/40 weeks)', but with shorter windows (4/20 instead "
+        "of 10/40 weeks, equivalent to 21/100 instead of 50/200 trading days) for a "
+        "more responsive signal - an extension of the golden/death cross approach "
+        "from #28."
     ),
 )
 
@@ -582,6 +627,11 @@ MOMENTUM_ROTATION = Strategy(
         "Innerhalb des Wachstums-Topfs (80%) werden nur die 2 Instrumente mit der "
         "höchsten 12-Wochen-Trailing-Rendite gleichgewichtet gehalten, die übrigen auf "
         "0% gesetzt. Der Sicherheits-Topf bleibt unverändert."
+    ),
+    beschreibung_en=(
+        "Within the growth bucket (80%), only the 2 instruments with the highest "
+        "12-week trailing return are held at equal weight, the rest are set to 0%. "
+        "The safety bucket stays unchanged."
     ),
 )
 
@@ -651,6 +701,11 @@ VOLATILITY_TARGET = Strategy(
         "des MSCI-World-ETF linear zwischen 50% (hohe Volatilität) und 90% (niedrige "
         "Volatilität) skaliert - Risk-Parity-/Vol-Targeting-Prinzip."
     ),
+    beschreibung_en=(
+        "The growth quota is scaled linearly between 50% (high volatility) and 90% "
+        "(low volatility) depending on the realized 12-week volatility of the MSCI "
+        "World ETF - a risk-parity/vol-targeting principle."
+    ),
 )
 
 
@@ -689,6 +744,12 @@ COST_AVERAGE_ENTRY = Strategy(
         "Statt das Startkapital sofort komplett zu investieren, wird die "
         "Wachstumsquote über die ersten 10 Wochen linear von 0% auf die normale "
         "Barbell-Verteilung hochgefahren - Annäherung an ratierliches Investieren."
+    ),
+    beschreibung_en=(
+        "Instead of investing the starting capital all at once, the growth quota "
+        "is ramped up linearly from 0% to the normal barbell distribution over the "
+        "first 10 weeks - an approximation of dollar-cost averaging instead of a "
+        "lump-sum investment."
     ),
 )
 

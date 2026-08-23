@@ -55,17 +55,17 @@ def _view(
 
 
 def _titel(learnings) -> list[str]:
-    return [l.titel for l in learnings]
+    return [l.titel_de for l in learnings]
 
 
 def test_spannweite_nennt_beste_und_schlechteste_regel():
     views = [_view("Gut", 50.0), _view("Mittel", 10.0), _view("Schlecht", -20.0)]
-    learning = next(l for l in derive_learnings(views) if l.titel == "Die Regel entscheidet, nicht der Markt")
+    learning = next(l for l in derive_learnings(views) if l.titel_de == "Die Regel entscheidet, nicht der Markt")
 
     # Spread 50 - (-20) = 70 pp
-    assert "+70,00 pp" in learning.kernaussage
-    assert "Gut" in learning.detail and "+50,00 %" in learning.detail
-    assert "Schlecht" in learning.detail and "-20,00 %" in learning.detail
+    assert "+70,00 pp" in learning.kernaussage_de
+    assert "Gut" in learning.detail_de and "+50,00 %" in learning.detail_de
+    assert "Schlecht" in learning.detail_de and "-20,00 %" in learning.detail_de
 
 
 def test_aktivitaet_nennt_platzierung_der_handelsintensivsten_regel():
@@ -74,12 +74,12 @@ def test_aktivitaet_nennt_platzierung_der_handelsintensivsten_regel():
         _view("Mittel", 20.0, trade_count=100),
         _view("Ruhig", 80.0, trade_count=5),
     ]
-    learning = next(l for l in derive_learnings(views) if l.titel == "Mehr Handeln ist nicht mehr Rendite")
+    learning = next(l for l in derive_learnings(views) if l.titel_de == "Mehr Handeln ist nicht mehr Rendite")
 
-    assert "400 Trades" in learning.kernaussage
-    assert "Platz 3 von 3" in learning.kernaussage
-    assert "5 Trades" in learning.kernaussage
-    assert "Platz 1" in learning.kernaussage
+    assert "400 Trades" in learning.kernaussage_de
+    assert "Platz 3 von 3" in learning.kernaussage_de
+    assert "5 Trades" in learning.kernaussage_de
+    assert "Platz 1" in learning.kernaussage_de
 
 
 def test_aktivitaet_dreht_sich_mit_den_daten():
@@ -89,18 +89,18 @@ def test_aktivitaet_dreht_sich_mit_den_daten():
         _view("Mittel", 20.0, trade_count=100),
         _view("Ruhig", -5.0, trade_count=5),
     ]
-    learning = next(l for l in derive_learnings(views) if l.titel == "Mehr Handeln ist nicht mehr Rendite")
-    assert "Platz 1 von 3" in learning.kernaussage
+    learning = next(l for l in derive_learnings(views) if l.titel_de == "Mehr Handeln ist nicht mehr Rendite")
+    assert "Platz 1 von 3" in learning.kernaussage_de
 
 
 def test_reibungskosten_rechnet_gebuehren_aus_trade_count():
     views = [_view("A", 10.0, trade_count=250, steuer=150.0), _view("B", 5.0, trade_count=3)]
-    learning = next(l for l in derive_learnings(views) if l.titel.startswith("Reibung"))
+    learning = next(l for l in derive_learnings(views) if l.titel_de.startswith("Reibung"))
 
     # 250 Trades * 1 EUR + 150 EUR Steuer = 400 EUR = 4,0 % von 10.000 EUR
-    assert "400 €" in learning.kernaussage
-    assert "4,0 %" in learning.kernaussage
-    assert "250 €" in learning.detail and "150 €" in learning.detail
+    assert "400 €" in learning.kernaussage_de
+    assert "4,0 %" in learning.kernaussage_de
+    assert "250 €" in learning.detail_de and "150 €" in learning.detail_de
 
 
 def test_kombinationseffekt_zaehlt_negative_beitraege():
@@ -111,13 +111,13 @@ def test_kombinationseffekt_zaehlt_negative_beitraege():
         {"name": "Regel D", "delta_pp": +3.0},
     ]
     views = [_view("Solo", 40.0), _view("Kombi", -10.0, beitraege=beitraege)]
-    learning = next(l for l in derive_learnings(views) if l.titel.startswith("Regeln zusammenwerfen"))
+    learning = next(l for l in derive_learnings(views) if l.titel_de.startswith("Regeln zusammenwerfen"))
 
-    assert "2 von 4" in learning.kernaussage
-    assert "Regel A" in learning.detail and "-30,00 pp" in learning.detail
-    assert "Regel B" in learning.detail and "+12,00 pp" in learning.detail
+    assert "2 von 4" in learning.kernaussage_de
+    assert "Regel A" in learning.detail_de and "-30,00 pp" in learning.detail_de
+    assert "Regel B" in learning.detail_de and "+12,00 pp" in learning.detail_de
     # Zwei positive Beitraege -> "einziger Rückhalt" waere falsch
-    assert "stärkster Rückhalt" in learning.detail
+    assert "stärkster Rückhalt" in learning.detail_de
 
 
 def test_kombinationseffekt_formuliert_einzigen_rueckhalt():
@@ -126,8 +126,8 @@ def test_kombinationseffekt_formuliert_einzigen_rueckhalt():
         {"name": "Regel B", "delta_pp": +12.0},
     ]
     views = [_view("Solo", 40.0), _view("Kombi", -10.0, beitraege=beitraege)]
-    learning = next(l for l in derive_learnings(views) if l.titel.startswith("Regeln zusammenwerfen"))
-    assert "einziger Rückhalt" in learning.detail
+    learning = next(l for l in derive_learnings(views) if l.titel_de.startswith("Regeln zusammenwerfen"))
+    assert "einziger Rückhalt" in learning.detail_de
 
 
 def test_kombinationseffekt_faellt_ohne_zusammengesetzte_strategie_weg():

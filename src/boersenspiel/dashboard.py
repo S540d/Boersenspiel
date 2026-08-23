@@ -51,6 +51,14 @@ _OPTIMIERUNGS_LABELS: dict[str, str] = {
     "besteuerung": "Besteuerung",
     "fondskosten": "Laufende Fondskosten (TER)",
 }
+# Englische Fassung fuers clientseitige Sprachumschalten (Dreipunktmenue).
+_OPTIMIERUNGS_LABELS_EN: dict[str, str] = {
+    "steueroptimierung": "Tax optimization (December harvest)",
+    "rebalancing": "Rebalancing",
+    "ordergebuehren": "Order fees",
+    "besteuerung": "Taxation",
+    "fondskosten": "Ongoing fund costs (TER)",
+}
 
 
 # --- F4 (#63): Rueckschaufehler mit Hebel ------------------------------------------
@@ -398,6 +406,24 @@ _ZEITRAUM_PRESET_LABELS: dict[str, str] = {
     "5j": "5 Jahre",
     "alle": "Gesamte Historie",
 }
+# Englische Fassung fuers clientseitige Sprachumschalten (Dreipunktmenue).
+_ZEITRAUM_PRESET_LABELS_EN: dict[str, str] = {
+    "1j": "1 year",
+    "3j": "3 years",
+    "5j": "5 years",
+    "alle": "Entire history",
+}
+_ERWEITERT_PRESET_LABEL_EN = "Extended (replacement bond assumption)"
+
+# Englische Anzeigenamen der ueber alle Strategien/Szenarien hinweg verwendeten
+# Topf-Namen (Chart-Legenden auf den Detailseiten) - rein darstellerisch, die
+# Topf-Namen selbst (als dict-Schluessel in Strategy/engine.py) bleiben deutsch.
+_TOPF_NAMEN_EN: dict[str, str] = {
+    "Topf A - Sicherheit": "Bucket A - Safety",
+    "Topf B - Wachstum": "Bucket B - Growth",
+    "Topf C - Einzelaktien-Satellit": "Bucket C - Individual Stock Satellite",
+    "Topf A - Benchmark": "Bucket A - Benchmark",
+}
 
 
 def _benchmark_reihen(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
@@ -442,7 +468,9 @@ def _jahre_zurueck(stichtag: date, jahre: int) -> date:
         return stichtag.replace(year=stichtag.year - jahre, day=28)
 
 
-def _preset_eintrag(preset_id: str, label: str, preset_rows: list[PriceRow], strategy: Strategy) -> dict:
+def _preset_eintrag(
+    preset_id: str, label: str, preset_rows: list[PriceRow], strategy: Strategy, label_en: str | None = None
+) -> dict:
     result = simulate(preset_rows, strategy)
     # Risikofreier Zins aus dem Geldmarkt-ETF ueber genau DIESEN Preset-Zeitraum
     # (#75) - ein 1-Jahres-Preset im Hochzinsumfeld hat einen anderen Referenzzins
@@ -454,6 +482,7 @@ def _preset_eintrag(preset_id: str, label: str, preset_rows: list[PriceRow], str
     return {
         "id": preset_id,
         "label": label,
+        "label_en": label_en or label,
         "rendite_pct": _f(rendite_pct),
         "rendite_label": f"{rendite_pct:+.2f}",
         "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
@@ -481,7 +510,15 @@ def _zeitraum_presets(
             preset_rows = [r for r in rows if r.date >= cutoff]
         if len(preset_rows) < 1:
             continue
-        presets.append(_preset_eintrag(preset_id, _ZEITRAUM_PRESET_LABELS[preset_id], preset_rows, strategy))
+        presets.append(
+            _preset_eintrag(
+                preset_id,
+                _ZEITRAUM_PRESET_LABELS[preset_id],
+                preset_rows,
+                strategy,
+                _ZEITRAUM_PRESET_LABELS_EN[preset_id],
+            )
+        )
     # #80: zusaetzlicher Preset ueber die volle (nicht auf "alle Zielinstrumente
     # handelbar" zurechtgeschnittene) Historie, mit der Ersatzbond-Annahme statt
     # der Look-ahead-Vermeidung aus F4/#63 - nur anbieten, wenn dadurch
@@ -490,7 +527,13 @@ def _zeitraum_presets(
     if erweiterte_rows is not None and erweiterte_rows and erweiterte_rows[0].date < rows[0].date:
         erweiterte_strategie = _mit_ersatzbond(strategy)
         presets.append(
-            _preset_eintrag("erweitert", "Erweitert (Ersatzbond-Annahme)", erweiterte_rows, erweiterte_strategie)
+            _preset_eintrag(
+                "erweitert",
+                "Erweitert (Ersatzbond-Annahme)",
+                erweiterte_rows,
+                erweiterte_strategie,
+                _ERWEITERT_PRESET_LABEL_EN,
+            )
         )
     return presets
 
@@ -702,6 +745,7 @@ def _optimierungs_effekte(
         effekte.append(
             {
                 "name": label,
+                "name_en": _OPTIMIERUNGS_LABELS_EN[feld],
                 "delta_pp": delta_pp,
                 "delta_label": f"{delta_pp:+.2f}",
                 "ohne_rendite_label": f"{ohne_rendite_pct:+.2f}",
@@ -831,6 +875,7 @@ def _build_strategy_view(
         "name": result.strategy_name,
         "id": _slug(result.strategy_name),
         "beschreibung": strategy.beschreibung,
+        "beschreibung_en": strategy.beschreibung_en or strategy.beschreibung,
         "rendite_pct": _f(rendite_pct),
         "rendite_pct_label": f"{rendite_pct:+.2f}",
         "cagr_pct": cagr_pct,
@@ -990,7 +1035,9 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
             "isin": inst.isin or "–",
             "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
             "thesaurierend": "ja" if inst.thesaurierend else "nein",
+            "thesaurierend_en": "yes" if inst.thesaurierend else "no",
             "ausschuettend": "ja" if inst.ausschuettend else "nein",
+            "ausschuettend_en": "yes" if inst.ausschuettend else "no",
             # #74: je Instrument statt eines Pauschalwerts fuer alle. "-" fuer
             # Instrumente, die nicht ausschuetten; der Platzhalter erscheint nur
             # dort, wo tatsaechlich kein instrumenteneigener Wert hinterlegt ist.
@@ -1005,6 +1052,9 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
             "ter": f"{float(inst.ter) * 100:.2f}".replace(".", ",") if inst.ter else "–",
             "spekulationsfrist": (
                 f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
+            ),
+            "spekulationsfrist_en": (
+                f"{inst.spekulationsfrist_tage} days" if inst.spekulationsfrist_tage else "–"
             ),
             "erster_kurs": erste.get(ticker, "– (nie)"),
             "fehlt_anfangs": erste.get(ticker) != rows[0].date.isoformat(),
@@ -1026,8 +1076,10 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 "schwelle": f"{s.rebalancing_schwelle_pp}",
                 "schwelle_relativ": f"{s.rebalancing_schwelle_relativ * 100:.0f}",
                 "ziel_topf": s.ziel_topf,
+                "ziel_topf_en": _TOPF_NAMEN_EN.get(s.ziel_topf, s.ziel_topf),
                 "ziel_gewicht": f"{s.ziel_gewicht * 100:.0f}",
                 "dynamisch": "ja" if s.gewichte_fn is not None else "nein",
+                "dynamisch_en": "yes" if s.gewichte_fn is not None else "no",
                 "toepfe": [
                     {"name": t.name, "gewicht": f"{t.gewicht_gesamt * 100:.0f}"} for t in s.toepfe
                 ],
@@ -1233,6 +1285,7 @@ def build_dashboard(
             {"ticker": t, "name": INSTRUMENTS[t].name} for t in TICKERS
         ],
         benchmark_optionen=[{"id": k, "label": v} for k, v in benchmark_optionen.items()],
+        topf_namen_en_json=json.dumps(_TOPF_NAMEN_EN),
         **vergleich_kontext,
     )
 

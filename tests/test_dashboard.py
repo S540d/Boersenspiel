@@ -119,7 +119,7 @@ def test_build_dashboard_erzeugt_detailseite_je_strategie(tmp_path: Path):
     assert (tmp_path / "b-verlierer.html").exists()
     detail = _detail_html(tmp_path, "a-verdoppler")
     assert "A: Verdoppler" in detail
-    assert '<a href="index.html">' in detail  # Ruecklink zur Startseite
+    assert '<a href="index.html"' in detail  # Ruecklink zur Startseite
 
 
 def test_startseite_zeigt_nur_wertverlauf_alles_andere_auf_detailseite(tmp_path: Path):
@@ -132,11 +132,11 @@ def test_startseite_zeigt_nur_wertverlauf_alles_andere_auf_detailseite(tmp_path:
     assert "Wertverlauf" in index_html
     # Stat-Kacheln, Topf-Gewichtung und Instrumententabelle sind Detailseiten-Inhalt,
     # nicht (mehr) auf der Startseite.
-    assert '<div class="label">Gesamtwert</div>' not in index_html
+    assert '>Gesamtwert<' not in index_html
     assert "Topf-Gewichtung Ist vs. Ziel" not in index_html
     assert "Ist-Gewicht %" not in index_html
 
-    assert '<div class="label">Gesamtwert</div>' in detail_html
+    assert '>Gesamtwert<' in detail_html
     assert "Topf-Gewichtung Ist vs. Ziel" in detail_html
     assert "Ist-Gewicht %" in detail_html
     # 50-/200-Tage-Naeherung (#31) nur auf der Detailseite.
@@ -984,8 +984,8 @@ def test_praemissen_seite_trennt_allokierte_von_nicht_allokierten_instrumenten(t
     build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
 
-    assert "<h3>Datenreihen ohne Allokation</h3>" in html
-    vor_abschnitt, nach_abschnitt = html.split("<h3>Datenreihen ohne Allokation</h3>", 1)
+    assert "Datenreihen ohne Allokation</h3>" in html
+    vor_abschnitt, nach_abschnitt = html.split("Datenreihen ohne Allokation</h3>", 1)
     assert "EUNL" not in vor_abschnitt.split("Instrumente und ab wann es sie gab", 1)[1]
     assert "EUNL" in nach_abschnitt
 
@@ -1011,7 +1011,7 @@ def test_praemissen_seite_versteckt_abschnitt_wenn_alles_allokiert_ist(tmp_path:
     build_dashboard(rows, [alles_strategy], output_path=tmp_path / "index.html")
     html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
 
-    assert "<h3>Datenreihen ohne Allokation</h3>" not in html
+    assert "Datenreihen ohne Allokation</h3>" not in html
 
 
 # --- Benchmark-Overlay-Schalter (#72) ---------------------------------------------
@@ -1353,7 +1353,7 @@ def test_ohne_gemeinsamen_zeitraum_bleibt_die_uebersicht_bei_den_eigenen_werten(
     )
 
     assert "Vergleichszeitraum" not in tabelle
-    kopf = len(re.findall(r"<th>", tabelle))
+    kopf = len(re.findall(r"<th[ >]", tabelle))
     zeilen = re.findall(r"<tr>\s*<td>.*?</tr>", tabelle, re.S)
     assert zeilen
     for zeile in zeilen:
@@ -1371,7 +1371,7 @@ def test_spaltenzahl_passt_zum_tabellenkopf_mit_vergleichszeitraum(tmp_path: Pat
     )
 
     assert "Vergleichszeitraum" in tabelle
-    kopf = len(re.findall(r"<th>", tabelle))
+    kopf = len(re.findall(r"<th[ >]", tabelle))
     zeilen = re.findall(r"<tr>\s*<td>.*?</tr>", tabelle, re.S)
     assert zeilen
     for zeile in zeilen:

@@ -201,21 +201,35 @@
   }
   .menu nav a:hover { background: var(--page); }
   .menu nav .menu-hint { display: block; padding: 4px 10px 8px; color: var(--text-muted); font-size: 0.75rem; }
+  .menu nav .menu-divider { height: 1px; background: var(--border); margin: 4px 2px; }
+  .menu nav .lang-switch { display: flex; gap: 4px; padding: 4px 6px 6px; }
+  .menu nav .lang-switch button {
+    flex: 1; font: inherit; font-size: 0.82rem; cursor: pointer; padding: 5px 8px; border-radius: 5px;
+    border: 1px solid var(--border); background: var(--page); color: var(--text-secondary);
+  }
+  .menu nav .lang-switch button:hover { color: var(--text-primary); }
+  .menu nav .lang-switch button.active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
 </style>
 </head>
 <body>
+<script>window.__i18nRefresh = [];</script>
 <header>
   <div class="header-bar">
     <div>
-      <h1>{% block header_title %}Barbell-Portfolio Dashboard{% endblock %}</h1>
-      <div class="meta">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
+      <h1>{% block header_title %}<span data-i18n-en="Barbell Portfolio Dashboard">Barbell-Portfolio Dashboard</span>{% endblock %}</h1>
+      <div class="meta" data-i18n-en="Generated {{ generated_at }} from {{ row_count }} price rows (last price: {{ last_date }})">Erzeugt {{ generated_at }} aus {{ row_count }} Kurszeilen (letzter Kurs: {{ last_date }})</div>
     </div>
     <details class="menu">
-      <summary aria-label="Menü" title="Menü">&#8942;</summary>
+      <summary aria-label="Menü" title="Menü" data-i18n-en-title="Menu">&#8942;</summary>
       <nav>
-        <a href="index.html">Übersicht</a>
-        <a href="praemissen.html">Prämissen &amp; Annahmen</a>
-        <span class="menu-hint">Worauf die Zahlen beruhen</span>
+        <a href="index.html" data-i18n-en="Overview">Übersicht</a>
+        <a href="praemissen.html" data-i18n-en="Premises &amp; Assumptions">Prämissen &amp; Annahmen</a>
+        <span class="menu-hint" data-i18n-en="What the numbers are based on">Worauf die Zahlen beruhen</span>
+        <div class="menu-divider"></div>
+        <div class="lang-switch" role="group" aria-label="Sprache / Language">
+          <button type="button" data-lang-btn="de">Deutsch</button>
+          <button type="button" data-lang-btn="en">English</button>
+        </div>
       </nav>
     </details>
   </div>
@@ -224,10 +238,38 @@
 <main>
 {% block content %}{% endblock %}
 </main>
-<footer>
+<footer data-i18n-en="Barbell Portfolio Dashboard · statically generated, no live data · price history and simulation deterministic from data/price_history.csv.">
   Barbell-Portfolio-Dashboard &middot; statisch erzeugt, keine Live-Daten &middot;
   Kurshistorie und Simulation deterministisch aus <code>data/price_history.csv</code>.
 </footer>
 {% block scripts %}{% endblock %}
+<script>
+  (function () {
+    function applyLanguage(lang) {
+      document.documentElement.setAttribute('lang', lang === 'en' ? 'en' : 'de');
+      document.querySelectorAll('[data-i18n-en]').forEach(function (el) {
+        if (el.dataset.i18nDe === undefined) el.dataset.i18nDe = el.textContent;
+        el.textContent = lang === 'en' ? el.dataset.i18nEn : el.dataset.i18nDe;
+      });
+      document.querySelectorAll('[data-i18n-en-title]').forEach(function (el) {
+        if (el.dataset.i18nDeTitle === undefined) el.dataset.i18nDeTitle = el.getAttribute('title') || '';
+        el.setAttribute('title', lang === 'en' ? el.dataset.i18nEnTitle : el.dataset.i18nDeTitle);
+      });
+      (window.__i18nRefresh || []).forEach(function (fn) {
+        try { fn(lang); } catch (e) { /* ein defekter Chart-Refresh darf die anderen nicht blockieren */ }
+      });
+      document.querySelectorAll('[data-lang-btn]').forEach(function (btn) {
+        btn.classList.toggle('active', btn.dataset.langBtn === lang);
+      });
+      try { localStorage.setItem('boersenspiel-lang', lang); } catch (e) { /* privater Modus o.ae. */ }
+    }
+    document.querySelectorAll('[data-lang-btn]').forEach(function (btn) {
+      btn.addEventListener('click', function () { applyLanguage(btn.dataset.langBtn); });
+    });
+    var savedLang = 'de';
+    try { savedLang = localStorage.getItem('boersenspiel-lang') || 'de'; } catch (e) { /* privater Modus o.ae. */ }
+    applyLanguage(savedLang);
+  })();
+</script>
 </body>
 </html>

@@ -101,6 +101,10 @@ class Strategy:
     # Optional: Kurzbeschreibung der Strategie/des Szenarios fürs Dashboard (#26).
     # Leer bedeutet: keine Beschreibung wird angezeigt.
     beschreibung: str = ""
+    # Englische Fassung von ``beschreibung`` fürs clientseitige Sprachumschalten
+    # im Dreipunktmenü. Leer bedeutet: keine Übersetzung hinterlegt (das Dashboard
+    # zeigt dann weiterhin die deutsche Fassung, auch mit Englisch ausgewählt).
+    beschreibung_en: str = ""
     # Welche der fünf Mechanismen aus ``Optimierungen`` für diese Strategie standardmäßig
     # greifen. ``engine.simulate()`` übernimmt diese, sofern ihr nicht explizit eine
     # andere ``Optimierungen``-Instanz übergeben wird (siehe #17).
@@ -173,6 +177,12 @@ BARBELL_20_80 = Strategy(
         "5 Prozentpunkte absolut oder 25% relativ vom eigenen Zielgewicht abweicht "
         "(5/25-Regel, marktüblich)."
     ),
+    beschreibung_en=(
+        "20% safety (broad bond/gold ETFs), 80% growth (broad equity ETFs plus "
+        "Bitcoin). Rebalances to the target weights as soon as ONE bucket deviates "
+        "by more than 5 percentage points absolute or 25% relative to its own target "
+        "weight (5/25 rule, market-standard)."
+    ),
 )
 
 # --- Strategie 2: Barbell 30/70 (Beispiel für eine alternative Gewichtung) -
@@ -208,6 +218,11 @@ BARBELL_30_70 = Strategy(
     beschreibung=(
         "Defensivere Variante des Barbell-Ansatzes: 30% Sicherheit statt 20%, dafür "
         "70% Wachstum. Rebalancing-Trigger wie bei Barbell 20/80 (5/25-Regel je Topf)."
+    ),
+    beschreibung_en=(
+        "A more defensive variant of the barbell approach: 30% safety instead of "
+        "20%, and 70% growth. Rebalancing trigger the same as Barbell 20/80 "
+        "(5/25 rule per bucket)."
     ),
 )
 
@@ -274,6 +289,11 @@ BARBELL_20_60_20_SATELLIT = Strategy(
         "eines dritten, gleichgewichteten Topfs aus 10 Einzelaktien (20%) - das "
         "80/20-Risikoprofil bleibt erhalten, nur granularer gestreut."
     ),
+    beschreibung_en=(
+        "Like Barbell 20/80, but the growth bucket shrinks from 80% to 60% in "
+        "favor of a third, equally weighted bucket of 10 individual stocks (20%) - "
+        "the 80/20 risk profile stays the same, just spread more granularly."
+    ),
 )
 
 # --- Strategie 4: Barbell 20/80, breiter diversifiziert (#64) --------------
@@ -339,6 +359,15 @@ BARBELL_20_80_DIVERSIFIZIERT = Strategy(
         "Immobilien (IQQ6) und breite Rohstoffe (EXXY). Erster Ansatz, nicht "
         "optimiert/gebacktestet."
     ),
+    beschreibung_en=(
+        "Like Barbell 20/80 (20% safety / 80% growth), but with broader "
+        "diversification across the six instruments added in #64: bucket A gets a "
+        "real cash building block via XEON (EUR money market) instead of an equity "
+        "ETF share, plus IBCL/IBCI (bonds with a different duration/real-rate "
+        "profile). Bucket B reduces the US/tech concentration via EXSA (Europe) and "
+        "adds real estate (IQQ6) and broad commodities (EXXY). A first approach, "
+        "not optimized or backtested."
+    ),
 )
 
 # --- Strategie 5: Benchmark S&P 500 (#64) -----------------------------------
@@ -370,6 +399,12 @@ SP500_BENCHMARK = Strategy(
         "an der Xetra), nie aktiv umgeschichtet. Dient als Referenz 'einfach den "
         "Index kaufen' gegenüber den Barbell-Strategien und Szenarien, kein "
         "eigenständiger Anlagevorschlag."
+    ),
+    beschreibung_en=(
+        "A pure comparison line: a single purchase of IUSA (S&P 500, USD, "
+        "EUR-quoted on Xetra), never actively reshuffled. Serves as the 'simply "
+        "buy the index' reference against the barbell strategies and scenarios, "
+        "not a standalone investment recommendation."
     ),
     # Waechst ueber 20 Jahre auf ein Vielfaches der uebrigen Strategien - mit
     # gemeinsamer Y-Achse wuerden alle anderen Wertverlauf-Charts auf der

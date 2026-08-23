@@ -2,11 +2,11 @@
 {% block title %}Prämissen &amp; Annahmen – Barbell-Portfolio Dashboard{% endblock %}
 {% block meta_description %}Welche Annahmen, Konstanten und Vereinfachungen hinter den Zahlen des Barbell-Portfolio-Dashboards stehen.{% endblock %}
 {% block canonical %}https://s540d.github.io/Boersenspiel/praemissen.html{% endblock %}
-{% block header_extra %}<p class="back-link"><a href="index.html">&larr; Zur Übersicht</a></p>{% endblock %}
+{% block header_extra %}<p class="back-link"><a href="index.html" data-i18n-en="&larr; Back to overview">&larr; Zur Übersicht</a></p>{% endblock %}
 {% block content %}
   <section class="strategy" id="praemissen">
-    <h2>Prämissen &amp; Annahmen</h2>
-    <p class="hint">
+    <h2 data-i18n-en="Premises &amp; Assumptions">Prämissen &amp; Annahmen</h2>
+    <p class="hint" data-i18n-en="This page collects what the dashboard's numbers are based on, so the results are at least in principle traceable. Every value here is derived on every build from the same constants and the same price history that the simulation itself uses - none of it is stored text that could go stale relative to the code.">
       Diese Seite sammelt, worauf die Zahlen im Dashboard beruhen, damit die
       Ergebnisse zumindest prinzipiell nachvollziehbar sind. Alle Werte hier
       werden bei jedem Build aus denselben Konstanten und derselben Kurshistorie
@@ -14,15 +14,15 @@
       hinterlegten Texte, die gegenüber dem Code veralten könnten.
     </p>
 
-    <h3>Das Wichtigste zuerst</h3>
-    <p class="hint">
+    <h3 data-i18n-en="The most important thing first">Das Wichtigste zuerst</h3>
+    <p class="hint" data-i18n-en="This is a virtual portfolio for learning purposes, not investment advice, and not a statement about how these strategies will develop in the future. Three limitations weigh heavier here than any return figure on the overview page:">
       Dies ist ein <strong>virtuelles Depot zu Lernzwecken, keine
       Anlageberatung</strong> und keine Aussage darüber, wie sich diese
       Strategien in Zukunft entwickeln. Drei Einschränkungen wiegen dabei
       schwerer als jede Renditezahl auf der Übersichtsseite:
     </p>
     <ul class="hint">
-      <li>
+      <li data-i18n-en="Look-ahead bias in instrument selection. The {{ instrumente|length }} instruments were chosen once their price development was already known. A back-calculated return therefore doesn't answer &quot;what would I have earned?&quot;, but at best &quot;how would these rules have performed on these instruments, selected in hindsight?&quot;. Two effects are therefore deliberately kept out of the simulation (owner decision on #63, F4): Bitcoin is treated as untradable before {{ btc_fruehphase_ende }}, because a German retail investor had no realistic EUR access to Bitcoin before that; and every strategy/scenario only starts its simulation at the point where its complete instrument set was actually tradable - see &quot;simulation start&quot; in the strategy table below - instead of letting the proportional reallocation onto early-existing instruments (next section) also affect the published metrics. Both remain a simplification, not proof of investability at every point in time. The look-ahead bias applies exclusively to these {{ instrumente|length }} instruments actually assigned to a strategy. {% if nicht_allokierte_instrumente %}The {{ nicht_allokierte_instrumente|length }} additionally captured data series (section &quot;Data series without allocation&quot; below) are not a look-ahead bias, because they were added as a neutral benchmark independent of their price development, not selected into a strategy.{% endif %}">
         <strong>Rückschaufehler bei der Instrumentenauswahl.</strong> Die
         {{ instrumente|length }} Instrumente wurden ausgewählt, als ihre
         Kursentwicklung bereits bekannt war. Eine rückgerechnete Rendite
@@ -50,14 +50,14 @@
         hinein ausgewählt.
         {% endif %}
       </li>
-      <li>
+      <li data-i18n-en="The rules are not optimized and not backtested. Thresholds, time windows and quotas of the scenarios are a first approach, not parameters fitted to data. The &quot;Robustness across sub-periods&quot; section on every detail page shows how much a return varies between periods.">
         <strong>Die Regeln sind nicht optimiert und nicht gebacktestet.</strong>
         Schwellen, Zeitfenster und Quoten der Szenarien sind ein erster Ansatz,
         keine an Daten angepassten Parameter. Der Abschnitt „Robustheit über
         Teilperioden“ auf jeder Detailseite zeigt, wie stark eine Rendite
         zwischen Zeiträumen schwankt.
       </li>
-      <li>
+      <li data-i18n-en="One portfolio, one price history. All results rest on exactly one historical price series. There is no Monte Carlo simulation and no confidence intervals - differences of a few percentage points between two strategies therefore aren't statistically robust.">
         <strong>Ein Depot, ein Kursverlauf.</strong> Alle Ergebnisse beruhen auf
         genau einer historischen Kursreihe. Es gibt keine Monte-Carlo-Simulation
         und keine Konfidenzintervalle &ndash; Unterschiede von wenigen
@@ -65,14 +65,14 @@
       </li>
     </ul>
 
-    <h3>Datenbasis</h3>
+    <h3 data-i18n-en="Data basis">Datenbasis</h3>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Zeitraum</div><div class="value">{{ zeitraum_von }} &ndash; {{ zeitraum_bis }}</div></div>
-      <div class="stat-tile"><div class="label">Kurszeilen</div><div class="value">{{ wochen }}</div></div>
-      <div class="stat-tile"><div class="label">Frequenz</div><div class="value">wöchentlich</div></div>
-      <div class="stat-tile"><div class="label">Währung</div><div class="value">EUR</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Period">Zeitraum</div><div class="value">{{ zeitraum_von }} &ndash; {{ zeitraum_bis }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Price rows">Kurszeilen</div><div class="value">{{ wochen }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Frequency">Frequenz</div><div class="value" data-i18n-en="weekly">wöchentlich</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Currency">Währung</div><div class="value">EUR</div></div>
     </div>
-    <p class="hint">
+    <p class="hint" data-i18n-en="The sole basis is data/price_history.csv: one weekly closing price per instrument, in euros. USD-quoted values are converted at the time of fetching using that same week's exchange rate. Only raw prices are stored - everything derived (position values, rebalancing, tax) is fully recalculated on every build. The same price history plus the same strategy therefore always yields the same result.">
       Grundlage ist ausschließlich <code>data/price_history.csv</code>: ein
       Wochenschlusskurs je Instrument, in Euro. USD-notierte Werte werden beim
       Abruf mit dem Wechselkurs derselben Woche umgerechnet. Es werden
@@ -81,15 +81,15 @@
       berechnet. Gleiche Kurshistorie plus gleiche Strategie ergibt deshalb immer
       dasselbe Ergebnis.
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="If a price couldn't be fetched, the last known price is carried forward instead of leaving a gap. Where this most recently happened is shown as the &quot;price status&quot; column in the instrument table of every detail page.">
       Konnte ein Kurs nicht abgerufen werden, wird der letzte bekannte Kurs
       fortgeschrieben, statt eine Lücke zu lassen. Wo das zuletzt passiert ist,
       steht als Spalte „Kursstatus“ in der Instrumententabelle jeder
       Detailseite.
     </p>
 
-    <h3>Instrumente und ab wann es sie gab</h3>
-    <p class="hint">
+    <h3 data-i18n-en="Instruments and how far back they go">Instrumente und ab wann es sie gab</h3>
+    <p class="hint" data-i18n-en="A large share of the instruments didn't yet exist at the start of the period. Their target share is then proportionally reallocated onto the instruments actually tradable at that time, so the portfolio stays fully invested - in whatever existed at that point. Otherwise a large part of the capital would sit idle without interest at the start, and the early years' return would be barely meaningful. As soon as an instrument first has a price, it is bought up to its target weight (logged as neues_instrument in the trade log). The early years therefore represent a noticeably narrower portfolio than the later ones - ⚠ marks the affected instruments.">
       Ein großer Teil der Instrumente existierte am Anfang des Zeitraums noch
       nicht. Ihr Zielanteil wird dann <strong>anteilig auf die tatsächlich
       handelbaren Instrumente umgelegt</strong>, damit das Depot voll investiert
@@ -103,7 +103,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Ausschüttungsrendite %</th><th>TER % p.a.</th><th>Spekulationsfrist</th></tr></thead>
+        <thead><tr><th data-i18n-en="Ticker">Ticker</th><th class="text-left" data-i18n-en="Instrument">Instrument</th><th class="text-left">ISIN</th><th data-i18n-en="First price">Erster Kurs</th><th data-i18n-en="Partial exemption %">Teilfreistellung %</th><th data-i18n-en="Accumulating">Thesaurierend</th><th data-i18n-en="Distributing">Ausschüttend</th><th data-i18n-en="Distribution yield %">Ausschüttungsrendite %</th><th>TER % p.a.</th><th data-i18n-en="Speculation period">Spekulationsfrist</th></tr></thead>
         <tbody>
         {% for i in instrumente %}
           <tr>
@@ -112,11 +112,11 @@
             <td class="text-left">{{ i.isin }}</td>
             <td class="{{ 'warn' if i.fehlt_anfangs else '' }}">{{ i.erster_kurs }}{% if i.fehlt_anfangs %} &#9888;{% endif %}</td>
             <td>{{ i.teilfreistellung }}</td>
-            <td>{{ i.thesaurierend }}</td>
-            <td>{{ i.ausschuettend }}</td>
-            <td>{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (Platzhalter){% endif %}</td>
+            <td data-i18n-en="{{ i.thesaurierend_en }}">{{ i.thesaurierend }}</td>
+            <td data-i18n-en="{{ i.ausschuettend_en }}">{{ i.ausschuettend }}</td>
+            <td data-i18n-en="{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (placeholder){% endif %}">{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (Platzhalter){% endif %}</td>
             <td>{{ i.ter }}</td>
-            <td>{{ i.spekulationsfrist }}</td>
+            <td data-i18n-en="{{ i.spekulationsfrist_en }}">{{ i.spekulationsfrist }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -124,8 +124,8 @@
     </div>
 
     {% if nicht_allokierte_instrumente %}
-    <h3>Datenreihen ohne Allokation</h3>
-    <p class="hint">
+    <h3 data-i18n-en="Data series without allocation">Datenreihen ohne Allokation</h3>
+    <p class="hint" data-i18n-en="The following {{ nicht_allokierte_instrumente|length }} instruments deliberately sit in no bucket of any strategy or scenario - engine.simulate() reads exclusively the strategies' target weights and therefore never trades any of these data series, whatever their price does. They were added as a neutral benchmark (broad indices, money market, real estate, commodities) independent of their price development, not selected into a strategy - see #64. Only a future allocation (see #63) would bring them into the simulation; until then, partial-exemption/accumulating/distributing status is shown here for information only and, unlike the allocated instruments above, has not yet been verified against fund prospectuses.">
       Die folgenden {{ nicht_allokierte_instrumente|length }} Instrumente
       liegen bewusst in <strong>keinem Topf</strong> einer Strategie oder
       eines Szenarios &ndash; <code>engine.simulate()</code> liest
@@ -144,7 +144,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Ticker</th><th class="text-left">Instrument</th><th class="text-left">ISIN</th><th>Erster Kurs</th><th>Teilfreistellung %</th><th>Thesaurierend</th><th>Ausschüttend</th><th>Ausschüttungsrendite %</th><th>TER % p.a.</th><th>Spekulationsfrist</th></tr></thead>
+        <thead><tr><th data-i18n-en="Ticker">Ticker</th><th class="text-left" data-i18n-en="Instrument">Instrument</th><th class="text-left">ISIN</th><th data-i18n-en="First price">Erster Kurs</th><th data-i18n-en="Partial exemption %">Teilfreistellung %</th><th data-i18n-en="Accumulating">Thesaurierend</th><th data-i18n-en="Distributing">Ausschüttend</th><th data-i18n-en="Distribution yield %">Ausschüttungsrendite %</th><th>TER % p.a.</th><th data-i18n-en="Speculation period">Spekulationsfrist</th></tr></thead>
         <tbody>
         {% for i in nicht_allokierte_instrumente %}
           <tr>
@@ -153,11 +153,11 @@
             <td class="text-left">{{ i.isin }}</td>
             <td class="{{ 'warn' if i.fehlt_anfangs else '' }}">{{ i.erster_kurs }}{% if i.fehlt_anfangs %} &#9888;{% endif %}</td>
             <td>{{ i.teilfreistellung }}</td>
-            <td>{{ i.thesaurierend }}</td>
-            <td>{{ i.ausschuettend }}</td>
-            <td>{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (Platzhalter){% endif %}</td>
+            <td data-i18n-en="{{ i.thesaurierend_en }}">{{ i.thesaurierend }}</td>
+            <td data-i18n-en="{{ i.ausschuettend_en }}">{{ i.ausschuettend }}</td>
+            <td data-i18n-en="{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (placeholder){% endif %}">{{ i.dividendenrendite }}{% if i.dividendenrendite_platzhalter %} (Platzhalter){% endif %}</td>
             <td>{{ i.ter }}</td>
-            <td>{{ i.spekulationsfrist }}</td>
+            <td data-i18n-en="{{ i.spekulationsfrist_en }}">{{ i.spekulationsfrist }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -165,15 +165,15 @@
     </div>
     {% endif %}
 
-    <h3>Handelsregeln</h3>
+    <h3 data-i18n-en="Trading rules">Handelsregeln</h3>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Ordergebühr je Trade</div><div class="value">{{ ordergebuehr }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Kostenbasis</div><div class="value">Durchschnitt</div></div>
-      <div class="stat-tile"><div class="label">Spread / Slippage</div><div class="value">nicht modelliert</div></div>
-      <div class="stat-tile"><div class="label">Ausschüttungsrendite</div><div class="value">je Instrument</div></div>
-      <div class="stat-tile"><div class="label">Laufende Fondskosten (TER)</div><div class="value">je Instrument</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Order fee per trade">Ordergebühr je Trade</div><div class="value">{{ ordergebuehr }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Cost basis">Kostenbasis</div><div class="value" data-i18n-en="Average">Durchschnitt</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Spread / slippage">Spread / Slippage</div><div class="value" data-i18n-en="not modeled">nicht modelliert</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Distribution yield">Ausschüttungsrendite</div><div class="value" data-i18n-en="per instrument">je Instrument</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Ongoing fund costs (TER)">Laufende Fondskosten (TER)</div><div class="value" data-i18n-en="per instrument">je Instrument</div></div>
     </div>
-    <p class="hint">
+    <p class="hint" data-i18n-en="Every fund's ongoing costs (TER) are deducted weekly on a pro-rata basis (TER &divide; 52) from the holding - as a reduction of units, not a cash outflow: the investor doesn't pay the TER out of pocket, their share of the fund's assets simply shrinks. The cost basis therefore stays unchanged. Individual stocks, physical gold and BTC carry none (&quot;TER % p.a.&quot; column above). Without this modeling, omitting it would not have been neutral but directional: the rates differ by an order of magnitude, the benchmark is the cheapest instrument in the field, and the individual-stock satellite carries none at all - so precisely the most concentrated variant would have been favored (#76).">
       Die <strong>laufenden Fondskosten (TER)</strong> jedes Fonds werden
       wöchentlich anteilig (TER ÷ 52) vom Bestand abgezogen &ndash; als
       Reduktion der Anteile, nicht als Barabfluss: der Anleger zahlt die TER
@@ -186,7 +186,7 @@
       begünstigt worden wäre also ausgerechnet die konzentrierteste Variante
       (<a href="https://github.com/S540d/Boersenspiel/issues/76">#76</a>).
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="Buying and selling happens at the weekly closing price, in arbitrary fractions, without a bid-ask spread and without partial fills. Fees from the initial purchase are deducted from the starting capital before it's split up; later trades reduce the realized gain by the fee on sale and add it to the cost basis on purchase. The cost basis runs on the average-cost method, not FIFO. For every distributing instrument, a distribution equal to its own distribution yield (column in the instrument table above) is applied once a year to the portfolio value at the start of the year (#57, per instrument since #74). The distribution is credited as genuine additional cash, automatically reinvested, and taxed like a real capital gain. Accumulating funds by definition distribute nothing; 4GLD (physical gold), BTC-EUR and the individual stocks without a dividend (Tesla, Rivian, Palantir, Strategy, SolarEdge, Lumentum, SMA Solar) correctly receive none. Remaining simplification: the rate per instrument is constant over the entire history and rounded from public fact sheets - no year-accurate distribution history is stored. Until #74, a single flat rate of {{ dividendenrendite }}% applied to all distributing instruments instead; that favored non-distributing growth stocks at the expense of bond and real-estate ETFs, whose return consists largely of the distribution itself.">
       Gekauft und verkauft wird zum Wochenschlusskurs, in beliebigen
       Bruchstücken, ohne Geld-Brief-Spanne und ohne Teilausführung. Gebühren des
       Erstkaufs werden vor der Aufteilung vom Startkapital abgezogen; spätere
@@ -213,7 +213,7 @@
       Wachstumswerte auf Kosten von Anleihen- und Immobilien-ETFs, deren
       Ertrag zum großen Teil gerade aus der Ausschüttung besteht.
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="Rebalancing happens as soon as ANY bucket deviates from its own target weight by more than either the strategy's absolute threshold in percentage points or its relative threshold, whichever triggers first (&quot;5/25 rule&quot;, market-standard, owner decision on #63, F5); all instruments are then brought back to their target weight. The trigger checks the bucket level for EVERY bucket of the strategy, not the concentration of individual instruments within a bucket - that's what ⚠ in the detail pages' instrument table points out.">
       Rebalanciert wird, sobald IRGENDEIN Topf entweder um mehr als die
       absolute Schwelle der jeweiligen Strategie in Prozentpunkten oder um
       mehr als deren relative Schwelle vom eigenen Zielgewicht abweicht, je
@@ -227,7 +227,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Strategie</th><th>Startkapital &euro;</th><th>Schwelle pp (absolut)</th><th>Schwelle % (relativ)</th><th class="text-left">Überwachter Topf</th><th>Zielgewicht %</th><th>Zeitabhängige Gewichte</th><th>Simulationsbeginn</th><th>Risikofreier Zins % p.a.</th></tr></thead>
+        <thead><tr><th data-i18n-en="Strategy">Strategie</th><th data-i18n-en="Starting capital &euro;">Startkapital &euro;</th><th data-i18n-en="Threshold pp (absolute)">Schwelle pp (absolut)</th><th data-i18n-en="Threshold % (relative)">Schwelle % (relativ)</th><th class="text-left" data-i18n-en="Monitored bucket">Überwachter Topf</th><th data-i18n-en="Target weight %">Zielgewicht %</th><th data-i18n-en="Time-dependent weights">Zeitabhängige Gewichte</th><th data-i18n-en="Simulation start">Simulationsbeginn</th><th data-i18n-en="Risk-free rate % p.a.">Risikofreier Zins % p.a.</th></tr></thead>
         <tbody>
         {% for s in strategien %}
           <tr>
@@ -235,9 +235,9 @@
             <td>{{ s.startkapital }}</td>
             <td>{{ s.schwelle }}</td>
             <td>{{ s.schwelle_relativ }}</td>
-            <td class="text-left">{{ s.ziel_topf }}</td>
+            <td class="text-left" data-i18n-en="{{ s.ziel_topf_en }}">{{ s.ziel_topf }}</td>
             <td>{{ s.ziel_gewicht }}</td>
-            <td>{{ s.dynamisch }}</td>
+            <td data-i18n-en="{{ s.dynamisch_en }}">{{ s.dynamisch }}</td>
             <td>{{ s.sim_beginn }}</td>
             <td>{{ s.risikofreier_zins_label }}</td>
           </tr>
@@ -246,8 +246,8 @@
       </table>
     </div>
 
-    <h3>Cash und ungenutztes Kapital</h3>
-    <p class="hint">
+    <h3 data-i18n-en="Cash and uninvested capital">Cash und ungenutztes Kapital</h3>
+    <p class="hint" data-i18n-en="No strategy has its own cash target allocation. When a scenario switches to &quot;defensive&quot; (e.g. &quot;Sell in May&quot;, SMA death cross, trailing stop), the capital moves entirely into bucket A (safety) - bucket A takes on the cash role, instead of an unremunerated cash position or one carrying a made-up interest rate. A genuine cash position would have two downsides: it would need a fictional interest rate instead of one derivable from the price history, and it would duplicate bucket A without a purpose of its own.">
       Keine Strategie hat eine eigene Cash-Zielallokation. Schaltet ein
       Szenario auf „defensiv“ (z.&nbsp;B. „Sell in May“, SMA-Death-Cross,
       Trailing-Stop), wandert das Kapital vollständig in Topf A (Sicherheit)
@@ -257,7 +257,7 @@
       Phantasiezins statt eines aus der Kurshistorie ableitbaren Werts, und
       sie würde Topf A ohne eigenen Zweck duplizieren.
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="Cash in the technical sense (pending_cash in engine.py) still arises briefly when a capital share has no tradable target at all - e.g. because an instrument doesn't yet have a price, or, in the extreme case, no single target instrument of a bucket exists. That's not a bug, it's the only honest representation of &quot;out of the market with no instrument available&quot;. {% if cash_ueberall_null %}Looking at the entire price history, every strategy and every scenario currently holds 0% cash throughout.{% else %}Looking at the entire price history, not every strategy currently holds 0% cash throughout - the table below shows the highest share ever reached and when it occurred.{% endif %}">
       Cash im technischen Sinn (<code>pending_cash</code> in
       <code>engine.py</code>) entsteht trotzdem kurzzeitig, wenn ein
       Kapitalanteil <em>überhaupt kein</em> handelbares Ziel hat &ndash; etwa
@@ -276,7 +276,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Strategie</th><th>Cash-Höchststand %</th><th>Datum</th></tr></thead>
+        <thead><tr><th data-i18n-en="Strategy">Strategie</th><th data-i18n-en="Max cash share %">Cash-Höchststand %</th><th data-i18n-en="Date">Datum</th></tr></thead>
         <tbody>
         {% for s in strategien %}
           <tr>
@@ -289,14 +289,14 @@
       </table>
     </div>
 
-    <h3>Steuerannahmen</h3>
+    <h3 data-i18n-en="Tax assumptions">Steuerannahmen</h3>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Steuersatz</div><div class="value">{{ steuersatz }} %</div></div>
-      <div class="stat-tile"><div class="label">Sparerpauschbetrag / Jahr</div><div class="value">{{ sparerpauschbetrag }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Freigrenze § 23 EStG</div><div class="value">{{ spek_freigrenze }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Vorabpauschale-Basiszins</div><div class="value">{{ vorabpauschale_basiszins }} % (Platzhalter)</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Tax rate">Steuersatz</div><div class="value">{{ steuersatz }} %</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Savings allowance / year">Sparerpauschbetrag / Jahr</div><div class="value">{{ sparerpauschbetrag }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Exemption threshold &sect; 23 EStG">Freigrenze § 23 EStG</div><div class="value">{{ spek_freigrenze }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Vorabpauschale base rate">Vorabpauschale-Basiszins</div><div class="value" data-i18n-en="{{ vorabpauschale_basiszins }} % (placeholder)">{{ vorabpauschale_basiszins }} % (Platzhalter)</div></div>
     </div>
-    <p class="hint">
+    <p class="hint" data-i18n-en="Calculated with the flat German capital-gains tax rate (Abgeltungsteuer plus solidarity surcharge), not a personal income tax rate; church tax is left out. The savings allowance resets at the start of the year, unused losses are carried forward. Equity fund ETFs get their partial exemption applied to both gains and losses (see table above).">
       Gerechnet wird mit dem pauschalen Abgeltungsteuersatz (Kapitalertragsteuer
       plus Solidaritätszuschlag), <strong>nicht mit einem persönlichen
       Einkommensteuersatz</strong>; Kirchensteuer bleibt außen vor. Der
@@ -305,7 +305,7 @@
       bekommen ihre Teilfreistellung auf Gewinn <em>und</em> Verlust angerechnet
       (siehe Tabelle oben).
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="A simplified Vorabpauschale (advance lump-sum tax) is applied for accumulating funds: value at the start of the year &times; {{ vorabpauschale_basiszins }}% &times; {{ vorabpauschale_faktor }}%, capped at the actual increase in value. The base rate is a fixed placeholder, not a real annual rate published by the Federal Ministry of Finance, and the lump sum is applied at year-end instead of the first business day of the following year. Crypto is subject to the speculation-period rules instead of the flat capital-gains tax, with its own loss carryforward and an exemption threshold (not an allowance: above the threshold, the entire year's gain is taxable). The holding-period date is a quantity-weighted average purchase date, not genuine per-lot tracking.">
       Für thesaurierende Fonds wird eine vereinfachte Vorabpauschale angesetzt:
       Wert zu Jahresbeginn &times; {{ vorabpauschale_basiszins }} % &times;
       {{ vorabpauschale_faktor }} %, gedeckelt auf die tatsächliche
@@ -318,14 +318,14 @@
       ist ein stückzahlgewichtetes Durchschnittskaufdatum, kein echtes
       Per-Lot-Tracking.
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="Important for interpretation: the reported tax is pure tracking - the simulated portfolio value itself is never reduced by tax.">
       Wichtig für die Interpretation: Die ausgewiesene Steuer ist reines
       Tracking &ndash; <strong>der simulierte Depotwert selbst wird nirgends um
       Steuer gemindert</strong>.
     </p>
 
-    <h3>Kennzahlen auf der Übersicht</h3>
-    <p class="hint">
+    <h3 data-i18n-en="Metrics on the overview">Kennzahlen auf der Übersicht</h3>
+    <p class="hint" data-i18n-en="Volatility is the annualized standard deviation of weekly returns (&times; &radic;52), max drawdown the largest decline from the previous high. Sharpe divides the annualized return by the overall dispersion, Sortino only by the dispersion of losing weeks. Both measure the excess return over a risk-free rate; since #75 that is no longer hardcoded, but derived from the EUR money-market ETF {{ geldmarkt_ticker }} over exactly the same period the respective strategy is evaluated over - it's therefore shown per strategy/period in the table below and in the detail pages' period sections. This makes the metric automatically track the interest-rate environment (2006-2008 around 3-4%, 2012-2022 near 0%, from 2023 back to 3-4%). Previously a fixed {{ risikofreier_zins }}% applied; Sharpe was then effectively &quot;return &divide; risk&quot; instead of &quot;excess return &divide; risk&quot; and could by construction never show that a strategy did not beat the money market - an error that acted unevenly: it boosted low-volatility strategies (small denominator) more, i.e. precisely the defensive ones. If {{ geldmarkt_ticker }} is missing over the period or too short, the placeholder of {{ risikofreier_zins }}% still applies. If a series has no losing weeks at all, Sortino is reported as 0 instead of undefined.">
       Volatilität ist die annualisierte Standardabweichung der Wochenrenditen
       (&times; &radic;52), Max Drawdown der größte Rückgang vom bisherigen
       Höchststand. Sharpe teilt die annualisierte Rendite durch die gesamte
@@ -348,7 +348,7 @@
       Platzhalter von {{ risikofreier_zins }} %. Hat eine Reihe gar keine
       Verlustwochen, wird Sortino als 0 ausgewiesen statt als undefiniert.
     </p>
-    <p class="hint">
+    <p class="hint" data-i18n-en="The moving averages on the detail pages approximate the classic 50-/200-day lines with {{ sma_kurz }} and {{ sma_lang }} weeks respectively (5 trading days per week) - on weekly data, not daily data. The walk-forward section splits the history into up to {{ walk_forward_segmente }} equal-sized periods and simulates each independently with fresh starting capital; it is omitted below {{ walk_forward_min_wochen }} weeks per segment.">
       Die gleitenden Durchschnitte auf den Detailseiten nähern die klassischen
       50-/200-Tage-Linien mit {{ sma_kurz }} bzw. {{ sma_lang }} Wochen (5
       Handelstage je Woche) an &ndash; auf Wochendaten, nicht auf Tagesdaten. Der
@@ -358,21 +358,21 @@
       {{ walk_forward_min_wochen }} Wochen je Segment entfällt er.
     </p>
 
-    <h3>Was nicht modelliert wird</h3>
+    <h3 data-i18n-en="What is not modeled">Was nicht modelliert wird</h3>
     <ul class="hint">
-      <li>
+      <li data-i18n-en="Year-accurate dividend/distribution histories - a constant rate rounded from fact sheets applies per instrument (table above), not the dividends actually paid in a given year">
         Jahresgenaue Dividenden-/Ausschüttungshistorien &ndash; je Instrument
         gilt ein konstanter, aus Fact-Sheets gerundeter Satz (Tabelle oben),
         nicht die tatsächlich gezahlten Dividenden des jeweiligen Jahres
       </li>
-      <li>Inflation &ndash; alle Beträge sind nominal</li>
-      <li>Geld-Brief-Spanne, Slippage, Teilausführungen, Handelsaussetzungen</li>
-      <li>Depot- und Ausgabeaufschlagskosten &ndash; die laufenden Fondskosten (TER) werden seit
+      <li data-i18n-en="Inflation - all amounts are nominal">Inflation &ndash; alle Beträge sind nominal</li>
+      <li data-i18n-en="Bid-ask spread, slippage, partial fills, trading halts">Geld-Brief-Spanne, Slippage, Teilausführungen, Handelsaussetzungen</li>
+      <li data-i18n-en="Custody and front-load fees - ongoing fund costs (TER) have been modeled since #76 (table above), custody fees and front-load charges have not">Depot- und Ausgabeaufschlagskosten &ndash; die laufenden Fondskosten (TER) werden seit
         <a href="https://github.com/S540d/Boersenspiel/issues/76">#76</a> modelliert (Tabelle oben),
         Depotgebühren und Ausgabeaufschläge nicht</li>
-      <li>Zinsen auf nicht investiertes Kapital</li>
-      <li>Kapitalmaßnahmen wie Splits oder Fusionen über den Kursabruf hinaus</li>
-      <li>Steuerliche Effekte über das Abgeltungsteuer- und § 23-Regime hinaus</li>
+      <li data-i18n-en="Interest on uninvested capital">Zinsen auf nicht investiertes Kapital</li>
+      <li data-i18n-en="Corporate actions such as splits or mergers beyond what the price fetch captures">Kapitalmaßnahmen wie Splits oder Fusionen über den Kursabruf hinaus</li>
+      <li data-i18n-en="Tax effects beyond the flat capital-gains tax and &sect; 23 regime">Steuerliche Effekte über das Abgeltungsteuer- und § 23-Regime hinaus</li>
     </ul>
   </section>
 {% endblock %}
