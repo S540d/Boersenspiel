@@ -211,7 +211,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Strategie</th><th>Startkapital &euro;</th><th>Schwelle pp (absolut)</th><th>Schwelle % (relativ)</th><th class="text-left">Überwachter Topf</th><th>Zielgewicht %</th><th>Zeitabhängige Gewichte</th><th>Simulationsbeginn</th></tr></thead>
+        <thead><tr><th>Strategie</th><th>Startkapital &euro;</th><th>Schwelle pp (absolut)</th><th>Schwelle % (relativ)</th><th class="text-left">Überwachter Topf</th><th>Zielgewicht %</th><th>Zeitabhängige Gewichte</th><th>Simulationsbeginn</th><th>Risikofreier Zins % p.a.</th></tr></thead>
         <tbody>
         {% for s in strategien %}
           <tr>
@@ -223,6 +223,7 @@
             <td>{{ s.ziel_gewicht }}</td>
             <td>{{ s.dynamisch }}</td>
             <td>{{ s.sim_beginn }}</td>
+            <td>{{ s.risikofreier_zins_label }}</td>
           </tr>
         {% endfor %}
         </tbody>
@@ -312,11 +313,24 @@
       Volatilität ist die annualisierte Standardabweichung der Wochenrenditen
       (&times; &radic;52), Max Drawdown der größte Rückgang vom bisherigen
       Höchststand. Sharpe teilt die annualisierte Rendite durch die gesamte
-      Streuung, Sortino nur durch die Streuung der Verlustwochen. Beide rechnen
-      mit einem risikofreien Zins von <strong>{{ risikofreier_zins }} %</strong>
-      &ndash; ebenfalls ein bewusster Platzhalter, kein realer Referenzzins. Hat
-      eine Reihe gar keine Verlustwochen, wird Sortino als 0 ausgewiesen statt
-      als undefiniert.
+      Streuung, Sortino nur durch die Streuung der Verlustwochen. Beide messen die
+      <em>Über</em>rendite gegenüber einem risikofreien Zins; der wird seit
+      <a href="https://github.com/S540d/Boersenspiel/issues/75">#75</a> nicht
+      mehr fest hinterlegt, sondern aus dem EUR-Geldmarkt-ETF
+      <strong>{{ geldmarkt_ticker }}</strong> über exakt denselben Zeitraum
+      abgeleitet, über den auch die jeweilige Strategie ausgewertet wird &ndash;
+      er steht deshalb je Strategie/Zeitraum in der Tabelle unten und in den
+      Zeitraum-Abschnitten der Detailseiten. Damit zieht die Kennzahl automatisch
+      mit dem Zinsumfeld mit (2006&ndash;2008 rund 3&ndash;4 %,
+      2012&ndash;2022 nahe 0 %, ab 2023 wieder 3&ndash;4 %). Vorher galten fest
+      {{ risikofreier_zins }} %; Sharpe war damit faktisch „Rendite ÷ Risiko"
+      statt „Überrendite ÷ Risiko" und konnte per Konstruktion nie zeigen, dass
+      eine Strategie den Geldmarkt <em>nicht</em> geschlagen hat &ndash; ein
+      Fehler, der ungleich wirkte: er hob Strategien mit geringer Volatilität
+      (kleiner Nenner) stärker an, also gerade die defensiven. Fehlt
+      {{ geldmarkt_ticker }} im Zeitraum oder ist er zu kurz, gilt weiterhin der
+      Platzhalter von {{ risikofreier_zins }} %. Hat eine Reihe gar keine
+      Verlustwochen, wird Sortino als 0 ausgewiesen statt als undefiniert.
     </p>
     <p class="hint">
       Die gleitenden Durchschnitte auf den Detailseiten nähern die klassischen

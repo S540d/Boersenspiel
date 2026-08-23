@@ -22,18 +22,22 @@ from boersenspiel.dashboard import (
     _cagr_pct,
     _gemeinsamer_beginn,
     _downside_deviation,
+    _GELDMARKT_TICKER,
     _jahre_zurueck,
     _VERGLEICH_MIN_WOCHEN,
     _vergleichs_cagr_pct,
     _max_drawdown_pct,
     _ohne_btc_fruehphase,
     _real_investierbarer_zeitraum,
+    _RISIKOFREIER_ZINS_PLATZHALTER,
+    _risikofreier_zins_pct,
     _sharpe_ratio,
     _slug,
     _sortino_ratio,
     _volatilitaet_pct,
     _walk_forward_segmente,
     _zeitraum_presets,
+    _ZINS_MIN_WOCHEN,
     build_dashboard,
 )
 from boersenspiel.engine import simulate
@@ -1051,3 +1055,65 @@ def test_ohne_benchmark_strategie_entfaellt_die_ueberrendite_spalte(tmp_path: Pa
 
     assert "im Vergleichszeitraum" in html
     assert "Überrendite pp p.a." not in html
+
+
+# --- Risikofreier Zins aus dem Geldmarkt-ETF (#75) ---------------------------
+
+
+def test_risikofreier_zins_wird_aus_dem_geldmarkt_etf_abgeleitet():
+    # Geldmarkt-ETF steigt ueber genau ein Jahr um 4% -> 4% p.a.
+    rows = []
+    kurs = Decimal("100")
+    start = date(2020, 1, 6)
+    wochen = 53
+    schritt = (Decimal("104") / Decimal("100")) ** (Decimal(1) / Decimal(wochen - 1))
+    for i in range(wochen):
+        rows.append(PriceRow(start + timedelta(weeks=i), {_GELDMARKT_TICKER: kurs}))
+        kurs = kurs * schritt
+
+    zins = _risikofreier_zins_pct(rows)
+    assert 3.5 < zins < 4.5
+
+
+def test_risikofreier_zins_faellt_ohne_geldmarkt_daten_auf_den_platzhalter_zurueck():
+    ohne = [PriceRow(date(2020, 1, 6) + timedelta(weeks=i), {"T1": Decimal("100")}) for i in range(60)]
+    assert _risikofreier_zins_pct(ohne) == _RISIKOFREIER_ZINS_PLATZHALTER
+
+    zu_kurz = [
+        PriceRow(date(2020, 1, 6) + timedelta(weeks=i), {_GELDMARKT_TICKER: Decimal("100")})
+        for i in range(_ZINS_MIN_WOCHEN - 1)
+    ]
+    assert _risikofreier_zins_pct(zu_kurz) == _RISIKOFREIER_ZINS_PLATZHALTER
+
+
+def test_sharpe_und_sortino_ziehen_den_risikofreien_zins_ab():
+    # Dieselbe Wertreihe, einmal gegen 0% und einmal gegen einen positiven Zins:
+    # der Abzug muss die Kennzahl senken. Vor #75 war das gar nicht moeglich -
+    # der Zins war fest 0 und Sharpe damit nie ein UEBERrendite-Mass.
+    # Bewusst mit Verlustwochen, sonst ist die Downside-Deviation 0 und Sortino
+    # laut Definition (siehe _sortino_ratio) fuer beide Zinsen 0.
+    werte = [100.0]
+    for i in range(60):
+        werte.append(werte[-1] * (1.02 if i % 3 else 0.99))
+
+    assert _sharpe_ratio(werte, 0.0) > _sharpe_ratio(werte, 5.0)
+    assert _sortino_ratio(werte, 0.0) > _sortino_ratio(werte, 5.0)
+    # Ohne Angabe gilt weiterhin der Platzhalter - unveraendertes Verhalten.
+    assert _sharpe_ratio(werte) == _sharpe_ratio(werte, _RISIKOFREIER_ZINS_PLATZHALTER)
+
+
+def test_praemissen_seite_weist_den_zins_je_strategie_aus(tmp_path: Path):
+    rows = []
+    kurs = Decimal("100")
+    geld = Decimal("100")
+    start = date(2020, 1, 6)
+    for i in range(60):
+        rows.append(PriceRow(start + timedelta(weeks=i), {"T1": kurs, _GELDMARKT_TICKER: geld}))
+        kurs = kurs * Decimal("1.005")
+        geld = geld * Decimal("1.0005")
+
+    build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+
+    assert "Risikofreier Zins" in html
+    assert _GELDMARKT_TICKER in html

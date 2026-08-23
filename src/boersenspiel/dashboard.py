@@ -173,14 +173,51 @@ def _max_drawdown_pct(total_values: list[float]) -> float:
 # schweren Verlustwochen) ist kein besseres Ergebnis als eine niedrigere Rendite bei
 # geringem Risiko - genau das zeigt die nominale Rendite allein nicht.
 #
-# Bewusster Platzhalter (analog VORABPAUSCHALE_BASISZINS_PLATZHALTER in
-# strategies.py): ein echter risikofreier Zins (z. B. laufzeitnahe
-# Bundesanleihen-Rendite) ist hier noch nicht hinterlegt, 0% ist eine
-# vereinfachende Annahme.
+# Rueckfallwert, wenn sich aus der Kurshistorie kein Zins ableiten laesst (siehe
+# _risikofreier_zins_pct()). Bis #75 war dieser Wert die einzige Quelle - und mit
+# 0,0 keine harmlose Vereinfachung: Sharpe/Sortino waren damit faktisch
+# "Rendite ÷ Risiko" statt "UEBERrendite ÷ Risiko", und die Frage, die eine
+# Sharpe-Ratio ueberhaupt beantwortet - werde ich fuer das eingegangene Risiko
+# besser bezahlt als fuers risikolose Parken? - konnte per Konstruktion nie mit
+# "nein" beantwortet werden. Der Fehler wirkte zudem ungleich: er hob Strategien
+# mit geringer Volatilitaet (kleiner Nenner) staerker an, also gerade die
+# defensiven, deren Rendite dem Geldmarkt am naechsten liegt.
+# Einheit: Prozentpunkte p.a. (wie der Rueckgabewert von _risikofreier_zins_pct()).
 _RISIKOFREIER_ZINS_PLATZHALTER = 0.0
 
+# EUR-Geldmarkt-ETF (Xtrackers II EUR Overnight Rate, thesaurierend). Bildet per
+# Definition den EUR-Tagesgeldsatz ab und liegt mit durchgehender Historie seit
+# 2007 ohnehin in price_history.csv - seine eigene CAGR ueber exakt den
+# ausgewerteten Zeitraum IST der passende risikofreie Zins. Das haelt die Kennzahl
+# automatisch am jeweiligen Zinsumfeld (2006-2008 3-4%, 2012-2022 nahe 0%, ab 2023
+# wieder 3-4%), statt einen festen Wert zu hinterlegen, der dagegen veraltet -
+# dasselbe Prinzip wie auf der Praemissen-Seite (_praemissen_kontext()).
+_GELDMARKT_TICKER = "XEON"
 
-def _sharpe_ratio(total_values: list[float]) -> float:
+# Unter dieser Laenge ist eine annualisierte Geldmarktrendite aus so wenigen
+# Wochen kein belastbarer Zins mehr - dann gilt der Rueckfallwert.
+_ZINS_MIN_WOCHEN = 26
+
+
+def _risikofreier_zins_pct(rows: list[PriceRow]) -> float:
+    """Risikofreier Zins in % p.a., abgeleitet aus dem Geldmarkt-ETF ueber
+    denselben Zeitraum, ueber den auch die Strategie ausgewertet wird (#75).
+
+    Faellt auf ``_RISIKOFREIER_ZINS_PLATZHALTER`` zurueck, wenn der Ticker im
+    Zeitraum fehlt oder der Zeitraum zu kurz ist - der Platzhalter bleibt also
+    Rueckfallwert, ist aber nicht mehr die einzige Quelle.
+    """
+    kurse = [(r.date, r.prices[_GELDMARKT_TICKER]) for r in rows if _GELDMARKT_TICKER in r.prices]
+    if len(kurse) < _ZINS_MIN_WOCHEN:
+        return _RISIKOFREIER_ZINS_PLATZHALTER
+    (erstes_datum, erster_kurs), (letztes_datum, letzter_kurs) = kurse[0], kurse[-1]
+    if erster_kurs <= 0:
+        return _RISIKOFREIER_ZINS_PLATZHALTER
+    gesamt_pct = _f((letzter_kurs - erster_kurs) / erster_kurs) * 100
+    return _cagr_pct(gesamt_pct, (letztes_datum - erstes_datum).days)
+
+
+def _sharpe_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
     """Annualisierte Ueberrendite je Einheit annualisierter Volatilitaet
     (Standardabweichung aller Wochenrenditen, positive wie negative)."""
     renditen = _wochenrenditen(total_values)
@@ -189,8 +226,13 @@ def _sharpe_ratio(total_values: list[float]) -> float:
     std_pct = statistics.pstdev(renditen) * (52**0.5)
     if std_pct == 0:
         return 0.0
+    # ACHTUNG Einheiten: _wochenrenditen() liefert BRUECHE (0,01 = 1%), std_pct und
+    # ann_mean_pct sind trotz ihrer Namen ebenfalls Brueche. Der uebergebene Zins
+    # kommt dagegen in Prozentpunkten p.a. herein (wie ueberall sonst in dieser
+    # Datei) und muss deshalb vor dem Abzug umgerechnet werden.
+    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
     ann_mean_pct = statistics.fmean(renditen) * 52
-    return (ann_mean_pct - _RISIKOFREIER_ZINS_PLATZHALTER) / std_pct
+    return (ann_mean_pct - zins / 100) / std_pct
 
 
 def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
@@ -202,7 +244,7 @@ def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
     return (sum(quadrate) / len(quadrate)) ** 0.5
 
 
-def _sortino_ratio(total_values: list[float]) -> float:
+def _sortino_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
     """Wie ``_sharpe_ratio``, aber nur Verlustwochen fliessen ins Risikomass ein -
     Streuung nach oben (Gewinnwochen) wird nicht als Risiko gewertet."""
     renditen = _wochenrenditen(total_values)
@@ -211,8 +253,10 @@ def _sortino_ratio(total_values: list[float]) -> float:
     downside_pct = _downside_deviation(renditen) * (52**0.5)
     if downside_pct == 0:
         return 0.0
+    # Einheiten wie bei _sharpe_ratio(): Brueche gegen Prozentpunkte, siehe dort.
+    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
     ann_mean_pct = statistics.fmean(renditen) * 52
-    return (ann_mean_pct - _RISIKOFREIER_ZINS_PLATZHALTER) / downside_pct
+    return (ann_mean_pct - zins / 100) / downside_pct
 
 
 # --- Walk-Forward-Robustheit ueber Teilperioden -----------------------------------
@@ -339,6 +383,10 @@ def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
         if len(preset_rows) < 1:
             continue
         result = simulate(preset_rows, strategy)
+        # Risikofreier Zins aus dem Geldmarkt-ETF ueber genau DIESEN Preset-Zeitraum
+        # (#75) - ein 1-Jahres-Preset im Hochzinsumfeld hat einen anderen Referenzzins
+        # als die volle Historie.
+        zins_pct = _risikofreier_zins_pct(preset_rows)
         total_values = [_f(vp.total_value) for vp in result.value_history]
         labels = [vp.date.isoformat() for vp in result.value_history]
         rendite_pct = _rendite_pct(result, strategy)
@@ -350,8 +398,9 @@ def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
                 "rendite_label": f"{rendite_pct:+.2f}",
                 "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
                 "max_drawdown_label": f"{-_max_drawdown_pct(total_values):.2f}",
-                "sharpe_label": f"{_sharpe_ratio(total_values):.2f}",
-                "sortino_label": f"{_sortino_ratio(total_values):.2f}",
+                "sharpe_label": f"{_sharpe_ratio(total_values, zins_pct):.2f}",
+                "sortino_label": f"{_sortino_ratio(total_values, zins_pct):.2f}",
+                "risikofreier_zins_label": f"{zins_pct:.2f}".replace(".", ","),
                 "labels": labels,
                 "total_values": total_values,
                 "chart_max": max(total_values) if total_values else 0.0,
@@ -602,8 +651,9 @@ def _build_strategy_view(
     netto_cagr_pct = _cagr_pct(_f(netto_rendite_pct), tage)
     volatilitaet_pct = _volatilitaet_pct(total_values)
     max_drawdown_pct = _max_drawdown_pct(total_values)
-    sharpe_ratio = _sharpe_ratio(total_values)
-    sortino_ratio = _sortino_ratio(total_values)
+    risikofreier_zins_pct = _risikofreier_zins_pct(rows)
+    sharpe_ratio = _sharpe_ratio(total_values, risikofreier_zins_pct)
+    sortino_ratio = _sortino_ratio(total_values, risikofreier_zins_pct)
     cash_max_pct, cash_max_datum = _cash_anteil_max(points)
     walk_forward_segmente = _walk_forward_segmente(rows, strategy)
     walk_forward_spread_pp = (
@@ -652,6 +702,9 @@ def _build_strategy_view(
         "sharpe_label": f"{sharpe_ratio:.2f}",
         "sortino_ratio": sortino_ratio,
         "sortino_label": f"{sortino_ratio:.2f}",
+        # #75: je Strategie ausgewiesen, weil er aus deren eigenem
+        # Simulationszeitraum abgeleitet wird und deshalb nicht fuer alle gleich ist.
+        "risikofreier_zins_label": f"{risikofreier_zins_pct:.2f}".replace(".", ","),
         "cash_max_pct": cash_max_pct,
         "cash_max_label": f"{cash_max_pct:.1f}",
         "cash_max_datum": cash_max_datum or "–",
@@ -830,6 +883,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
                 "cash_max_label": view.get("cash_max_label", "0.0"),
                 "cash_max_datum": view.get("cash_max_datum", "–"),
                 "sim_beginn": view.get("sim_beginn", "–"),
+                "risikofreier_zins_label": view.get("risikofreier_zins_label", "–"),
             }
         )
     cash_werte = [s["cash_max_label"] for s in strategie_liste]
@@ -849,7 +903,10 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
         "vorabpauschale_basiszins": f"{VORABPAUSCHALE_BASISZINS_PLATZHALTER * 100:.1f}".replace(".", ","),
         "vorabpauschale_faktor": f"{VORABPAUSCHALE_FAKTOR * 100:.0f}",
         "dividendenrendite": f"{DIVIDENDENRENDITE_PLATZHALTER * 100:.1f}".replace(".", ","),
-        "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER * 100:.0f}",
+        # Nur noch der Rueckfallwert (#75) - der tatsaechlich verwendete Zins steht
+        # je Strategie in der Tabelle oben.
+        "risikofreier_zins": f"{_RISIKOFREIER_ZINS_PLATZHALTER:.0f}",
+        "geldmarkt_ticker": _GELDMARKT_TICKER,
         "sma_kurz": _SMA_KURZ_WOCHEN,
         "sma_lang": _SMA_LANG_WOCHEN,
         "walk_forward_segmente": _WALK_FORWARD_SEGMENTE,
