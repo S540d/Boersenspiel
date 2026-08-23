@@ -155,6 +155,17 @@
   .zeitraum-switch button:hover { color: var(--text-primary); }
   .zeitraum-switch button.active { background: var(--series-1); border-color: var(--series-1); color: #fff; }
   .zeitraum-switch .zeitraum-rendite { font-size: 0.85rem; color: var(--text-secondary); margin-left: 4px; font-variant-numeric: tabular-nums; }
+  .benchmark-switch {
+    display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin: 4px 0 24px;
+    padding: 10px 14px; border: 1px solid var(--border); border-radius: 10px; background: var(--surface-1);
+  }
+  .benchmark-switch span { font-size: 0.85rem; color: var(--text-secondary); }
+  .benchmark-switch button {
+    font: inherit; font-size: 0.82rem; cursor: pointer; padding: 4px 12px; border-radius: 999px;
+    border: 1px solid var(--border); background: var(--page); color: var(--text-secondary);
+  }
+  .benchmark-switch button:hover { color: var(--text-primary); }
+  .benchmark-switch button.active { background: var(--series-2); border-color: var(--series-2); color: #fff; }
   .back-link { margin: 0; font-size: 0.9rem; }
   .header-bar { display: flex; align-items: flex-start; justify-content: space-between; gap: 12px; }
   .menu { position: relative; flex: none; }

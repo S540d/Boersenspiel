@@ -386,6 +386,28 @@ STRATEGIES: list[Strategy] = [
 
 STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
 
+# --- Benchmarks für den Diagramm-Overlay-Schalter (#72) ----------------------
+#
+# Strategien hier stehen bewusst NICHT in STRATEGIES/SCENARIOS - sie sollen
+# nicht als eigene Zeile in der Vergleichsübersicht erscheinen, sondern nur
+# optional als Vergleichslinie in den Wertverlauf-Charts ANDERER Strategien
+# eingeblendet werden (der zentrale Schalter aus #72). `dashboard.py`
+# simuliert jede hier gelistete Strategie mit dem Startkapital der jeweils
+# angezeigten Strategie neu (`dataclasses.replace`), damit die Overlay-Linie
+# bei demselben Startwert beginnt wie die Strategie selbst - deshalb muss
+# jeder Eintrag ein reiner Einzelinstrument-Buy&Hold sein (ein Topf, 100%,
+# `optimierungen=Optimierungen(rebalancing=False)`). Ein Kandidat wird dem
+# Dashboard nur angeboten, wenn sein Ticker im jeweils angezeigten Zeitraum
+# tatsächlich einen Kurs hat (siehe `dashboard._benchmark_reihen()`) - aktuell
+# also nur `SP500_BENCHMARK`. `FR0010755611` (Amundi MSCI USA Daily (2x)
+# Leveraged, aus #72) ist bewusst noch NICHT ergänzt: das wäre ein 25.
+# Instrument und würde das Alpha-Vantage-Tagesbudget von 25 auf 26 Requests
+# reißen (siehe instruments.py "Request-Budget", #64). Der Schalter selbst
+# ist generisch für weitere Kandidaten gebaut - sobald das Instrument mit
+# eigenem Budget-Spielraum (oder Ersatz eines bestehenden) ergänzt wird,
+# reicht ein weiterer Eintrag in dieser Liste.
+BENCHMARK_STRATEGIEN: list[Strategy] = [SP500_BENCHMARK]
+
 
 # --- Steuer- und Gebührenkonstanten (strategieübergreifend, aus dem Pflichtenheft) --
 

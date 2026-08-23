@@ -96,6 +96,15 @@
     <div class="chart-box-large"><canvas id="gruppen-chart-{{ loop.index }}"></canvas></div>
   </section>
 {% endfor %}
+{% if benchmark_optionen %}
+  <div class="benchmark-switch" id="benchmark-switch">
+    <span>Benchmark in den Wertverlauf-Charts einblenden:</span>
+    <button type="button" data-benchmark="none" class="active">Kein Benchmark</button>
+    {% for b in benchmark_optionen %}
+    <button type="button" data-benchmark="{{ b.id }}">{{ b.label }}</button>
+    {% endfor %}
+  </div>
+{% endif %}
 {% for s in strategies %}
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
@@ -191,6 +200,51 @@
   });
   {% endfor %}
 
+  // Benchmark-Overlay-Schalter (#72): EIN zentraler Schalter fuer alle
+  // szenariospezifischen Wertverlauf-Charts auf dieser Seite statt eines
+  // Schalters je Chart. `chart.__benchmarks` haelt die fuer den jeweils
+  // AKTUELL angezeigten Zeitraum passenden Kandidaten (siehe initZeitraumSwitch
+  // unten, das dieses Feld beim Preset-Wechsel neu setzt); die Auswahl selbst
+  // (`currentBenchmarkId`) ist global, weil ein einzelner Schalter alle Charts
+  // steuert. Wichtig (Owner-Vorgabe #72): die Y-Achse bleibt dabei unveraendert
+  // - deshalb ein fixes `max` statt `suggestedMax` auf allen betroffenen Charts
+  // (siehe unten): eine Benchmark-Linie, die ueber das bisherige Maximum
+  // hinausschiesst, wird vom Chart einfach oben abgeschnitten statt die Skala
+  // zu strecken.
+  let currentBenchmarkId = 'none';
+  const benchmarkCharts = [];
+
+  function applyBenchmarkDataset(chart) {
+    const kandidaten = chart.__benchmarks || [];
+    const bench = kandidaten.find((b) => b.id === currentBenchmarkId);
+    if (bench) {
+      chart.data.datasets[1] = {
+        label: bench.label,
+        data: bench.total_values,
+        borderColor: colors.series4,
+        backgroundColor: colors.series4,
+        borderWidth: 1.5,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.15,
+      };
+    } else {
+      chart.data.datasets.length = 1;
+    }
+    chart.update();
+  }
+
+  const benchmarkSwitchEl = document.getElementById('benchmark-switch');
+  if (benchmarkSwitchEl) {
+    benchmarkSwitchEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        currentBenchmarkId = btn.dataset.benchmark;
+        benchmarkSwitchEl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+        benchmarkCharts.forEach(applyBenchmarkDataset);
+      });
+    });
+  }
+
   // Zeitraum-Presets (#54, Variante B): jeder Preset ist bereits fertig aus einer
   // eigenen engine.simulate()-Neu-Simulation (frisches Startkapital, siehe
   // dashboard._zeitraum_presets()) - der Umschalter hier wechselt nur, welcher
@@ -204,8 +258,9 @@
       if (!preset) return;
       chart.data.labels = preset.labels;
       chart.data.datasets[0].data = preset.total_values;
-      chart.options.scales.y.suggestedMax = (preset.chart_max || defaultMax) * 1.05;
-      chart.update();
+      chart.options.scales.y.max = (preset.chart_max || defaultMax) * 1.05;
+      chart.__benchmarks = preset.benchmarks || [];
+      applyBenchmarkDataset(chart);
       if (renditeEl) renditeEl.textContent = `Rendite im Zeitraum: ${preset.rendite_label}%`;
       switchEl.querySelectorAll('button').forEach((btn) => btn.classList.toggle('active', btn.dataset.preset === id));
     };
@@ -241,11 +296,17 @@
         responsive: true, maintainAspectRatio: false,
         plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf', color: colors.text } },
         // Eigenes scales-Objekt statt der geteilten wertChartScales-Referenz: der
-        // Zeitraum-Umschalter unten mutiert scales.y.suggestedMax je Chart-Instanz,
-        // ein geteiltes Objekt wuerde das auf alle Charts gleichzeitig anwenden.
-        scales: { x: commonScales.x, y: { ...commonScales.y, min: 0, suggestedMax: strategieMax * 1.05 } },
+        // Zeitraum-Umschalter unten mutiert scales.y.max je Chart-Instanz, ein
+        // geteiltes Objekt wuerde das auf alle Charts gleichzeitig anwenden. Fixes
+        // `max` statt `suggestedMax` (#72): die Skala darf sich durch den
+        // Benchmark-Schalter nicht veraendern, ein `suggestedMax` waere von Chart.js
+        // aber nur als Untergrenze behandelt und durch eine groessere Benchmark-Reihe
+        // ueberschritten worden.
+        scales: { x: commonScales.x, y: { ...commonScales.y, min: 0, max: strategieMax * 1.05 } },
       },
     });
+    chart.__benchmarks = {{ s.benchmarks_json | safe }};
+    benchmarkCharts.push(chart);
     initZeitraumSwitch(chart, document.getElementById('zeitraum-switch-{{ loop.index }}'), {{ s.zeitraum_presets_json | safe }}, strategieMax);
   }
   {% endfor %}

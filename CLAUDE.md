@@ -168,6 +168,40 @@ inkrementell fortgeschrieben).
   siehe `_build_strategy_view()`). Ändert nichts an der Simulation, nur an
   der Startseiten-Darstellung — Detailseiten sind ohnehin schon pro
   Strategie unabhängig skaliert.
+  **`strategies.BENCHMARK_STRATEGIEN` und der Benchmark-Overlay-Schalter
+  (#72):** Liste von Strategien (aktuell nur `SP500_BENCHMARK`), die NICHT
+  in `STRATEGIES`/`SCENARIOS` stehen, sondern optional als zusätzliche Linie
+  in den Wertverlauf-Charts anderer Strategien eingeblendet werden können -
+  ein zentraler Schalter pro Seite (Start- **und** Detailseite, ein
+  `<div class="benchmark-switch">` mit Buttons "Kein Benchmark"/je Kandidat)
+  steuert dabei ALLE auf dieser Seite gerenderten Charts gleichzeitig.
+  `dashboard._benchmark_reihen(rows, strategy)` simuliert jeden Kandidaten
+  mit `dataclasses.replace(bench, startkapital=strategy.startkapital)` über
+  exakt dieselben `rows` wie die angezeigte Strategie - dadurch hat die
+  Overlay-Reihe automatisch dieselbe Länge/Reihenfolge wie deren eigener
+  Wertverlauf (`engine.simulate()`: ein `ValuePoint` je Zeile in `rows`) und
+  startet beim selben Kapital, ganz ohne Datums-Abgleich. Ein Kandidat wird
+  nur aufgenommen, wenn ALLE seine Ticker im übergebenen Zeitraum
+  mindestens einen Kurs haben (sonst bliebe die Linie bei 0) - das macht
+  die Verfügbarkeit rein datengetrieben, nicht Owner-kuratiert: Fehlt ein
+  Kandidat aktuell komplett in `instruments.py`/`price_history.csv` (wie
+  `FR0010755611` aus #72, siehe Kommentar an `BENCHMARK_STRATEGIEN` in
+  strategies.py), taucht er im Schalter einfach gar nicht erst auf, statt
+  eine kaputte Option anzuzeigen. Die Strategie selbst wird als Kandidat für
+  ihre eigene Seite ausgeschlossen (per Namensvergleich) - eine Linie neben
+  sich selbst wäre nur redundant. Sowohl `_build_strategy_view()` (volle
+  Historie, Feld `benchmarks`/`benchmarks_json`) als auch
+  `_zeitraum_presets()` (je Preset ein eigenes `benchmarks`-Feld) liefern
+  diese Overlay-Daten, damit der Zeitraum-Umschalter (#54) und der
+  Benchmark-Schalter unabhängig voneinander funktionieren.
+  **Wichtige Owner-Vorgabe: die Y-Achsen-Skalierung darf sich durch den
+  Schalter nicht ändern.** Alle betroffenen Charts (Wertverlauf auf Start-
+  und Detailseite, inkl. der Zeitraum-Preset-Varianten) nutzen deshalb ein
+  hartes Chart.js-`max` statt `suggestedMax` - Letzteres ist nur eine
+  Untergrenze und wäre von einer größeren Benchmark-Reihe überschritten
+  worden, ein hartes `max` schneidet die Linie stattdessen oben am
+  Chart-Rand ab. Reine Darstellungsschicht, keine neue Instrumentenzuordnung
+  und kein Eingriff in `engine.py`.
   **Rebalancing-Trigger, "5/25-Regel je Topf" (#63, F5):** Optionales Feld
   `Strategy.rebalancing_schwelle_relativ` (Decimal, Default `1` = 100%)
   ergänzt `rebalancing_schwelle_pp` um eine relative Zusatzschwelle. Die
@@ -903,3 +937,13 @@ der_urspruenglichen_strategien` (vormals „…liegen_in_keinem_topf", seit die
 sieben Instrumente alloziert sind umbenannt) sichert ab, dass die drei
 ursprünglichen Barbell-Strategien und alle Szenarien weiterhin unberührt
 bleiben — nur die beiden neuen Strategien allokieren die #64-Instrumente.
+Für den Benchmark-Overlay-Schalter (#72) in `tests/test_dashboard.py`:
+`_benchmark_reihen()` gegen eine (per `monkeypatch` auf
+`dashboard.BENCHMARK_STRATEGIEN` gesetzte) Fixture-Benchmark-Strategie -
+simuliert mit dem Startkapital der angezeigten (nicht der Benchmark-)
+Strategie, schließt eine Benchmark-Strategie aus, die namensgleich mit der
+angezeigten Strategie ist, und bietet einen Kandidaten ohne Kursdaten im
+Zeitraum gar nicht erst an. End-to-End über `build_dashboard()`: der
+Schalter (`id="benchmark-switch"`) wird auf Start- **und** Detailseite
+gerendert, und die betroffenen Chart.js-Konfigurationen enthalten
+nachweislich kein `suggestedMax:` mehr (nur noch das feste `max:`).
