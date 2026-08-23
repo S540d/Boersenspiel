@@ -233,7 +233,7 @@ strategy always yields the identical result.
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Pure simulation function: (price history, strategy) → portfolio/tax state |
-| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back or full history), backed by four fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)). The overview table's lead column re-simulates every strategy over a **common comparison period** and reports each one's excess return over the benchmark ([#73](https://github.com/S540d/Boersenspiel/issues/73)) |
+| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back, full history, or — where it actually extends the history — a fifth "extended" preset that assumes capital not yet allocatable to a target instrument sat in a single common bond ETF, IBCL, instead of cropping the period, [#80](https://github.com/S540d/Boersenspiel/issues/80)), backed by fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)). The overview table's lead column re-simulates every strategy over a **common comparison period** and reports each one's excess return over the benchmark ([#73](https://github.com/S540d/Boersenspiel/issues/73)), and has an info-tooltip on every metric column header ([#81](https://github.com/S540d/Boersenspiel/issues/81)). The start page also lists every fetched instrument with its full name ([#79](https://github.com/S540d/Boersenspiel/issues/79)) and a CAGR-vs-max-drawdown scatter chart ([#82](https://github.com/S540d/Boersenspiel/issues/82)) |
 | `src/boersenspiel/templates/` | Jinja templates: `base.html.j2` (shared shell incl. the three-dot menu), `dashboard.html.j2`, `strategy_detail.html.j2`, `praemissen.html.j2` |
 | `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
 | `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
@@ -600,6 +600,21 @@ pytest -q
     a documented simplification for the actual personal income tax rate.
     BTC-EUR is therefore also excluded from the December harvest measures,
     which only ever optimize the capital-gains pool.
+  - **Immediate-sale liquidation value:** `kumulierte_steuer` above only
+    tracks tax on *actually realized* trades (rebalancing, December harvest);
+    the portion of the final value still sitting in unrealized gains of open
+    positions is untaxed there. `simulate()` therefore also returns a
+    hypothetical full liquidation at the last price row
+    (`liquidationswert_nach_steuer` / `liquidationssteuer` /
+    `liquidationsgebuehren` on `SimulationResult`): what would be left after
+    order fees and tax on every still-held position's unrealized gain,
+    computed with the same sale mechanics as `rebalance_to_targets()`
+    (partial tax exemption, the Spekulationsfrist/Freigrenze split for
+    BTC-EUR) but on **copies** of the tax-year state so `tax_status` keeps
+    describing only actually realized gains. Shown on each strategy's detail
+    page as "Wert nach Steuern beim sofortigen Verkauf", alongside (not
+    instead of) the existing estimated net return, which only subtracts
+    already-realized tax.
 
 ## Known limitations
 
