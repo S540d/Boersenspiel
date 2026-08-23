@@ -112,6 +112,14 @@ class Strategy:
     # ändert nichts an der Simulation selbst, jedes Unterszenario bleibt eine
     # vollständig eigenständige ``Strategy``.
     teil_von: str | None = None
+    # Optional: True, wenn diese Strategie/dieses Szenario in ihrem Wertverlauf so
+    # weit von den übrigen abweicht, dass eine gemeinsame Y-Achsen-Skalierung im
+    # Dashboard (siehe dashboard._build_dashboard()) alle anderen Charts optisch
+    # flach zeichnen würde - z. B. SP500_BENCHMARK, dessen Endwert ein Vielfaches
+    # der übrigen Strategien beträgt. Rein darstellerisch (Startseite), ändert
+    # nichts an der Simulation. Default False = fließt normal ins gemeinsame
+    # Chart-Maximum ein.
+    eigene_chart_skala: bool = False
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""
@@ -362,6 +370,10 @@ SP500_BENCHMARK = Strategy(
         "Index kaufen' gegenüber den Barbell-Strategien und Szenarien, kein "
         "eigenständiger Anlagevorschlag."
     ),
+    # Waechst ueber 20 Jahre auf ein Vielfaches der uebrigen Strategien - mit
+    # gemeinsamer Y-Achse wuerden alle anderen Wertverlauf-Charts auf der
+    # Startseite optisch flach.
+    eigene_chart_skala=True,
 )
 
 STRATEGIES: list[Strategy] = [

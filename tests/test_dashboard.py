@@ -234,6 +234,58 @@ def test_build_dashboard_ohne_teil_von_zeigt_keine_gruppen_charts(tmp_path: Path
     assert "gruppen-chart" not in html
 
 
+# --- Eigene Chart-Skala fuer weit abweichende Strategien (SP500_BENCHMARK, s. #64) ----
+
+
+def _strategien_mit_ausreisser() -> list[Strategy]:
+    """Eine normale Strategie (T1 verdoppelt sich) plus ein Ausreisser mit
+    eigene_chart_skala=True, dessen Wertreihe (T2 verhundertfacht sich) um ein
+    Vielfaches groesser ist - reproduziert das Verhaeltnis SP500_BENCHMARK vs.
+    die uebrigen Strategien auf der Startseite."""
+    basis = dict(
+        startkapital=Decimal("1000"),
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    normal = Strategy(
+        name="A: Normal",
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        **basis,
+    )
+    ausreisser = Strategy(
+        name="B: Ausreisser",
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T2": Decimal("1")})],
+        eigene_chart_skala=True,
+        **basis,
+    )
+    return [normal, ausreisser]
+
+
+def _rows_mit_ausreisser() -> list[PriceRow]:
+    return [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("150"), "T2": Decimal("10000")}),
+    ]
+
+
+def test_ausreisser_strategie_fliesst_nicht_ins_gemeinsame_chart_maximum_ein(tmp_path: Path):
+    output = build_dashboard(_rows_mit_ausreisser(), _strategien_mit_ausreisser(), output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    # Das gemeinsame Maximum (wertChartMax) darf nur aus "A: Normal" stammen (Endwert
+    # rund 1498.50) - der Ausreisser (Endwert rund 99900) wuerde es sonst dominieren
+    # und alle anderen Charts auf der Startseite optisch flachdruecken.
+    wert_chart_max_js = html.split("const wertChartMax = ", 1)[1].split(";", 1)[0]
+    assert float(wert_chart_max_js) < 2000
+
+    # "A: Normal" nutzt weiterhin das gemeinsame Maximum, "B: Ausreisser" sein eigenes.
+    chart_1_js = html.split("getElementById('value-chart-1')", 1)[0].rsplit("{\n", 1)[1]
+    assert "const eigeneSkala = false;" in chart_1_js
+    chart_2_js = html.split("getElementById('value-chart-2')", 1)[0].rsplit("{\n", 1)[1]
+    assert "const eigeneSkala = true;" in chart_2_js
+
+
 # --- Risikokennzahlen: Volatilitaet & Max Drawdown (#40) ------------------------------
 
 

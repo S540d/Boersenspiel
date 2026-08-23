@@ -217,6 +217,12 @@
 
   {% for s in strategies %}
   {
+    // #64-Folgearbeit: Strategien mit eigener Chart-Skala (z. B. der SP500-Benchmark,
+    // dessen Endwert ein Vielfaches der uebrigen betraegt) nutzen ihr eigenes Maximum
+    // statt des gemeinsamen wertChartMax - sonst wuerden alle anderen Charts auf der
+    // Startseite durch sie flachgedrueckt.
+    const eigeneSkala = {{ 'true' if s.eigene_chart_skala else 'false' }};
+    const strategieMax = eigeneSkala ? {{ s.own_chart_max | tojson }} : wertChartMax;
     const chart = new Chart(document.getElementById('value-chart-{{ loop.index }}'), {
       type: 'line',
       data: {
@@ -237,10 +243,10 @@
         // Eigenes scales-Objekt statt der geteilten wertChartScales-Referenz: der
         // Zeitraum-Umschalter unten mutiert scales.y.suggestedMax je Chart-Instanz,
         // ein geteiltes Objekt wuerde das auf alle Charts gleichzeitig anwenden.
-        scales: { x: commonScales.x, y: { ...commonScales.y, min: 0, suggestedMax: wertChartMax * 1.05 } },
+        scales: { x: commonScales.x, y: { ...commonScales.y, min: 0, suggestedMax: strategieMax * 1.05 } },
       },
     });
-    initZeitraumSwitch(chart, document.getElementById('zeitraum-switch-{{ loop.index }}'), {{ s.zeitraum_presets_json | safe }}, wertChartMax);
+    initZeitraumSwitch(chart, document.getElementById('zeitraum-switch-{{ loop.index }}'), {{ s.zeitraum_presets_json | safe }}, strategieMax);
   }
   {% endfor %}
 </script>

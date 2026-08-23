@@ -11,6 +11,20 @@ statisches Dashboard (Chart.js) auf GitHub Pages. Default-Branch ist `main`
 (ursprünglich hieß er `claude/pflichtenheft-umsetzung-planen-6kf05s`, da das
 Repo leer angelegt wurde, und wurde nachträglich zu `main` umbenannt).
 
+**README.md ist bewusst ein Marketing-/Onboarding-Dokument, kein
+technisches Referenzdokument** (Überarbeitung im Anschluss an #64): kurzer
+Pitch, ein Screenshot der Vergleichstabelle (`assets/dashboard-comparison.png`),
+Quickstart, ein Verweis darauf, dass das Dashboard sich selbst erklärt
+(Detailseiten + Prämissen-Seite), und eine kurze Contributing-Sektion. Alles
+Tiefergehende — Engine-Modellierungsentscheidungen, Steuerdetails,
+Architektur-Diagramm, vollständige Szenario-Tabellen, bekannte
+Einschränkungen — wurde bewusst entfernt bzw. zieht stattdessen die
+Prämissen-Seite (`docs/praemissen.html`, live erreichbar über das
+Drei-Punkt-Menü) oder dieses CLAUDE.md als Quelle. Beim Ergänzen von README.md
+deshalb nicht wieder implementierungsnahe Details zurückschreiben, die die
+Dashboard-Seiten bereits selbst (und aktueller) zeigen — stattdessen dorthin
+verlinken.
+
 ## Commands
 
 ```bash
@@ -72,8 +86,12 @@ inkrementell fortgeschrieben).
   `tests/test_backfill_history.py` hält das als Test fest, damit ein
   18. Instrument nicht still beide Workflows unmöglich macht.
   **Darstellung nicht allokierter Instrumente (#66):** Weder das Dashboard
-  noch die Prämissen-Seite noch die README nennen eine feste
-  Instrumentenzahl. `dashboard._allokierte_ticker(strategies)` leitet die
+  noch die Prämissen-Seite leiten eine Instrumentenzahl mehr aus einer
+  hartkodierten Konstante ab (die README nennt seit ihrer Überarbeitung im
+  Zuge der #64-Nachfolgearbeit wieder eine Momentaufnahme-Zahl in der
+  Marketing-Einleitung — bewusst, weil sie kein technisches Dokument mehr
+  ist; verbindlich bleiben Dashboard und Prämissen-Seite).
+  `dashboard._allokierte_ticker(strategies)` leitet die
   Menge der tatsächlich einer Strategie/einem Szenario zugeordneten Ticker
   generisch aus `Strategy.alle_ticker_gewichte()` ab; `dashboard.html.j2`
   zeigt `{{ instrumente_anzahl }}` (aus `common_context`) statt einer
@@ -132,6 +150,19 @@ inkrementell fortgeschrieben).
   LYMS+SEMI), `IQQ6` (Immobilien) und `EXXY` (breite Rohstoffe). Erster
   Ansatz, Gewichte nicht optimiert/gebacktestet — wie bei allen Szenarien in
   `scenarios.py`.
+  **Optionales Feld `Strategy.eigene_chart_skala` (Nachfolgearbeit zu #64):**
+  rein darstellerisch, Default `False`. Die Startseite skaliert alle
+  Wertverlauf-Charts standardmäßig auf ein gemeinsames Y-Achsen-Maximum
+  (`dashboard.py`, `wert_chart_max`/`wertChartMax`, #24), damit Strategien
+  optisch vergleichbar bleiben. `SP500_BENCHMARK` wächst über die volle
+  Historie aber auf ein Vielfaches der übrigen Strategien (+918% vs. eine
+  Größenordnung von +70–150%) — mit gemeinsamer Skala würden dadurch alle
+  anderen Charts flachgedrückt. `eigene_chart_skala=True` nimmt eine
+  Strategie aus der Berechnung des gemeinsamen Maximums heraus; ihr eigener
+  Chart nutzt stattdessen `own_chart_max` (Maximum der eigenen Wertreihe,
+  siehe `_build_strategy_view()`). Ändert nichts an der Simulation, nur an
+  der Startseiten-Darstellung — Detailseiten sind ohnehin schon pro
+  Strategie unabhängig skaliert.
   **Rebalancing-Trigger, "5/25-Regel je Topf" (#63, F5):** Optionales Feld
   `Strategy.rebalancing_schwelle_relativ` (Decimal, Default `1` = 100%)
   ergänzt `rebalancing_schwelle_pp` um eine relative Zusatzschwelle. Die
@@ -296,8 +327,9 @@ inkrementell fortgeschrieben).
   `summe <= 0` (kein einziges Zielinstrument handelbar) alles geparkt, ist
   das gewollt: „raus aus dem Markt" ohne verfügbares defensives Instrument
   *ist* Cash. **Warum das kaum vorkommt:** Die Strategien haben ohnehin
-  keine eigene Cash-Position im Zielportfolio (siehe README „No separate
-  cash position", #35) — Topf A übernimmt die Cash-Rolle. Geparktes Kapital
+  keine eigene Cash-Position im Zielportfolio (siehe Abschnitt „Cash und
+  ungenutztes Kapital" auf `docs/praemissen.html`, #35) — Topf A übernimmt
+  die Cash-Rolle. Geparktes Kapital
   ist deshalb ein rein technischer, vorübergehender Zustand
   (`pending_cash`), keine gewollte Anlageklasse. Gegen die reale
   20-Jahres-Historie geprüft (Stand #55): über alle Strategien und
@@ -481,8 +513,8 @@ inkrementell fortgeschrieben).
   Spread/Slippage, TER, Zinsen auf Cash). Ein eigener Abschnitt "Cash und
   ungenutztes Kapital"
   begründet, warum Strategien keine eigene Cash-Zielallokation kennen (Topf
-  A übernimmt die Cash-Rolle, siehe README "No separate cash position",
-  #35) und zeigt zusätzlich `_cash_anteil_max()` je Strategie/Szenario: den
+  A übernimmt die Cash-Rolle, #35) und zeigt zusätzlich
+  `_cash_anteil_max()` je Strategie/Szenario: den
   größten je erreichten Anteil an technischem `pending_cash`
   (Kapitalanteil ganz ohne handelbares Ziel, #55) samt Datum — in
   `_build_strategy_view()` aus `result.value_history` berechnet und als

@@ -608,6 +608,11 @@ def _build_strategy_view(
         "walk_forward_spread_label": f"{walk_forward_spread_pp:.2f}",
         "zeitraum_presets": zeitraum_presets,
         "zeitraum_presets_json": json.dumps(zeitraum_presets),
+        # Eigene Y-Achsen-Skalierung statt des gemeinsamen Chart-Maximums (siehe
+        # Strategy.eigene_chart_skala) - own_chart_max ist dabei bewusst NUR das
+        # Maximum der eigenen Wertreihe, unabhaengig von allen anderen Strategien.
+        "eigene_chart_skala": strategy.eigene_chart_skala,
+        "own_chart_max": max(total_values) if total_values else 0.0,
     }
 
 
@@ -784,8 +789,15 @@ def build_dashboard(
 
     # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
     # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
-    # vergleichbar sind.
-    alle_werte = [wert for view in views for wert in view["total_values"]]
+    # vergleichbar sind. Strategien mit `eigene_chart_skala=True` (z. B. der
+    # SP500_BENCHMARK, dessen Endwert ein Vielfaches der uebrigen betraegt) fliessen
+    # NICHT in dieses gemeinsame Maximum ein, sonst wuerden alle anderen Charts durch
+    # sie flachgedrueckt - sie bekommen stattdessen ihr eigenes Maximum (siehe
+    # "chart_max"/"eigene_chart_skala" je View unten).
+    eigene_skala_namen = {s.name for s in strategies if s.eigene_chart_skala}
+    alle_werte = [
+        wert for view in views for wert in view["total_values"] if view["name"] not in eigene_skala_namen
+    ]
     wert_chart_max = max(alle_werte) if alle_werte else 0.0
 
     common_context = dict(
