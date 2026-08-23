@@ -2,27 +2,27 @@
 {% block title %}{{ s.name }} – Barbell-Portfolio Dashboard{% endblock %}
 {% block meta_description %}{% if s.beschreibung %}{{ s.beschreibung }}{% else %}{{ s.name }}: Kursverlauf, Kennzahlen und Steuerdetails im Barbell-Portfolio-Dashboard.{% endif %}{% endblock %}
 {% block canonical %}https://s540d.github.io/Boersenspiel/{{ s.id }}.html{% endblock %}
-{% block header_extra %}<p class="back-link"><a href="index.html">&larr; Zur Übersicht</a></p>{% endblock %}
+{% block header_extra %}<p class="back-link"><a href="index.html" data-i18n-en="&larr; Back to overview">&larr; Zur Übersicht</a></p>{% endblock %}
 {% block content %}
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
-    {% if s.beschreibung %}<p class="hint">{{ s.beschreibung }}</p>{% endif %}
+    {% if s.beschreibung %}<p class="hint" data-i18n-en="{{ s.beschreibung_en }}">{{ s.beschreibung }}</p>{% endif %}
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Startkapital</div><div class="value">{{ s.startkapital }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Trades gesamt</div><div class="value">{{ s.trade_count }}</div></div>
-      <div class="stat-tile"><div class="label">Letztes Rebalancing</div><div class="value">{{ s.last_rebalance_date }}</div></div>
-      <div class="stat-tile"><div class="label">Letzter Dez.-Harvest</div><div class="value">{{ s.last_harvest_date }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Total value">Gesamtwert</div><div class="value">{{ s.total_value }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Starting capital">Startkapital</div><div class="value">{{ s.startkapital }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Total trades">Trades gesamt</div><div class="value">{{ s.trade_count }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Last rebalance">Letztes Rebalancing</div><div class="value">{{ s.last_rebalance_date }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Last Dec. harvest">Letzter Dez.-Harvest</div><div class="value">{{ s.last_harvest_date }}</div></div>
     </div>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Bruttorendite % (CAGR p.a.)</div><div class="value">{{ s.cagr_label }}</div></div>
-      <div class="stat-tile"><div class="label">Geschätzte Nettorendite % (CAGR p.a.)</div><div class="value">{{ s.netto_cagr_label }}</div></div>
-      <div class="stat-tile"><div class="label">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value">{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Freibetrag verbleibend</div><div class="value">{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Kumulierte Steuer (nur nachrichtlich)</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Gross return % (CAGR p.a.)">Bruttorendite % (CAGR p.a.)</div><div class="value">{{ s.cagr_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Estimated net return % (CAGR p.a.)">Geschätzte Nettorendite % (CAGR p.a.)</div><div class="value">{{ s.netto_cagr_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Allowance used ({{ s.tax.year }})">Freibetrag verbraucht ({{ s.tax.year }})</div><div class="value">{{ s.tax.freibetrag_verbraucht }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Allowance remaining">Freibetrag verbleibend</div><div class="value">{{ s.tax.freibetrag_verbleibend }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Loss carryforward">Verlustvortrag</div><div class="value">{{ s.tax.verlustvortrag }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Cumulative tax (informational only)">Kumulierte Steuer (nur nachrichtlich)</div><div class="value">{{ s.tax.kumulierte_steuer }} &euro;</div></div>
     </div>
-    <p class="hint">
+    <p class="hint" data-i18n-en="All return and value figures on this page are gross values (before tax) - the cumulative tax is tracked for information but is never subtracted from the simulated portfolio value. The &quot;estimated net return&quot; above subtracts the cumulative tax once from the final value to give a rough order of magnitude; in reality taxes are due at different points throughout the year, not as a single deduction at the end (#63, F6a).">
       Alle Rendite- und Wertangaben auf dieser Seite sind
       <strong>Bruttowerte (vor Steuer)</strong> &ndash; die kumulierte Steuer
       wird nachrichtlich mitgeführt, aber nirgends vom simulierten Depotwert
@@ -32,12 +32,12 @@
       nicht als einmaliger Abzug am Ende (#63, F6a).
     </p>
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Wert nach Steuern beim sofortigen Verkauf<span class="info-tip" tabindex="0" title="Hypothetischer Verkauf des GESAMTEN Depots zum Stichtag der letzten Kurszeile: Bruttoendwert minus Ordergebühren minus Steuer auf die bislang unrealisierten Gewinne jeder noch gehaltenen Position (Sparerpauschbetrag/Verlustvortrag bzw. bei BTC die eigene Spekulationsfrist-Freigrenze werden dabei berücksichtigt).">i</span></div><div class="value">{{ s.liquidationswert_label }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">davon Steuer auf unrealisierte Gewinne</div><div class="value">{{ s.liquidationssteuer_label }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">davon Ordergebühren</div><div class="value">{{ s.liquidationsgebuehren_label }} &euro;</div></div>
-      <div class="stat-tile"><div class="label">Rendite % nach vollständiger Versteuerung</div><div class="value">{{ s.liquidations_rendite_pct_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Value after tax on immediate sale">Wert nach Steuern beim sofortigen Verkauf<span class="info-tip" tabindex="0" title="Hypothetischer Verkauf des GESAMTEN Depots zum Stichtag der letzten Kurszeile: Bruttoendwert minus Ordergebühren minus Steuer auf die bislang unrealisierten Gewinne jeder noch gehaltenen Position (Sparerpauschbetrag/Verlustvortrag bzw. bei BTC die eigene Spekulationsfrist-Freigrenze werden dabei berücksichtigt)." data-i18n-en-title="Hypothetical sale of the ENTIRE portfolio as of the last price row: gross final value minus order fees minus tax on the unrealized gains of every position still held (the savings allowance/loss carryforward, or BTC's own speculation-period exemption threshold, are taken into account).">i</span></div><div class="value">{{ s.liquidationswert_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="of which: tax on unrealized gains">davon Steuer auf unrealisierte Gewinne</div><div class="value">{{ s.liquidationssteuer_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="of which: order fees">davon Ordergebühren</div><div class="value">{{ s.liquidationsgebuehren_label }} &euro;</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Return % after full taxation">Rendite % nach vollständiger Versteuerung</div><div class="value">{{ s.liquidations_rendite_pct_label }}</div></div>
     </div>
-    <p class="hint">
+    <p class="hint" data-i18n-en="The difference to the &quot;estimated net return&quot; above: that one only subtracts the tax already actually realized (from rebalancing and December-harvest sales) from the final value. &quot;Value after tax on immediate sale&quot; goes a step further and additionally accounts for the tax that would become due on the still unrealized gains of the currently held positions if the entire portfolio were sold today - plus the order fees that would incur. That's the more realistic answer to &quot;what actually remains of the capital invested&quot;.">
       Der Unterschied zur "Geschätzten Nettorendite" oben: die zieht nur die
       bereits <em>tatsächlich realisierte</em> Steuer (aus Rebalancing- und
       Dezember-Harvest-Verkäufen) vom Endwert ab. Der "Wert nach Steuern beim
@@ -49,8 +49,8 @@
       tatsächlich übrig".
     </p>
     {% if s.zeitraum_presets %}
-    <h3>Kennzahlen nach Betrachtungszeitraum</h3>
-    <p class="hint">
+    <h3 data-i18n-en="Metrics by viewing period">Kennzahlen nach Betrachtungszeitraum</h3>
+    <p class="hint" data-i18n-en="Each period is an independent, fresh re-simulation with new starting capital (no continued portfolio) - similar to the walk-forward section below, just with fixed rather than equal-sized periods (#54). {% if 'erweitert' in (s.zeitraum_presets | map(attribute='id') | list) %}The &quot;Extended (replacement bond assumption)&quot; period (#80) runs over the full available price history instead of only from the point at which all of this strategy's target instruments were tradable: as long as a target instrument didn't yet exist, its capital share is treated as invested in IBCL (euro government bonds, 15-30 years) - the same bond ETF for ALL strategies and scenarios, instead of different replacement instruments per strategy. This avoids the over-concentration of early-existing instruments (Bitcoin above all) that would otherwise arise (see Premises, &quot;Look-ahead bias, leveraged&quot;), but shows a longer period at the cost of an additional assumption: in reality, a strategy assembled in 2026 wouldn't have existed yet in 2006.{% endif %}">
       Jeder Zeitraum ist eine eigenständige Neu-Simulation mit frischem
       Startkapital (kein fortgeführtes Depot) - analog zum Walk-Forward-
       Abschnitt unten, nur mit festen statt gleich großen Perioden (#54).
@@ -71,28 +71,28 @@
     </p>
     <div class="zeitraum-switch" id="detail-zeitraum-switch">
       {% for p in s.zeitraum_presets %}
-      <button type="button" data-preset="{{ p.id }}"{% if p.id == 'alle' %} class="active"{% endif %}>{{ p.label }}</button>
+      <button type="button" data-preset="{{ p.id }}"{% if p.id == 'alle' %} class="active"{% endif %} data-i18n-en="{{ p.label_en }}">{{ p.label }}</button>
       {% endfor %}
     </div>
     {% if s.benchmarks %}
     <div class="benchmark-switch" id="benchmark-switch">
-      <span>Benchmark einblenden:</span>
-      <button type="button" data-benchmark="none" class="active">Kein Benchmark</button>
+      <span data-i18n-en="Show benchmark:">Benchmark einblenden:</span>
+      <button type="button" data-benchmark="none" class="active" data-i18n-en="No benchmark">Kein Benchmark</button>
       {% for b in s.benchmarks %}
       <button type="button" data-benchmark="{{ b.id }}">{{ b.label }}</button>
       {% endfor %}
     </div>
     {% endif %}
     <div class="stat-row">
-      <div class="stat-tile"><div class="label">Rendite % (brutto, im Zeitraum)</div><div class="value" id="zeitraum-rendite">{{ s.rendite_pct_label }}</div></div>
-      <div class="stat-tile"><div class="label">Volatilität % (ann.)</div><div class="value" id="zeitraum-volatilitaet">{{ s.volatilitaet_label }}</div></div>
-      <div class="stat-tile"><div class="label">Max Drawdown %</div><div class="value" id="zeitraum-max-drawdown">{{ s.max_drawdown_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Return % (gross, over period)">Rendite % (brutto, im Zeitraum)</div><div class="value" id="zeitraum-rendite">{{ s.rendite_pct_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Volatility % (ann.)">Volatilität % (ann.)</div><div class="value" id="zeitraum-volatilitaet">{{ s.volatilitaet_label }}</div></div>
+      <div class="stat-tile"><div class="label" data-i18n-en="Max drawdown %">Max Drawdown %</div><div class="value" id="zeitraum-max-drawdown">{{ s.max_drawdown_label }}</div></div>
       <div class="stat-tile"><div class="label">Sharpe</div><div class="value" id="zeitraum-sharpe">{{ s.sharpe_label }}</div></div>
       <div class="stat-tile"><div class="label">Sortino</div><div class="value" id="zeitraum-sortino">{{ s.sortino_label }}</div></div>
     </div>
     <div class="chart-box-large"><canvas id="zeitraum-chart"></canvas></div>
     {% endif %}
-    <p class="hint">
+    <p class="hint" data-i18n-en="Moving averages of the value history as a weekly approximation of the classic 50-/200-day lines (10 and 40 weeks at 5 trading days each) - the same approach as the &quot;Chart technique: SMA crossover&quot; scenario. Always over the entire history, independent of the viewing period selected above, since the moving averages themselves need enough lead-in.">
       Gleitende Durchschnitte des Wertverlaufs als Wochen-Näherung der klassischen
       50-/200-Tage-Linien (10 bzw. 40 Wochen à 5 Handelstage) - derselbe Ansatz wie
       beim Szenario "Charttechnik: SMA-Crossover". Immer über die gesamte Historie,
@@ -105,8 +105,8 @@
     </div>
     {% if s.beitraege %}
     <div class="beitraege">
-      <h3>Effekt der einzelnen Börsenweisheiten</h3>
-      <p class="hint">
+      <h3 data-i18n-en="Effect of the individual market sayings">Effekt der einzelnen Börsenweisheiten</h3>
+      <p class="hint" data-i18n-en="Leave-one-out: CAGR (annualized return) of this strategy minus the CAGR of the same strategy without the respective saying. Positive = the saying added return, negative = it cost return. On a CAGR rather than total-return basis, because the difference of two total returns is no longer a meaningful percentage-point figure once the base and comparison runs differ by orders of magnitude (#63). The rules influence each other, so the individual contributions don't sum exactly to the total CAGR.">
         Leave-one-out: CAGR (annualisierte Rendite) dieser Strategie minus CAGR
         derselben Strategie <em>ohne</em> den jeweiligen Spruch. Positiv = der Spruch
         hat Rendite gebracht, negativ = er hat gekostet. Auf CAGR- statt
@@ -119,7 +119,7 @@
       <div class="chart-box"><canvas id="beitrag-chart"></canvas></div>
       <div class="overflow-x">
         <table>
-          <thead><tr><th>Börsenweisheit</th><th>Effekt (CAGR-Prozentpunkte p.a.)</th><th>CAGR ohne diesen Spruch % p.a.</th><th>Gesamtrendite ohne diesen Spruch %</th></tr></thead>
+          <thead><tr><th data-i18n-en="Market saying">Börsenweisheit</th><th data-i18n-en="Effect (CAGR percentage points p.a.)">Effekt (CAGR-Prozentpunkte p.a.)</th><th data-i18n-en="CAGR without this saying % p.a.">CAGR ohne diesen Spruch % p.a.</th><th data-i18n-en="Total return without this saying %">Gesamtrendite ohne diesen Spruch %</th></tr></thead>
           <tbody>
           {% for b in s.beitraege %}
             <tr>
@@ -135,8 +135,8 @@
     </div>
     {% endif %}
     <div class="beitraege">
-      <h3>Effekt der Optimierungs-Schalter</h3>
-      <p class="hint">
+      <h3 data-i18n-en="Effect of the optimization switches">Effekt der Optimierungs-Schalter</h3>
+      <p class="hint" data-i18n-en="Leave-one-out per mechanism: CAGR (annualized return) of this strategy minus the CAGR of the same strategy with exactly this one mechanism switched off (December harvest, rebalancing, order fees, taxation, ongoing fund costs). Positive = the mechanism added return, negative = it cost return. On a CAGR rather than total-return basis, because the difference of two total returns is no longer a meaningful percentage-point figure once the base and comparison runs differ by orders of magnitude - e.g. when rebalancing repeatedly brings a dominant position like Bitcoin back to its target weight (#63).">
         Leave-one-out je Mechanismus: CAGR (annualisierte Rendite) dieser Strategie
         minus CAGR derselben Strategie mit genau diesem einen Mechanismus
         ausgeschaltet (Dezember-Harvest, Rebalancing, Ordergebühren, Besteuerung,
@@ -151,11 +151,11 @@
       <div class="chart-box"><canvas id="opt-chart"></canvas></div>
       <div class="overflow-x">
         <table>
-          <thead><tr><th>Mechanismus</th><th>Effekt (CAGR-Prozentpunkte p.a.)</th><th>CAGR ohne diesen Mechanismus % p.a.</th><th>Gesamtrendite ohne diesen Mechanismus %</th></tr></thead>
+          <thead><tr><th data-i18n-en="Mechanism">Mechanismus</th><th data-i18n-en="Effect (CAGR percentage points p.a.)">Effekt (CAGR-Prozentpunkte p.a.)</th><th data-i18n-en="CAGR without this mechanism % p.a.">CAGR ohne diesen Mechanismus % p.a.</th><th data-i18n-en="Total return without this mechanism %">Gesamtrendite ohne diesen Mechanismus %</th></tr></thead>
           <tbody>
           {% for o in s.optimierungs_effekte %}
             <tr>
-              <td>{{ o.name }}</td>
+              <td data-i18n-en="{{ o.name_en }}">{{ o.name }}</td>
               <td class="{{ 'positive' if o.delta_pp >= 0 else 'negative' }}">{{ o.delta_label }}</td>
               <td>{{ o.ohne_cagr_label }}</td>
               <td>{{ o.ohne_rendite_label }}</td>
@@ -167,8 +167,8 @@
     </div>
     {% if s.walk_forward_segmente %}
     <div class="beitraege">
-      <h3>Robustheit über Teilperioden (Walk-Forward)</h3>
-      <p class="hint">
+      <h3 data-i18n-en="Robustness across sub-periods (walk-forward)">Robustheit über Teilperioden (Walk-Forward)</h3>
+      <p class="hint" data-i18n-en="The same strategy simulated independently over several consecutive periods - each with its own starting capital, not as one continuous position. Shows whether the return is reasonably consistent over time or arose only from a single period (in which case the total return would be a poor predictor of the future). Spread across the periods: {{ s.walk_forward_spread_label }} percentage points (largest minus smallest period return).">
         Dieselbe Strategie unabhängig auf mehreren aufeinanderfolgenden Zeiträumen
         simuliert - jeweils mit eigenem Startkapital, nicht als eine durchlaufende
         Position. Zeigt, ob die Rendite über die Zeit einigermaßen konsistent ist
@@ -180,7 +180,7 @@
       <div class="chart-box"><canvas id="walk-chart"></canvas></div>
       <div class="overflow-x">
         <table>
-          <thead><tr><th>Zeitraum</th><th>Rendite %</th></tr></thead>
+          <thead><tr><th data-i18n-en="Period">Zeitraum</th><th data-i18n-en="Return %">Rendite %</th></tr></thead>
           <tbody>
           {% for seg in s.walk_forward_segmente %}
             <tr>
@@ -193,7 +193,7 @@
       </div>
     </div>
     {% endif %}
-    <p class="hint">
+    <p class="hint" data-i18n-en="&quot;Dev. pp&quot; is this instrument's actual minus target weight, in percentage points; ⚠ marks a deviation above this strategy's rebalancing threshold ({{ s.rebalancing_schwelle_pp }} pp) - the rebalancing trigger itself checks the deviation of each bucket (5/25 rule, #63), not the concentration of individual instruments within a bucket. &quot;Price status&quot; shows when the most recently used price was carried forward rather than freshly fetched, for lack of a successful fetch.">
       "Abw. pp" ist die Abweichung des Ist- vom Ziel-Gewicht dieses Instruments in
       Prozentpunkten; ⚠ markiert eine Abweichung über der Rebalancing-Schwelle dieser
       Strategie ({{ s.rebalancing_schwelle_pp }} pp) - der Rebalancing-Trigger selbst
@@ -204,7 +204,7 @@
     </p>
     <div class="overflow-x">
       <table>
-        <thead><tr><th>Instrument</th><th>Einheiten</th><th>Kurs</th><th>Wert</th><th>Ist-Gewicht %</th><th>Ziel-Gewicht %</th><th>Abw. pp</th><th>Kursstatus</th></tr></thead>
+        <thead><tr><th data-i18n-en="Instrument">Instrument</th><th data-i18n-en="Units">Einheiten</th><th data-i18n-en="Price">Kurs</th><th data-i18n-en="Value">Wert</th><th data-i18n-en="Actual weight %">Ist-Gewicht %</th><th data-i18n-en="Target weight %">Ziel-Gewicht %</th><th data-i18n-en="Dev. pp">Abw. pp</th><th data-i18n-en="Price status">Kursstatus</th></tr></thead>
         <tbody>
         {% for row in s.holdings_table %}
           <tr>
@@ -215,7 +215,7 @@
             <td>{{ row.ist_gewicht }}</td>
             <td>{{ row.ziel_gewicht }}</td>
             <td class="{{ 'warn' if row.konzentration_warnung else '' }}">{{ row.abweichung_pp_label }}{% if row.konzentration_warnung %} &#9888;{% endif %}</td>
-            <td class="{{ 'warn' if row.carry_forward_wochen > 0 else '' }}">
+            <td class="{{ 'warn' if row.carry_forward_wochen > 0 else '' }}" data-i18n-en="{% if row.carry_forward_wochen > 0 %}&#9888; frozen for {{ row.carry_forward_wochen }} week{{ 's' if row.carry_forward_wochen != 1 else '' }}{% else %}&ndash;{% endif %}">
               {% if row.carry_forward_wochen > 0 %}&#9888; seit {{ row.carry_forward_wochen }} Woche{{ 'n' if row.carry_forward_wochen != 1 else '' }} eingefroren{% else %}&ndash;{% endif %}
             </td>
           </tr>
@@ -243,6 +243,14 @@
     y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
   };
   const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
+  const topfNamenEn = {{ topf_namen_en_json | safe }};
+
+  // Sprachumschalter (Dreipunktmenue), siehe dashboard.html.j2 fuer die
+  // ausfuehrliche Begruendung: Chart.js-Texte sind bei der Erzeugung fixe
+  // Strings, keine DOM-Knoten - data-i18n-en greift hier nicht.
+  function T(de, en) { return document.documentElement.lang === 'en' ? en : de; }
+  const chartRefreshers = [];
+  window.__i18nRefresh.push(function () { chartRefreshers.forEach(function (fn) { fn(); }); });
 
   {% if s.zeitraum_presets %}
   // Benchmark-Overlay-Schalter (#72), siehe dashboard.html.j2 fuer die ausfuehrliche
@@ -292,10 +300,15 @@
       }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf im gewählten Zeitraum', color: colors.text } },
+        plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: '', color: colors.text } },
         scales: { x: commonScales.x, y: { ...commonScales.y, min: 0 } },
       },
     });
+    chartRefreshers.push(function () {
+      zeitraumChart.options.plugins.title.text = T('Wertverlauf im gewählten Zeitraum', 'Value history over the selected period');
+      zeitraumChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
     const tileIds = {
       rendite: 'zeitraum-rendite', volatilitaet: 'zeitraum-volatilitaet',
       maxDrawdown: 'zeitraum-max-drawdown', sharpe: 'zeitraum-sharpe', sortino: 'zeitraum-sortino',
@@ -333,141 +346,187 @@
   }
   {% endif %}
 
-  new Chart(document.getElementById('sma-chart'), {
-    type: 'line',
-    data: {
-      labels: {{ s.labels_json | safe }},
-      datasets: [
-        {
-          label: 'Gesamtwert (€)',
-          data: {{ s.total_values_json | safe }},
-          borderColor: colors.series1,
-          backgroundColor: colors.series1,
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-        {
-          label: '50-Tage-Näherung (10 Wochen)',
-          data: {{ s.sma_kurz_json | safe }},
-          borderColor: colors.series4,
-          backgroundColor: colors.series4,
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-        {
-          label: '200-Tage-Näherung (40 Wochen)',
-          data: {{ s.sma_lang_json | safe }},
-          borderColor: colors.series2,
-          backgroundColor: colors.series2,
-          borderWidth: 1.5,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf mit 50-/200-Tage-Näherung', color: colors.text } },
-      scales: commonScales,
-    },
-  });
+  {
+    const smaChart = new Chart(document.getElementById('sma-chart'), {
+      type: 'line',
+      data: {
+        labels: {{ s.labels_json | safe }},
+        datasets: [
+          {
+            label: 'Gesamtwert (€)',
+            data: {{ s.total_values_json | safe }},
+            borderColor: colors.series1,
+            backgroundColor: colors.series1,
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.15,
+          },
+          {
+            label: '50-Tage-Näherung (10 Wochen)',
+            data: {{ s.sma_kurz_json | safe }},
+            borderColor: colors.series4,
+            backgroundColor: colors.series4,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.15,
+          },
+          {
+            label: '200-Tage-Näherung (40 Wochen)',
+            data: {{ s.sma_lang_json | safe }},
+            borderColor: colors.series2,
+            backgroundColor: colors.series2,
+            borderWidth: 1.5,
+            pointRadius: 0,
+            tension: 0.15,
+          },
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: '', color: colors.text } },
+        scales: commonScales,
+      },
+    });
+    chartRefreshers.push(function () {
+      smaChart.options.plugins.title.text = T('Wertverlauf mit 50-/200-Tage-Näherung', 'Value history with 50-/200-day approximation');
+      smaChart.data.datasets[1].label = T('50-Tage-Näherung (10 Wochen)', '50-day approximation (10 weeks)');
+      smaChart.data.datasets[2].label = T('200-Tage-Näherung (40 Wochen)', '200-day approximation (40 weeks)');
+      smaChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
+  }
 
   {% if s.beitraege %}
-  new Chart(document.getElementById('beitrag-chart'), {
-    type: 'bar',
-    data: {
-      labels: {{ s.beitraege | map(attribute='name') | list | tojson }},
-      datasets: [{
-        label: 'Effekt (CAGR-Prozentpunkte p.a.)',
-        data: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }},
-        backgroundColor: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
-      }],
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'CAGR-Beitrag je Börsenweisheit (Prozentpunkte p.a.)', color: colors.text } },
-      scales: {
-        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+  {
+    const beitragChart = new Chart(document.getElementById('beitrag-chart'), {
+      type: 'bar',
+      data: {
+        labels: {{ s.beitraege | map(attribute='name') | list | tojson }},
+        datasets: [{
+          label: 'Effekt (CAGR-Prozentpunkte p.a.)',
+          data: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }},
+          backgroundColor: {{ s.beitraege | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+        }],
       },
-    },
-  });
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, title: { display: true, text: '', color: colors.text } },
+        scales: {
+          x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+          y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+        },
+      },
+    });
+    chartRefreshers.push(function () {
+      beitragChart.options.plugins.title.text = T('CAGR-Beitrag je Börsenweisheit (Prozentpunkte p.a.)', 'CAGR contribution per market saying (percentage points p.a.)');
+      beitragChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
+  }
   {% endif %}
 
-  new Chart(document.getElementById('opt-chart'), {
-    type: 'bar',
-    data: {
-      labels: {{ s.optimierungs_effekte | map(attribute='name') | list | tojson }},
-      datasets: [{
-        label: 'Effekt (CAGR-Prozentpunkte p.a.)',
-        data: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }},
-        backgroundColor: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
-      }],
-    },
-    options: {
-      indexAxis: 'y',
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'CAGR-Beitrag je Optimierungs-Schalter (Prozentpunkte p.a.)', color: colors.text } },
-      scales: {
-        x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
-        y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+  {
+    const optChart = new Chart(document.getElementById('opt-chart'), {
+      type: 'bar',
+      data: {
+        labels: {{ s.optimierungs_effekte | map(attribute='name') | list | tojson }},
+        datasets: [{
+          label: 'Effekt (CAGR-Prozentpunkte p.a.)',
+          data: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }},
+          backgroundColor: {{ s.optimierungs_effekte | map(attribute='delta_pp') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+        }],
       },
-    },
-  });
+      options: {
+        indexAxis: 'y',
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, title: { display: true, text: '', color: colors.text } },
+        scales: {
+          x: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+          y: { grid: { color: colors.grid }, ticks: { color: colors.text }, border: { color: colors.axis } },
+        },
+      },
+    });
+    const optNamenEn = {{ s.optimierungs_effekte | map(attribute='name_en') | list | tojson }};
+    chartRefreshers.push(function () {
+      optChart.options.plugins.title.text = T('CAGR-Beitrag je Optimierungs-Schalter (Prozentpunkte p.a.)', 'CAGR contribution per optimization switch (percentage points p.a.)');
+      optChart.data.labels = document.documentElement.lang === 'en' ? optNamenEn : {{ s.optimierungs_effekte | map(attribute='name') | list | tojson }};
+      optChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
+  }
 
   {% if s.walk_forward_segmente %}
-  new Chart(document.getElementById('walk-chart'), {
-    type: 'bar',
-    data: {
-      labels: {{ s.walk_forward_segmente | map(attribute='label') | list | tojson }},
-      datasets: [{
-        label: 'Rendite % im Zeitraum',
-        data: {{ s.walk_forward_segmente | map(attribute='rendite_pct') | list | tojson }},
-        backgroundColor: {{ s.walk_forward_segmente | map(attribute='rendite_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: false }, title: { display: true, text: 'Rendite je Teilperiode (Walk-Forward)', color: colors.text } },
-      scales: commonScales,
-    },
-  });
+  {
+    const walkChart = new Chart(document.getElementById('walk-chart'), {
+      type: 'bar',
+      data: {
+        labels: {{ s.walk_forward_segmente | map(attribute='label') | list | tojson }},
+        datasets: [{
+          label: 'Rendite % im Zeitraum',
+          data: {{ s.walk_forward_segmente | map(attribute='rendite_pct') | list | tojson }},
+          backgroundColor: {{ s.walk_forward_segmente | map(attribute='rendite_pct') | list | tojson }}.map((v) => v >= 0 ? colors.series3 : colors.series2),
+        }],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: false }, title: { display: true, text: '', color: colors.text } },
+        scales: commonScales,
+      },
+    });
+    chartRefreshers.push(function () {
+      walkChart.data.datasets[0].label = T('Rendite % im Zeitraum', 'Return % over the period');
+      walkChart.options.plugins.title.text = T('Rendite je Teilperiode (Walk-Forward)', 'Return per sub-period (walk-forward)');
+      walkChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
+  }
   {% endif %}
 
-  new Chart(document.getElementById('topf-chart'), {
-    type: 'line',
-    data: {
-      labels: {{ s.labels_json | safe }},
-      datasets: [
-        {% for topf_name, target in s.topf_targets.items() %}
-        {
-          label: {{ topf_name | tojson }} + ' Ist %',
-          data: {{ s.topf_series_json | safe }}[{{ topf_name | tojson }}],
-          borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
-          backgroundColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.15,
-        },
-        {
-          label: {{ topf_name | tojson }} + ' Ziel %',
-          data: {{ s.labels_json | safe }}.map(() => {{ target }}),
-          borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
-          borderDash: [6, 4],
-          borderWidth: 1.5,
-          pointRadius: 0,
-        },
-        {% endfor %}
-      ],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Topf-Gewichtung Ist vs. Ziel (%)', color: colors.text } },
-      scales: commonScales,
-    },
-  });
+  {
+    const topfChart = new Chart(document.getElementById('topf-chart'), {
+      type: 'line',
+      data: {
+        labels: {{ s.labels_json | safe }},
+        datasets: [
+          {% for topf_name, target in s.topf_targets.items() %}
+          {
+            label: {{ topf_name | tojson }} + ' Ist %',
+            data: {{ s.topf_series_json | safe }}[{{ topf_name | tojson }}],
+            borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
+            backgroundColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
+            borderWidth: 2,
+            pointRadius: 0,
+            tension: 0.15,
+          },
+          {
+            label: {{ topf_name | tojson }} + ' Ziel %',
+            data: {{ s.labels_json | safe }}.map(() => {{ target }}),
+            borderColor: seriesPalette[{{ loop.index0 }} % seriesPalette.length],
+            borderDash: [6, 4],
+            borderWidth: 1.5,
+            pointRadius: 0,
+          },
+          {% endfor %}
+        ],
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: '', color: colors.text } },
+        scales: commonScales,
+      },
+    });
+    const topfNamenDe = [{% for topf_name, target in s.topf_targets.items() %}{{ topf_name | tojson }},{% endfor %}];
+    chartRefreshers.push(function () {
+      topfChart.options.plugins.title.text = T('Topf-Gewichtung Ist vs. Ziel (%)', 'Bucket weighting actual vs. target (%)');
+      topfNamenDe.forEach(function (name, idx) {
+        const anzeigename = document.documentElement.lang === 'en' ? (topfNamenEn[name] || name) : name;
+        topfChart.data.datasets[idx * 2].label = anzeigename + (document.documentElement.lang === 'en' ? ' actual %' : ' Ist %');
+        topfChart.data.datasets[idx * 2 + 1].label = anzeigename + (document.documentElement.lang === 'en' ? ' target %' : ' Ziel %');
+      });
+      topfChart.update();
+    });
+    chartRefreshers[chartRefreshers.length - 1]();
+  }
 </script>
 {% endblock %}
