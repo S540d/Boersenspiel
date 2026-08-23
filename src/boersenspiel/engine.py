@@ -87,6 +87,15 @@ def _ausschuettend(ticker: str) -> bool:
     return instrument.ausschuettend if instrument is not None else False
 
 
+def _dividendenrendite(ticker: str) -> Decimal:
+    """Ausschuettungsrendite dieses Instruments (#74). Ohne hinterlegten
+    instrumenteneigenen Wert gilt weiterhin der Pauschal-Platzhalter."""
+    instrument = INSTRUMENTS.get(ticker)
+    if instrument is None or instrument.dividendenrendite is None:
+        return DIVIDENDENRENDITE_PLATZHALTER
+    return instrument.dividendenrendite
+
+
 @dataclass
 class Trade:
     date: date
@@ -357,10 +366,11 @@ def simulate(
             pos.cost_total += vorabpauschale
 
     def apply_dividende() -> None:
-        """Vereinfachte jährliche Dividendenausschüttung für die
-        Einzelaktien-Satelliten (#57, Platzhalter-Dividendenrendite auf Basis
-        des Portfoliowerts zu Jahresbeginn - dieselbe Näherung wie bei
-        ``apply_vorabpauschale``). Anders als die Vorabpauschale ist das ein
+        """Vereinfachte jährliche Dividendenausschüttung für ausschüttende
+        Instrumente (#57), auf Basis des Portfoliowerts zu Jahresbeginn -
+        dieselbe Näherung wie bei ``apply_vorabpauschale``. Der Satz kommt seit
+        #74 je Instrument aus ``Instrument.dividendenrendite`` statt pauschal
+        für alle aus ``DIVIDENDENRENDITE_PLATZHALTER``. Anders als die Vorabpauschale ist das ein
         REALER Kapitalertrag (kein reiner Steuerkonstrukt): er wird als
         echtes zusätzliches Cash gutgeschrieben, das über den bestehenden
         Cash-Parken-Mechanismus in der nächsten Kurszeile automatisch
@@ -375,7 +385,7 @@ def simulate(
             pos = positions[t]
             if not start_wert or pos.units <= 0:
                 continue
-            dividende = start_wert * DIVIDENDENRENDITE_PLATZHALTER
+            dividende = start_wert * _dividendenrendite(t)
             if dividende <= 0:
                 continue
             process_realized_gain(dividende, t)

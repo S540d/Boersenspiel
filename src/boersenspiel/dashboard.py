@@ -20,7 +20,7 @@ from jinja2 import Environment, FileSystemLoader, select_autoescape
 
 from .engine import SimulationResult, simulate
 from .history_store import FetchLogEntry, PriceRow
-from .instruments import INSTRUMENTS, TICKERS
+from .instruments import INSTRUMENTS, TICKERS, Instrument
 from .learnings import derive_learnings
 from .strategies import (
     BENCHMARK_STRATEGIEN,
@@ -702,6 +702,13 @@ def _allokierte_ticker(strategies: list[Strategy]) -> set[str]:
     return {t for s in strategies for t in s.alle_ticker_gewichte()}
 
 
+def _dividendenrendite_pct(inst: Instrument) -> float:
+    """Ausschuettungsrendite eines Instruments in Prozent (#74) - der
+    instrumenteneigene Wert, sonst der Pauschal-Platzhalter."""
+    rendite = inst.dividendenrendite if inst.dividendenrendite is not None else DIVIDENDENRENDITE_PLATZHALTER
+    return float(rendite) * 100
+
+
 def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views: list[dict]) -> dict:
     """Baut die Daten für die Prämissen-Seite.
 
@@ -731,6 +738,15 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
             "teilfreistellung": f"{inst.teilfreistellung * 100:.0f}",
             "thesaurierend": "ja" if inst.thesaurierend else "nein",
             "ausschuettend": "ja" if inst.ausschuettend else "nein",
+            # #74: je Instrument statt eines Pauschalwerts fuer alle. "-" fuer
+            # Instrumente, die nicht ausschuetten; der Platzhalter erscheint nur
+            # dort, wo tatsaechlich kein instrumenteneigener Wert hinterlegt ist.
+            "dividendenrendite": (
+                f"{_dividendenrendite_pct(inst):.1f}".replace(".", ",")
+                if inst.ausschuettend
+                else "–"
+            ),
+            "dividendenrendite_platzhalter": inst.ausschuettend and inst.dividendenrendite is None,
             "spekulationsfrist": (
                 f"{inst.spekulationsfrist_tage} Tage" if inst.spekulationsfrist_tage else "–"
             ),

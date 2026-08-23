@@ -17,6 +17,7 @@ from datetime import date
 from decimal import Decimal
 
 from boersenspiel.engine import simulate
+from boersenspiel.instruments import INSTRUMENTS, Instrument
 from boersenspiel.history_store import PriceRow
 from boersenspiel.strategies import BARBELL_20_80, Optimierungen, Strategy, Topf
 
@@ -417,13 +418,14 @@ def test_dividende_wird_als_cash_gutgeschrieben_und_versteuert():
     # (2,5% p.a.), obwohl der Kurs unveraendert bleibt und keine Position
     # verkauft wird.
     # Wert Jahresbeginn: 9,99 Einheiten * 100 = 999.
-    # Dividende = 999 * 0,025 = 24,975, komplett steuerpflichtig (0%
-    # Teilfreistellung fuer Einzelaktien) und in voller Hoehe gegen den
-    # Freibetrag verrechnet: 1000 - 24,975 = 975,025.
+    # Dividende = 999 * 0,030 = 29,97 (KO fuehrt seit #74 eine eigene
+    # Ausschuettungsrendite von 3,0% statt des Pauschal-Platzhalters von 2,5%),
+    # komplett steuerpflichtig (0% Teilfreistellung fuer Einzelaktien) und in
+    # voller Hoehe gegen den Freibetrag verrechnet: 1000 - 29,97 = 970,03.
     # Die Dividende wird als pending_cash gutgeschrieben, aber (mangels
     # weiterer Kurszeile) nicht mehr reinvestiert - die Stueckzahl bleibt
     # unveraendert, der ausgewiesene Portfoliowert steigt trotzdem um die
-    # Dividende (999 + 24,975 = 1023,975).
+    # Dividende (999 + 29,97 = 1028,97).
     strategy = Strategy(
         name="Test-Dividende",
         startkapital=Decimal("1000"),
@@ -440,9 +442,9 @@ def test_dividende_wird_als_cash_gutgeschrieben_und_versteuert():
     result = simulate(rows, strategy)
 
     assert result.holdings["KO"] == Decimal("9.99")  # keine Trades ausser Initialkauf
-    assert result.tax_status.freibetrag_verbleibend == Decimal("975.025")
+    assert result.tax_status.freibetrag_verbleibend == Decimal("970.03")
     assert result.tax_status.kumulierte_steuer == Decimal("0")
-    assert result.value_history[-1].total_value == Decimal("1023.975")
+    assert result.value_history[-1].total_value == Decimal("1028.97")
 
 
 def test_dividende_bleibt_aus_wenn_besteuerung_deaktiviert_ist():
@@ -468,7 +470,7 @@ def test_dividende_bleibt_aus_wenn_besteuerung_deaktiviert_ist():
 
     assert result.tax_status.freibetrag_verbleibend == Decimal("1000")
     assert result.tax_status.kumulierte_steuer == Decimal("0")
-    assert result.value_history[-1].total_value == Decimal("1023.975")
+    assert result.value_history[-1].total_value == Decimal("1028.97")
 
 
 def test_btc_gewinn_innerhalb_spekulationsfrist_landet_in_eigener_freigrenze():
@@ -716,3 +718,88 @@ def test_5_25_regel_relativ_default_aendert_altverhalten_nicht():
     strategy_ohne_relativ = Strategy(**KLEINER_TOPF_STRATEGY_BASIS)
     result = simulate(_kleiner_topf_rows(), strategy_ohne_relativ, Optimierungen(**_OHNE_REIBUNG))
     assert result.last_rebalance_date is None
+
+
+# --- Ausschuettungsrendite je Instrument (#74) ------------------------------
+
+
+def test_nicht_zahlende_einzelaktien_bekommen_keine_dividende():
+    """Sieben der zehn Satelliten-Aktien zahlen real keine Dividende. Vor #74
+    bekamen sie ueber ``ausschuettend=True`` trotzdem jaehrlich die
+    Pauschalrendite gutgeschrieben - geschenktes Geld, das die Rendite des
+    Satelliten-Topfs verzerrte."""
+    for ticker in ("TSLA", "RIVN", "PLTR", "MSTR", "SEDG", "LITE", "S92"):
+        assert INSTRUMENTS[ticker].ausschuettend is False, ticker
+
+    strategy = Strategy(
+        name="Test-Nichtzahler",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"TSLA": Decimal("1")})],
+        ziel_topf="TopfX",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("100"),
+        optimierungen=Optimierungen(steueroptimierung=False),
+    )
+    rows = [
+        PriceRow(date(2024, 1, 1), {"TSLA": Decimal("100")}),
+        PriceRow(date(2024, 12, 30), {"TSLA": Decimal("100")}),
+    ]
+    result = simulate(rows, strategy)
+
+    # Kein Cash-Zufluss: der Wert bleibt exakt der Kaufwert (1000 - 1 Gebuehr).
+    assert result.value_history[-1].total_value == Decimal("999")
+    assert result.tax_status.freibetrag_verbleibend == Decimal("1000")
+
+
+def test_ausschuettende_instrumente_nutzen_ihre_eigene_rendite():
+    """Zwei ausschuettende Instrumente mit unterschiedlicher Rendite duerfen
+    nicht denselben Betrag ausschuetten (vor #74 taten sie genau das)."""
+    assert INSTRUMENTS["IQQ6"].dividendenrendite == Decimal("0.035")
+    assert INSTRUMENTS["IUSA"].dividendenrendite == Decimal("0.013")
+
+    def endwert(ticker: str) -> Decimal:
+        strategy = Strategy(
+            name=f"Test-{ticker}",
+            startkapital=Decimal("1000"),
+            toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={ticker: Decimal("1")})],
+            ziel_topf="TopfX",
+            ziel_gewicht=Decimal("1"),
+            rebalancing_schwelle_pp=Decimal("100"),
+            optimierungen=Optimierungen(steueroptimierung=False),
+        )
+        rows = [
+            PriceRow(date(2024, 1, 1), {ticker: Decimal("100")}),
+            PriceRow(date(2024, 12, 30), {ticker: Decimal("100")}),
+        ]
+        return simulate(rows, strategy).value_history[-1].total_value
+
+    # 999 * 0,035 = 34,965 bzw. 999 * 0,013 = 12,987
+    assert endwert("IQQ6") == Decimal("1033.965")
+    assert endwert("IUSA") == Decimal("1011.987")
+
+
+def test_ohne_hinterlegte_rendite_gilt_weiterhin_der_platzhalter():
+    """Der Pauschal-Platzhalter bleibt der Rueckfallwert fuer ausschuettende
+    Instrumente ohne eigenen Satz - #74 entfernt ihn nicht, es gilt nur nicht
+    mehr derselbe Wert fuer alle."""
+    inst = Instrument("XTEST", "Testinstrument", None, ausschuettend=True)
+    assert inst.dividendenrendite is None
+    INSTRUMENTS["XTEST"] = inst
+    try:
+        strategy = Strategy(
+            name="Test-Platzhalter",
+            startkapital=Decimal("1000"),
+            toepfe=[Topf(name="TopfX", gewicht_gesamt=Decimal("1"), sub_gewichte={"XTEST": Decimal("1")})],
+            ziel_topf="TopfX",
+            ziel_gewicht=Decimal("1"),
+            rebalancing_schwelle_pp=Decimal("100"),
+            optimierungen=Optimierungen(steueroptimierung=False),
+        )
+        rows = [
+            PriceRow(date(2024, 1, 1), {"XTEST": Decimal("100")}),
+            PriceRow(date(2024, 12, 30), {"XTEST": Decimal("100")}),
+        ]
+        # 999 * DIVIDENDENRENDITE_PLATZHALTER (2,5%) = 24,975
+        assert simulate(rows, strategy).value_history[-1].total_value == Decimal("1023.975")
+    finally:
+        del INSTRUMENTS["XTEST"]
