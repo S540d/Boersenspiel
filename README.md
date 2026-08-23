@@ -631,15 +631,23 @@ pytest -q
   so it could never show that a strategy failed to beat the money market —
   and it lifted low-volatility strategies most, i.e. exactly the defensive
   ones.
-- **Returns are only comparable within the common comparison period.** Each
-  strategy is simulated over the window in which its full instrument set was
-  actually tradeable, and those windows differ substantially (the S&P 500
+- **The overview table reports everything over a common comparison period.**
+  Each strategy is simulated over the window in which its full instrument set
+  was actually tradeable, and those windows differ substantially (the S&P 500
   benchmark needs only `IUSA` and runs from 2006; every barbell strategy
-  starts in 2021). The overview table's lead column therefore re-simulates
-  every strategy from the latest of those start dates and sorts by that
-  ([#73](https://github.com/S540d/Boersenspiel/issues/73)); the per-strategy
-  CAGR and the risk columns still refer to each strategy's own window, which
-  the table shows alongside them.
+  starts in 2021). The overview therefore re-simulates every strategy from the
+  latest of those start dates and reports **return and risk** from that single
+  run — CAGR, volatility, max drawdown, Sharpe, Sortino
+  ([#73](https://github.com/S540d/Boersenspiel/issues/73),
+  [#78](https://github.com/S540d/Boersenspiel/issues/78)) — sorted by it, with
+  the excess return over the benchmark alongside. Applying this to the risk
+  columns too was not cosmetic: over its own 20-year window the benchmark
+  carries a −51.95% max drawdown (the 2008 crisis, which no other strategy
+  lived through) against roughly −30% for the barbell strategies; over the
+  common window it is −21.21%, making the index one of the *least* risky
+  entries rather than by far the riskiest. Each strategy's own-window CAGR
+  stays as a secondary column, and its full own-window metrics remain on its
+  detail page under "Kennzahlen nach Betrachtungszeitraum".
 - **`BTC-EUR` history is far shorter than requested:** the 20-year backfill
   yields only ~50 weeks (from 2025-09-14), so Bitcoin is first bought near
   its high rather than across the full period — see
