@@ -49,40 +49,41 @@ inkrementell fortgeschrieben).
 ### Trennung der Verantwortlichkeiten (wichtig beim Erweitern)
 
 - `instruments.py` — die 24 Instrumente (7 Barbell-Basisinstrumente + 10
-  Einzelaktien-Satellit + 7 nicht allokierte Datenreihen, s.u.), **quellenunabhängig**. Kein
-  Provider-Symbol-Mapping hier.
-  **Datenreihen ohne Allokation (#64):** Die sieben zuletzt ergänzten
-  Instrumente (`IUSA`, `XEON`, `EXSA`, `IBCL`, `IBCI`, `IQQ6`, `EXXY`) stehen
-  bewusst in **keinem Topf**. `engine.simulate()` liest ausschließlich
-  `strategy.alle_ticker_gewichte()` — ein Instrument ohne Topf wird nie
-  gehandelt und verändert keine veröffentlichte Zahl (per Test abgesichert,
-  Renditen sind vor und nach der Aufnahme bit-identisch). Es landet nur in
-  `price_history.csv`. Grund: erst Daten sammeln, dann allokieren — die
-  Zuordnung hängt an den Methodenentscheidungen aus #63, ohne die Kurse jetzt
-  mitzuerheben bräuchte es später aber einen zweiten kompletten Backfill an
-  einem zweiten Tag. Alle sieben sind XETRA-Symbole in EUR, kosten also keinen
-  zusätzlichen FX-Request und umgehen das Währungsproblem aus #62 vollständig.
-  Ihre Steuerattribute (`teilfreistellung`/`thesaurierend`/`ausschuettend`)
-  sind aus Fondsgattung und Namenszusatz abgeleitet, **nicht** gegen die
-  Prospekte geprüft — solange die Instrumente in keinem Topf liegen, wertet die
-  Engine sie nie aus; vor einer Allokation gehören sie verifiziert.
+  Einzelaktien-Satellit + 7 im Zuge von #64 ergänzte Instrumente),
+  **quellenunabhängig**. Kein Provider-Symbol-Mapping hier.
+  **Sieben zusätzliche Instrumente (#64):** `IUSA`, `XEON`, `EXSA`, `IBCL`,
+  `IBCI`, `IQQ6`, `EXXY` wurden ergänzt, um das tägliche Alpha-Vantage-Budget
+  von 18 auf 25 Requests auszuschöpfen. Alle sieben sind XETRA-Symbole in
+  EUR, kosten also keinen zusätzlichen FX-Request und umgehen das
+  Währungsproblem aus #62 vollständig. Sie standen zunächst bewusst in
+  keinem Topf (erst Daten sammeln, dann allokieren) — mittlerweile sind alle
+  sieben einer Strategie zugeordnet: `IUSA` dient ausschließlich als
+  Benchmark (`strategies.SP500_BENCHMARK`), die übrigen sechs sind Teil von
+  `strategies.BARBELL_20_80_DIVERSIFIZIERT` (siehe unten). Ihre
+  Steuerattribute (`teilfreistellung`/`thesaurierend`/`ausschuettend`) sind
+  gegen öffentliche Fondsanbieter-Fact-Sheets (justETF/extraETF/onvista/DAS
+  INVESTMENT) verifiziert — dabei wurde ein Fehler gefunden und korrigiert:
+  `IBCI` und `EXXY` sind tatsächlich thesaurierende Acc-Anteilsklassen,
+  waren aber zunächst fälschlich als ausschüttend markiert (relevant, weil
+  sie jetzt tatsächlich alloziert sind und die Vorabpauschale-/
+  Dividendenmodellierung dadurch beeinflusst wird).
   **Request-Budget:** Mit 24 Instrumenten brauchen Backfill *und* Wochenabruf
   je **genau 25** Requests — das volle Alpha-Vantage-Tageslimit, kein Puffer.
   `tests/test_backfill_history.py` hält das als Test fest, damit ein
   18. Instrument nicht still beide Workflows unmöglich macht.
-  **Darstellung der 7 unallokierten Instrumente (#66, behoben):** Weder das
-  Dashboard noch die Prämissen-Seite noch die README nennen mehr eine feste
+  **Darstellung nicht allokierter Instrumente (#66):** Weder das Dashboard
+  noch die Prämissen-Seite noch die README nennen eine feste
   Instrumentenzahl. `dashboard._allokierte_ticker(strategies)` leitet die
   Menge der tatsächlich einer Strategie/einem Szenario zugeordneten Ticker
   generisch aus `Strategy.alle_ticker_gewichte()` ab; `dashboard.html.j2`
-  zeigt `{{ instrumente_anzahl }}` (aus `common_context`) statt hart „17".
-  `_praemissen_kontext()` trennt die Instrumententabelle dementsprechend in
-  `instrumente` (nur allokierte) und `nicht_allokierte_instrumente` — Letztere
-  bekommen einen eigenen Abschnitt „Datenreihen ohne Allokation" (nur
-  gerendert, wenn nicht leer), der auf #64 verweist und erklärt, dass
-  `engine.simulate()` sie nie handelt, weil sie in keinem Topf liegen. Der
-  Hindsight-Bias-Absatz (dort und in der README) bezieht sich jetzt explizit
-  nur noch auf die tatsächlich allokierten Instrumente.
+  zeigt `{{ instrumente_anzahl }}` (aus `common_context`) statt einer
+  hartkodierten Zahl. `_praemissen_kontext()` trennt die Instrumententabelle
+  dementsprechend in `instrumente` (nur allokierte) und
+  `nicht_allokierte_instrumente` — Letztere bekommen einen eigenen Abschnitt
+  „Datenreihen ohne Allokation" (nur gerendert, wenn nicht leer). Seit der
+  vollständigen Allokation der sieben #64-Instrumente ist diese Menge aktuell
+  leer und der Abschnitt entfällt entsprechend — der Mechanismus bleibt aber
+  bestehen, falls künftig wieder Instrumente ohne Topf ergänzt werden.
 - `strategies.py` — austauschbare `Strategy`-Definitionen (Töpfe,
   Sub-Gewichte, Rebalancing-Schwelle, Startkapital) + strategieübergreifende
   Steuer-/Gebührkonstanten. Die Engine enthält **keine** Barbell-spezifischen
@@ -112,6 +113,25 @@ inkrementell fortgeschrieben).
   Simulationsmechanismen `engine.simulate()` für diese Strategie anwendet —
   `BUY_AND_HOLD` nutzt z. B. `Optimierungen(rebalancing=False)` statt einer
   künstlich unerreichbaren Rebalancing-Schwelle.
+  **`BARBELL_20_80_DIVERSIFIZIERT` und `SP500_BENCHMARK` (#64):** zwei
+  weitere, zusätzliche Strategien neben den bestehenden drei — sie
+  verändern `BARBELL_20_80`/`BARBELL_30_70`/`BARBELL_20_60_20_SATELLIT`
+  nicht, damit sich deren veröffentlichte Kennzahlen durch #64 nicht
+  verschieben. `SP500_BENCHMARK` ist die einfachste mögliche Strategie: ein
+  einziger Topf, 100% `IUSA`, nie rebalanciert (`Optimierungen
+  (rebalancing=False)`, analog zu `BUY_AND_HOLD` — bei nur einem Instrument
+  wäre der Rebalancing-Trigger ohnehin wirkungslos, aber ehrlich benannt
+  statt implizit über eine unerreichbare Schwelle abgeschaltet). Dient als
+  reine Vergleichslinie "einfach den Index kaufen", die dem Dashboard vorher
+  fehlte. `BARBELL_20_80_DIVERSIFIZIERT` behält das 20/80-Risikoprofil von
+  `BARBELL_20_80`, mischt aber die übrigen sechs #64-Instrumente ein, um
+  zwei im Issue benannte Lücken zu schließen: Topf A verliert `EUNL`
+  (Aktien-ETF) zugunsten von echtem EUR-Cash (`XEON`) sowie Anleihen anderer
+  Duration/Realzins-Eigenschaft (`IBCL`/`IBCI`) neben `EUNA`/`4GLD`; Topf B
+  bekommt `EUNL` sowie `EXSA` (Europa, senkt die USA/Tech-Konzentration von
+  LYMS+SEMI), `IQQ6` (Immobilien) und `EXXY` (breite Rohstoffe). Erster
+  Ansatz, Gewichte nicht optimiert/gebacktestet — wie bei allen Szenarien in
+  `scenarios.py`.
   **Rebalancing-Trigger, "5/25-Regel je Topf" (#63, F5):** Optionales Feld
   `Strategy.rebalancing_schwelle_relativ` (Decimal, Default `1` = 100%)
   ergänzt `rebalancing_schwelle_pp` um eine relative Zusatzschwelle. Die
@@ -834,4 +854,15 @@ mit ungleichen Zielgewichten (40/40/20), bei der das dritte Instrument erst
 später an den Markt kommt — mit `rebalancing=False` bleibt das
 Wertverhältnis des Altbestands (2:1) exakt erhalten und nur das neue
 Instrument wird auf sein Zielgewicht gekauft, mit `rebalancing=True` landen
-weiterhin alle drei auf ihren Zielgewichten.
+weiterhin alle drei auf ihren Zielgewichten. `tests/test_neue_strategien.py`
+prüft die beiden #64-Strategien: Sub-Gewichte je Topf summieren zu 1,
+`BARBELL_20_80_DIVERSIFIZIERT` hält das 20/80-Risikoprofil und einen echten
+Cash-Baustein statt eines Aktien-ETF in Topf A, `SP500_BENCHMARK` hält
+ausschließlich `IUSA` und rebalanciert nie, beide laufen End-to-End durch —
+sowie einen Regressionstest, dass `IBCI`/`EXXY` tatsächlich thesaurierend
+statt ausschüttend sind (die im Zuge von #64 korrigierten Steuerattribute).
+`tests/test_backfill_history.py::test_neue_datenreihen_bleiben_ausserhalb_
+der_urspruenglichen_strategien` (vormals „…liegen_in_keinem_topf", seit die
+sieben Instrumente alloziert sind umbenannt) sichert ab, dass die drei
+ursprünglichen Barbell-Strategien und alle Szenarien weiterhin unberührt
+bleiben — nur die beiden neuen Strategien allokieren die #64-Instrumente.
