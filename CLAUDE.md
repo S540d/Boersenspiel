@@ -11,6 +11,21 @@ statisches Dashboard (Chart.js) auf GitHub Pages. Default-Branch ist `main`
 (ursprünglich hieß er `claude/pflichtenheft-umsetzung-planen-6kf05s`, da das
 Repo leer angelegt wurde, und wurde nachträglich zu `main` umbenannt).
 
+**README.md ist ein technisches Referenzdokument** (kurzzeitig im Zuge von
+#64-Nachfolgearbeit zu einem kurzen Marketing-/Onboarding-Dokument
+umgeschrieben, auf Wunsch des Owners aber wieder auf die ausführliche
+technische Fassung zurückgesetzt): Architektur-Diagramm, Engine-
+Modellierungsentscheidungen, volle Steuerlogik, Szenario-Tabellen und
+bekannte Einschränkungen stehen direkt im README, nicht nur verlinkt auf die
+Dashboard-Seiten. Ein `## Portfolio overview`-Abschnitt listet alle 24
+Instrumente mit der Strategie, die sie tatsächlich hält. Die Ableitung aus
+dem ursprünglichen Anforderungsdokument (Pflichtenheft) wurde auf
+Owner-Wunsch aus dem README gestrichen — das Dokument ist ohnehin nicht Teil
+dieses Repos und für externe Leser nicht nachprüfbar; die wenigen Stellen, die
+zuvor explizit "requirements document"/"Pflichtenheft" zitiert hatten (Tax-
+Logic-Absatz, Guiding-Principle-Überschrift, "Adding a strategy"), wurden neutral
+umformuliert statt die Aussage selbst zu streichen.
+
 ## Commands
 
 ```bash
@@ -72,8 +87,16 @@ inkrementell fortgeschrieben).
   `tests/test_backfill_history.py` hält das als Test fest, damit ein
   18. Instrument nicht still beide Workflows unmöglich macht.
   **Darstellung nicht allokierter Instrumente (#66):** Weder das Dashboard
-  noch die Prämissen-Seite noch die README nennen eine feste
-  Instrumentenzahl. `dashboard._allokierte_ticker(strategies)` leitet die
+  noch die Prämissen-Seite leiten eine Instrumentenzahl mehr aus einer
+  hartkodierten Konstante ab. Die README enthält seit der #64-Nachfolgearbeit
+  einen `## Portfolio overview`-Abschnitt mit einer statischen Tabelle aller
+  24 Ticker samt der Strategie, die sie hält — bewusst als lesbare Übersicht
+  für Menschen, aber dadurch eine hartkodierte Momentaufnahme, die bei einer
+  künftigen Strategie-Änderung von Hand nachgezogen werden muss (anders als
+  Dashboard/Prämissen-Seite, die sich bei jedem Build automatisch aus
+  `Strategy.alle_ticker_gewichte()` ableiten). Beim Ändern der
+  Ticker-zu-Strategie-Zuordnung also auch diese README-Tabelle prüfen.
+  `dashboard._allokierte_ticker(strategies)` leitet die
   Menge der tatsächlich einer Strategie/einem Szenario zugeordneten Ticker
   generisch aus `Strategy.alle_ticker_gewichte()` ab; `dashboard.html.j2`
   zeigt `{{ instrumente_anzahl }}` (aus `common_context`) statt einer
@@ -132,6 +155,53 @@ inkrementell fortgeschrieben).
   LYMS+SEMI), `IQQ6` (Immobilien) und `EXXY` (breite Rohstoffe). Erster
   Ansatz, Gewichte nicht optimiert/gebacktestet — wie bei allen Szenarien in
   `scenarios.py`.
+  **Optionales Feld `Strategy.eigene_chart_skala` (Nachfolgearbeit zu #64):**
+  rein darstellerisch, Default `False`. Die Startseite skaliert alle
+  Wertverlauf-Charts standardmäßig auf ein gemeinsames Y-Achsen-Maximum
+  (`dashboard.py`, `wert_chart_max`/`wertChartMax`, #24), damit Strategien
+  optisch vergleichbar bleiben. `SP500_BENCHMARK` wächst über die volle
+  Historie aber auf ein Vielfaches der übrigen Strategien (+918% vs. eine
+  Größenordnung von +70–150%) — mit gemeinsamer Skala würden dadurch alle
+  anderen Charts flachgedrückt. `eigene_chart_skala=True` nimmt eine
+  Strategie aus der Berechnung des gemeinsamen Maximums heraus; ihr eigener
+  Chart nutzt stattdessen `own_chart_max` (Maximum der eigenen Wertreihe,
+  siehe `_build_strategy_view()`). Ändert nichts an der Simulation, nur an
+  der Startseiten-Darstellung — Detailseiten sind ohnehin schon pro
+  Strategie unabhängig skaliert.
+  **`strategies.BENCHMARK_STRATEGIEN` und der Benchmark-Overlay-Schalter
+  (#72):** Liste von Strategien (aktuell nur `SP500_BENCHMARK`), die NICHT
+  in `STRATEGIES`/`SCENARIOS` stehen, sondern optional als zusätzliche Linie
+  in den Wertverlauf-Charts anderer Strategien eingeblendet werden können -
+  ein zentraler Schalter pro Seite (Start- **und** Detailseite, ein
+  `<div class="benchmark-switch">` mit Buttons "Kein Benchmark"/je Kandidat)
+  steuert dabei ALLE auf dieser Seite gerenderten Charts gleichzeitig.
+  `dashboard._benchmark_reihen(rows, strategy)` simuliert jeden Kandidaten
+  mit `dataclasses.replace(bench, startkapital=strategy.startkapital)` über
+  exakt dieselben `rows` wie die angezeigte Strategie - dadurch hat die
+  Overlay-Reihe automatisch dieselbe Länge/Reihenfolge wie deren eigener
+  Wertverlauf (`engine.simulate()`: ein `ValuePoint` je Zeile in `rows`) und
+  startet beim selben Kapital, ganz ohne Datums-Abgleich. Ein Kandidat wird
+  nur aufgenommen, wenn ALLE seine Ticker im übergebenen Zeitraum
+  mindestens einen Kurs haben (sonst bliebe die Linie bei 0) - das macht
+  die Verfügbarkeit rein datengetrieben, nicht Owner-kuratiert: Fehlt ein
+  Kandidat aktuell komplett in `instruments.py`/`price_history.csv` (wie
+  `FR0010755611` aus #72, siehe Kommentar an `BENCHMARK_STRATEGIEN` in
+  strategies.py), taucht er im Schalter einfach gar nicht erst auf, statt
+  eine kaputte Option anzuzeigen. Die Strategie selbst wird als Kandidat für
+  ihre eigene Seite ausgeschlossen (per Namensvergleich) - eine Linie neben
+  sich selbst wäre nur redundant. Sowohl `_build_strategy_view()` (volle
+  Historie, Feld `benchmarks`/`benchmarks_json`) als auch
+  `_zeitraum_presets()` (je Preset ein eigenes `benchmarks`-Feld) liefern
+  diese Overlay-Daten, damit der Zeitraum-Umschalter (#54) und der
+  Benchmark-Schalter unabhängig voneinander funktionieren.
+  **Wichtige Owner-Vorgabe: die Y-Achsen-Skalierung darf sich durch den
+  Schalter nicht ändern.** Alle betroffenen Charts (Wertverlauf auf Start-
+  und Detailseite, inkl. der Zeitraum-Preset-Varianten) nutzen deshalb ein
+  hartes Chart.js-`max` statt `suggestedMax` - Letzteres ist nur eine
+  Untergrenze und wäre von einer größeren Benchmark-Reihe überschritten
+  worden, ein hartes `max` schneidet die Linie stattdessen oben am
+  Chart-Rand ab. Reine Darstellungsschicht, keine neue Instrumentenzuordnung
+  und kein Eingriff in `engine.py`.
   **Rebalancing-Trigger, "5/25-Regel je Topf" (#63, F5):** Optionales Feld
   `Strategy.rebalancing_schwelle_relativ` (Decimal, Default `1` = 100%)
   ergänzt `rebalancing_schwelle_pp` um eine relative Zusatzschwelle. Die
@@ -296,8 +366,9 @@ inkrementell fortgeschrieben).
   `summe <= 0` (kein einziges Zielinstrument handelbar) alles geparkt, ist
   das gewollt: „raus aus dem Markt" ohne verfügbares defensives Instrument
   *ist* Cash. **Warum das kaum vorkommt:** Die Strategien haben ohnehin
-  keine eigene Cash-Position im Zielportfolio (siehe README „No separate
-  cash position", #35) — Topf A übernimmt die Cash-Rolle. Geparktes Kapital
+  keine eigene Cash-Position im Zielportfolio (siehe Abschnitt „Cash und
+  ungenutztes Kapital" auf `docs/praemissen.html`, #35) — Topf A übernimmt
+  die Cash-Rolle. Geparktes Kapital
   ist deshalb ein rein technischer, vorübergehender Zustand
   (`pending_cash`), keine gewollte Anlageklasse. Gegen die reale
   20-Jahres-Historie geprüft (Stand #55): über alle Strategien und
@@ -481,8 +552,8 @@ inkrementell fortgeschrieben).
   Spread/Slippage, TER, Zinsen auf Cash). Ein eigener Abschnitt "Cash und
   ungenutztes Kapital"
   begründet, warum Strategien keine eigene Cash-Zielallokation kennen (Topf
-  A übernimmt die Cash-Rolle, siehe README "No separate cash position",
-  #35) und zeigt zusätzlich `_cash_anteil_max()` je Strategie/Szenario: den
+  A übernimmt die Cash-Rolle, #35) und zeigt zusätzlich
+  `_cash_anteil_max()` je Strategie/Szenario: den
   größten je erreichten Anteil an technischem `pending_cash`
   (Kapitalanteil ganz ohne handelbares Ziel, #55) samt Datum — in
   `_build_strategy_view()` aus `result.value_history` berechnet und als
@@ -866,3 +937,13 @@ der_urspruenglichen_strategien` (vormals „…liegen_in_keinem_topf", seit die
 sieben Instrumente alloziert sind umbenannt) sichert ab, dass die drei
 ursprünglichen Barbell-Strategien und alle Szenarien weiterhin unberührt
 bleiben — nur die beiden neuen Strategien allokieren die #64-Instrumente.
+Für den Benchmark-Overlay-Schalter (#72) in `tests/test_dashboard.py`:
+`_benchmark_reihen()` gegen eine (per `monkeypatch` auf
+`dashboard.BENCHMARK_STRATEGIEN` gesetzte) Fixture-Benchmark-Strategie -
+simuliert mit dem Startkapital der angezeigten (nicht der Benchmark-)
+Strategie, schließt eine Benchmark-Strategie aus, die namensgleich mit der
+angezeigten Strategie ist, und bietet einen Kandidaten ohne Kursdaten im
+Zeitraum gar nicht erst an. End-to-End über `build_dashboard()`: der
+Schalter (`id="benchmark-switch"`) wird auf Start- **und** Detailseite
+gerendert, und die betroffenen Chart.js-Konfigurationen enthalten
+nachweislich kein `suggestedMax:` mehr (nur noch das feste `max:`).

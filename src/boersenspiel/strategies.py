@@ -112,6 +112,14 @@ class Strategy:
     # ändert nichts an der Simulation selbst, jedes Unterszenario bleibt eine
     # vollständig eigenständige ``Strategy``.
     teil_von: str | None = None
+    # Optional: True, wenn diese Strategie/dieses Szenario in ihrem Wertverlauf so
+    # weit von den übrigen abweicht, dass eine gemeinsame Y-Achsen-Skalierung im
+    # Dashboard (siehe dashboard._build_dashboard()) alle anderen Charts optisch
+    # flach zeichnen würde - z. B. SP500_BENCHMARK, dessen Endwert ein Vielfaches
+    # der übrigen Strategien beträgt. Rein darstellerisch (Startseite), ändert
+    # nichts an der Simulation. Default False = fließt normal ins gemeinsame
+    # Chart-Maximum ein.
+    eigene_chart_skala: bool = False
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""
@@ -362,6 +370,10 @@ SP500_BENCHMARK = Strategy(
         "Index kaufen' gegenüber den Barbell-Strategien und Szenarien, kein "
         "eigenständiger Anlagevorschlag."
     ),
+    # Waechst ueber 20 Jahre auf ein Vielfaches der uebrigen Strategien - mit
+    # gemeinsamer Y-Achse wuerden alle anderen Wertverlauf-Charts auf der
+    # Startseite optisch flach.
+    eigene_chart_skala=True,
 )
 
 STRATEGIES: list[Strategy] = [
@@ -373,6 +385,28 @@ STRATEGIES: list[Strategy] = [
 ]
 
 STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
+
+# --- Benchmarks für den Diagramm-Overlay-Schalter (#72) ----------------------
+#
+# Strategien hier stehen bewusst NICHT in STRATEGIES/SCENARIOS - sie sollen
+# nicht als eigene Zeile in der Vergleichsübersicht erscheinen, sondern nur
+# optional als Vergleichslinie in den Wertverlauf-Charts ANDERER Strategien
+# eingeblendet werden (der zentrale Schalter aus #72). `dashboard.py`
+# simuliert jede hier gelistete Strategie mit dem Startkapital der jeweils
+# angezeigten Strategie neu (`dataclasses.replace`), damit die Overlay-Linie
+# bei demselben Startwert beginnt wie die Strategie selbst - deshalb muss
+# jeder Eintrag ein reiner Einzelinstrument-Buy&Hold sein (ein Topf, 100%,
+# `optimierungen=Optimierungen(rebalancing=False)`). Ein Kandidat wird dem
+# Dashboard nur angeboten, wenn sein Ticker im jeweils angezeigten Zeitraum
+# tatsächlich einen Kurs hat (siehe `dashboard._benchmark_reihen()`) - aktuell
+# also nur `SP500_BENCHMARK`. `FR0010755611` (Amundi MSCI USA Daily (2x)
+# Leveraged, aus #72) ist bewusst noch NICHT ergänzt: das wäre ein 25.
+# Instrument und würde das Alpha-Vantage-Tagesbudget von 25 auf 26 Requests
+# reißen (siehe instruments.py "Request-Budget", #64). Der Schalter selbst
+# ist generisch für weitere Kandidaten gebaut - sobald das Instrument mit
+# eigenem Budget-Spielraum (oder Ersatz eines bestehenden) ergänzt wird,
+# reicht ein weiterer Eintrag in dieser Liste.
+BENCHMARK_STRATEGIEN: list[Strategy] = [SP500_BENCHMARK]
 
 
 # --- Steuer- und Gebührenkonstanten (strategieübergreifend, aus dem Pflichtenheft) --

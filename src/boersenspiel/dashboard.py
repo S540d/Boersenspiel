@@ -23,6 +23,7 @@ from .history_store import FetchLogEntry, PriceRow
 from .instruments import INSTRUMENTS, TICKERS
 from .learnings import derive_learnings
 from .strategies import (
+    BENCHMARK_STRATEGIEN,
     DIVIDENDENRENDITE_PLATZHALTER,
     ORDERGEBUEHR,
     SPARERPAUSCHBETRAG_PRO_JAHR,
@@ -284,6 +285,38 @@ _ZEITRAUM_PRESET_LABELS: dict[str, str] = {
 }
 
 
+def _benchmark_reihen(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
+    """Wertverlauf je verfügbarem Benchmark aus `BENCHMARK_STRATEGIEN` (#72),
+    simuliert über exakt dieselben `rows` und mit demselben Startkapital wie
+    `strategy` - dadurch hat die Overlay-Reihe automatisch dieselbe Länge und
+    denselben Startwert wie `strategy`s eigener Wertverlauf, ohne Datum-
+    Abgleich per Hand (siehe engine.simulate(): ein Punkt in `value_history`
+    je Zeile in `rows`, in derselben Reihenfolge).
+
+    Ein Kandidat wird nur aufgenommen, wenn ALLE seine Ticker im übergebenen
+    Zeitraum mindestens einen Kurs haben ("wenn im Portfolio vorhanden",
+    #72) - sonst bliebe die Linie über den ganzen Zeitraum bei 0. Die
+    Strategie selbst (z. B. SP500_BENCHMARK auf seiner eigenen Detailseite)
+    wird ausgeschlossen, eine identische Linie als "Overlay" auf sich selbst
+    wäre nur redundant."""
+    overlays = []
+    for bench in BENCHMARK_STRATEGIEN:
+        if bench.name == strategy.name:
+            continue
+        bench_ticker = bench.alle_ticker_gewichte()
+        if not all(any(t in row.prices for row in rows) for t in bench_ticker):
+            continue
+        bench_result = simulate(rows, replace(bench, startkapital=strategy.startkapital))
+        overlays.append(
+            {
+                "id": _slug(bench.name),
+                "label": bench.name,
+                "total_values": [_f(vp.total_value) for vp in bench_result.value_history],
+            }
+        )
+    return overlays
+
+
 def _jahre_zurueck(stichtag: date, jahre: int) -> date:
     """``stichtag`` minus ``jahre`` volle Jahre - faellt bei einem nicht
     existierenden 29. Februar auf den 28. zurueck, statt eine Exception zu
@@ -322,6 +355,7 @@ def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
                 "labels": labels,
                 "total_values": total_values,
                 "chart_max": max(total_values) if total_values else 0.0,
+                "benchmarks": _benchmark_reihen(preset_rows, strategy),
             }
         )
     return presets
@@ -532,6 +566,7 @@ def _build_strategy_view(
         else 0.0
     )
     zeitraum_presets = _zeitraum_presets(rows, strategy)
+    benchmarks = _benchmark_reihen(rows, strategy)
 
     # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie,
     # auf CAGR-Basis (F6c, #63) - siehe _optimierungs_effekte() fuer die Begruendung.
@@ -608,6 +643,17 @@ def _build_strategy_view(
         "walk_forward_spread_label": f"{walk_forward_spread_pp:.2f}",
         "zeitraum_presets": zeitraum_presets,
         "zeitraum_presets_json": json.dumps(zeitraum_presets),
+        # Benchmark-Overlay-Schalter (#72): Wertverlauf je verfügbarem Benchmark
+        # über die volle (bereits real-investierbar zugeschnittene) Historie, eine
+        # weitere Fassung je Zeitraum-Preset steckt bereits in "zeitraum_presets"
+        # oben. Nur Vergleichslinie, fließt nirgends in Kennzahlen ein.
+        "benchmarks": benchmarks,
+        "benchmarks_json": json.dumps(benchmarks),
+        # Eigene Y-Achsen-Skalierung statt des gemeinsamen Chart-Maximums (siehe
+        # Strategy.eigene_chart_skala) - own_chart_max ist dabei bewusst NUR das
+        # Maximum der eigenen Wertreihe, unabhaengig von allen anderen Strategien.
+        "eigene_chart_skala": strategy.eigene_chart_skala,
+        "own_chart_max": max(total_values) if total_values else 0.0,
     }
 
 
@@ -784,9 +830,27 @@ def build_dashboard(
 
     # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
     # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
-    # vergleichbar sind.
-    alle_werte = [wert for view in views for wert in view["total_values"]]
+    # vergleichbar sind. Strategien mit `eigene_chart_skala=True` (z. B. der
+    # SP500_BENCHMARK, dessen Endwert ein Vielfaches der uebrigen betraegt) fliessen
+    # NICHT in dieses gemeinsame Maximum ein, sonst wuerden alle anderen Charts durch
+    # sie flachgedrueckt - sie bekommen stattdessen ihr eigenes Maximum (siehe
+    # "chart_max"/"eigene_chart_skala" je View unten).
+    eigene_skala_namen = {s.name for s in strategies if s.eigene_chart_skala}
+    alle_werte = [
+        wert for view in views for wert in view["total_values"] if view["name"] not in eigene_skala_namen
+    ]
     wert_chart_max = max(alle_werte) if alle_werte else 0.0
+
+    # Benchmark-Overlay-Schalter (#72): Union der auf irgendeiner Seite tatsächlich
+    # verfügbaren Benchmarks (id + Anzeigename), fürs Rendern der Schalter-Buttons.
+    # Ein Kandidat aus BENCHMARK_STRATEGIEN, der für keine einzige Strategie Kursdaten
+    # hat (z. B. weil sein Ticker noch gar nicht in instruments.py steht), taucht hier
+    # gar nicht erst auf - der Schalter zeigt dann nur "Kein Benchmark" plus die
+    # tatsächlich nutzbaren Optionen.
+    benchmark_optionen: dict[str, str] = {}
+    for view in views:
+        for bench in view["benchmarks"]:
+            benchmark_optionen[bench["id"]] = bench["label"]
 
     common_context = dict(
         generated_at=datetime.now(timezone.utc).strftime("%Y-%m-%d %H:%M UTC"),
@@ -796,6 +860,7 @@ def build_dashboard(
         # eingetragen, damit die Zahl auf jeder Seite automatisch mit einem
         # künftigen Instrumente-/Strategiewechsel mitzieht.
         instrumente_anzahl=len(_allokierte_ticker(strategies)),
+        benchmark_optionen=[{"id": k, "label": v} for k, v in benchmark_optionen.items()],
     )
 
     env = Environment(

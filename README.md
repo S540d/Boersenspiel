@@ -2,19 +2,17 @@
 
 **📊 Dashboard:** [s540d.github.io/Boersenspiel](https://s540d.github.io/Boersenspiel/)
 
-Virtual portfolio following a barbell strategy, based on an original project
-requirements document from early planning. The technical implementation
-intentionally deviates from that document in a few places (see
-[Deviations from the requirements](#deviations-from-the-requirements) below):
-weekly instead of daily price fetching, CSV persistence in the Git repo
-instead of a Google Sheet, output as a static dashboard on GitHub Pages.
+Virtual portfolio following a barbell strategy: a small, low-volatility
+"safety" allocation paired with a larger, higher-conviction "growth"
+allocation, instead of one broad blend. Prices are fetched weekly via GitHub
+Actions, persisted as a CSV in this Git repo, and rendered as a static
+dashboard on GitHub Pages.
 
 ## The portfolio
 
-Every strategy and scenario draws from 17 of the 24 instruments defined in
-`instruments.py` — the other seven are unallocated data series (see below).
-Which of them a given strategy actually holds, and at what weight, is decided
-separately in `strategies.py`. Two buckets recur in every strategy:
+24 instruments are tracked in `instruments.py`; which of them a given
+strategy actually holds, and at what weight, is decided separately in
+`strategies.py`. Two buckets recur in most strategies:
 
 - **Bucket A – Safety**: broad, low-volatility instruments — a global bond
   ETF and physical gold. Always the smaller half of the barbell (20% or 30%,
@@ -38,26 +36,53 @@ Tesla, Palantir, Strategy/formerly MicroStrategy, Rivian) with two defensive
 blue chips (Coca-Cola, Roche) as a counterexample — a first pass, not an
 optimized or backtested selection.
 
-### Unallocated data series
+A fourth strategy, `Barbell 20/80 (diversified)`, keeps the same 20/80 risk
+profile but broadens both buckets: Bucket A trades half its bond-ETF slice
+for a genuine EUR money-market ETF and two bonds with a different
+duration/real-rate profile, Bucket B adds a Europe ETF (to dilute the
+US/tech concentration of the Nasdaq-100 and semiconductor ETFs), a real
+estate ETF, and a broad commodities ETF. A fifth, `Benchmark: S&P 500 (Buy &
+Hold)`, is not a barbell at all — a single, never-rebalanced position in an
+S&P 500 ETF, included purely as the "just buy the index" comparison line
+that was otherwise missing from the dashboard.
 
-Seven further instruments are fetched every week but held by **no strategy**:
+### Portfolio overview
 
-| Role | Ticker | Instrument |
+All 24 tracked instruments, and which strategy actually holds each one:
+
+| Ticker | Instrument | Held by |
 |---|---|---|
-| Benchmark S&P 500 | `IUSA` | iShares Core S&P 500 (Dist) |
-| EUR money market | `XEON` | Xtrackers II EUR Overnight Rate 1C |
-| Europe | `EXSA` | iShares STOXX Europe 600 (DE) |
-| Government bonds 15–30y | `IBCL` | iShares € Govt Bond 15-30yr |
-| Inflation-linked | `IBCI` | iShares € Inflation Linked Govt Bond |
-| Real estate | `IQQ6` | iShares Developed Markets Property Yield |
-| Broad commodities | `EXXY` | iShares Diversified Commodity Swap (DE) |
+| `EUNL` | MSCI World ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
+| `EUNA` | Global Aggregate Bond ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
+| `4GLD` | Xetra-Gold | Barbell 20/80, 30/70, Satellite, Diversified |
+| `LYMS` | Nasdaq-100 ETF (Amundi Core) | Barbell 20/80, 30/70, Satellite, Diversified |
+| `SEMI` | Global Semiconductors ETF (iShares) | Barbell 20/80, 30/70, Satellite, Diversified |
+| `EIMI` | Emerging Markets IMI ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
+| `BTC-EUR` | Bitcoin | Barbell 20/80, 30/70, Satellite, Diversified |
+| `LITE` | Lumentum Holdings | Barbell 20/60/20 + Single-Stock Satellite |
+| `BYDDY` | BYD Company (ADR) | Barbell 20/60/20 + Single-Stock Satellite |
+| `SEDG` | SolarEdge Technologies | Barbell 20/60/20 + Single-Stock Satellite |
+| `S92` | SMA Solar Technology | Barbell 20/60/20 + Single-Stock Satellite |
+| `TSLA` | Tesla | Barbell 20/60/20 + Single-Stock Satellite |
+| `PLTR` | Palantir Technologies | Barbell 20/60/20 + Single-Stock Satellite |
+| `MSTR` | Strategy Inc. (formerly MicroStrategy) | Barbell 20/60/20 + Single-Stock Satellite |
+| `RIVN` | Rivian Automotive | Barbell 20/60/20 + Single-Stock Satellite |
+| `KO` | Coca-Cola | Barbell 20/60/20 + Single-Stock Satellite |
+| `RHHBY` | Roche Holding (ADR) | Barbell 20/60/20 + Single-Stock Satellite |
+| `IUSA` | S&P 500 ETF (iShares Core) | Benchmark only |
+| `XEON` | EUR money-market ETF (Xtrackers Overnight Rate) | Barbell 20/80 (diversified) |
+| `EXSA` | STOXX Europe 600 ETF (iShares) | Barbell 20/80 (diversified) |
+| `IBCL` | Euro government bonds 15–30y ETF (iShares) | Barbell 20/80 (diversified) |
+| `IBCI` | Inflation-linked Euro government bonds ETF (iShares) | Barbell 20/80 (diversified) |
+| `IQQ6` | Real estate ETF (iShares Developed Markets Property Yield) | Barbell 20/80 (diversified) |
+| `EXXY` | Broad commodities ETF (iShares Diversified Commodity Swap) | Barbell 20/80 (diversified) |
 
-`engine.simulate()` only ever reads `strategy.alle_ticker_gewichte()`, so an
-instrument that belongs to no bucket is never traded and changes no published
-figure — it just lands in `price_history.csv`. Collecting the prices now means
-a later allocation decision does not require a second full backfill on a
-second day. All seven are XETRA symbols quoted in EUR, so they need no FX
-request and sidestep the currency problem described further below.
+`engine.simulate()` only ever reads `strategy.alle_ticker_gewichte()` — an
+instrument only moves the numbers of the strategies that actually list it.
+All Xetra-listed instruments above are quoted in EUR directly, so they need
+no FX conversion and sidestep the currency problem described further below;
+only the 10 single-stock satellite tickers (all but `S92`) trade in USD and
+get converted on every fetch.
 
 ## Architecture
 
@@ -88,8 +113,8 @@ flowchart TB
     end
 
     csv ==> sim
-    strat["strategies.py<br/>3 strategies<br/><i>constant weights</i>"] --> sim
-    scen["scenarios.py<br/>10 scenarios<br/><i>gewichte_fn(rows, i)</i>"] --> sim
+    strat["strategies.py<br/>5 strategies<br/><i>constant weights</i>"] --> sim
+    scen["scenarios.py<br/>11 scenarios<br/><i>gewichte_fn(rows, i)</i>"] --> sim
     dash ==> html[("docs/index.html<br/>GitHub Pages")]
 ```
 
@@ -158,9 +183,9 @@ Three properties that are easy to miss:
   runs could happen in any order or in parallel.
 - **Scenarios only use part of the data.** All scenarios in `scenarios.py`
   build on the buckets of `Barbell 20/80` and therefore only touch **7 of the
-  24** tickers; the 10 satellite stocks appear only in
-  `Barbell 20/60/20 + Single-Stock Satellite`, and seven are unallocated data
-  series. The price history is deliberately broader than any single
+  24** tickers; the other 17 (the 10 satellite stocks and the 7 instruments
+  from `Barbell 20/80 (diversified)`/the benchmark) only appear in specific
+  strategies. The price history is deliberately broader than any single
   evaluation.
 - **No lookahead.** Every `gewichte_fn` may only read `rows[:i+1]`. A rule
   deciding in week i must not know week i+1 — otherwise every result would be
@@ -182,8 +207,7 @@ much did the tax optimization actually contribute?". A proposal to make them
 individually toggleable, and thus measure their contribution as a difference,
 is tracked as [#17](https://github.com/S540d/Boersenspiel/issues/17).
 
-**Guiding principle (carried over from the requirements document):** Only raw
-data (prices) is persisted long-term. Everything derived (position values,
+**Guiding principle:** Only raw data (prices) is persisted long-term. Everything derived (position values,
 rebalancing, tax, tax-free allowance, loss carryforward) is recomputed
 entirely from the price history on every dashboard build –
 `engine.simulate()` is a pure function of (price history, strategy), with no
@@ -194,7 +218,7 @@ strategy always yields the identical result.
 
 | File | Purpose |
 |---|---|
-| `src/boersenspiel/instruments.py` | The 24 instruments (7 barbell base + 10 single-stock satellite + 7 unallocated data series; ticker, ISIN) – source-independent |
+| `src/boersenspiel/instruments.py` | The 24 instruments (7 barbell base + 10 single-stock satellite + 7 from the diversified barbell/benchmark; ticker, ISIN) – source-independent |
 | `src/boersenspiel/strategies.py` | Interchangeable strategy definitions (weights, buckets, rebalancing threshold) + cross-strategy tax/fee constants |
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
@@ -265,7 +289,7 @@ python scripts/backfill_history.py --years 20  # default: 20 years back (lower b
 
 Uses exactly 25 requests (23 non-crypto tickers + 1× `FX_WEEKLY` + 1× crypto)
 — the full daily free-tier limit, with no headroom left since the seven
-unallocated data series were added. A re-run after a network error, a debug
+additional instruments were added. A re-run after a network error, a debug
 call, or the weekly fetch on the same day will all breach it. An unresolvable
 ticker symbol aborts the run without returning the requests already spent, so
 verify symbols (`SYMBOL_SEARCH`) before adding an instrument;
@@ -328,12 +352,15 @@ New strategies are added as another `Strategy` entry in
 target bucket, target weight, rebalancing threshold in percentage points) and
 added to the `STRATEGIES` list – the engine contains no barbell-specific
 assumptions, `dashboard.py` automatically renders all strategies listed in
-`STRATEGIES` side by side. Currently defined: `Barbell 20/80` (from the
-requirements document), `Barbell 30/70` (example of an alternative
-weighting), and `Barbell 20/60/20 + Single-Stock Satellite` (extends Barbell
-20/80 with a third bucket of 10 equally-weighted single stocks instead of
-broad ETFs – overall risk profile of 80% risky / 20% safe is preserved, see
-`strategies.py` for details and the rationale behind the selection).
+`STRATEGIES` side by side. Currently defined: `Barbell 20/80`, `Barbell
+30/70` (example of an alternative weighting), `Barbell 20/60/20 +
+Single-Stock Satellite` (extends Barbell 20/80 with a third bucket of 10
+equally-weighted single stocks instead of broad ETFs – overall risk profile
+of 80% risky / 20% safe is preserved), `Barbell 20/80 (diversified)`
+(broadens both buckets with a genuine cash instrument, additional bond
+profiles, Europe, real estate, and commodities), and `Benchmark: S&P 500
+(Buy & Hold)` (single-instrument reference line) – see `strategies.py` for
+details and the rationale behind each.
 
 ### Scenarios
 
@@ -510,9 +537,8 @@ pytest -q
   immediately repurchased, until the realized losses cover the taxable
   portion of the year's gains — this doesn't retroactively shift the
   already-taxed gain total, but builds up a loss carryforward that reduces
-  future gains. The requirements document did not specify an exact algorithm
-  here – this variant was confirmed during the planning discussion.
-- **Tax logic**, largely unchanged from the requirements document: loss
+  future gains.
+- **Tax logic:** loss
   offsetting before the tax-free allowance before tax (26.375%), tax-free
   allowance of €1,000/year resetting at the calendar year boundary, one
   shared loss/allowance pool for capital-gains-taxed instruments. Three
@@ -548,22 +574,20 @@ pytest -q
 
 ## Known limitations
 
-- **Hindsight bias in instrument selection:** the 17 instruments actually
-  allocated to a strategy or scenario were picked when their price history
-  was already known. A backtested return therefore does not answer "what
-  would I have earned?", only "how would these rules have played out on
-  these, retrospectively chosen, instruments?". This does *not* apply to the
-  7 additional data series tracked without ever being allocated to a
-  strategy (a broad equity/real-estate/commodity index and a money-market
-  fund, added purely as neutral benchmarks — see #64/#66) — they were picked
-  independent of their price performance, not chosen into a strategy. The
+- **Hindsight bias in instrument selection:** the instruments allocated to a
+  strategy or scenario were picked when their price history was already
+  known. A backtested return therefore does not answer "what would I have
+  earned?", only "how would these rules have played out on these,
+  retrospectively chosen, instruments?". This applies less to `IUSA`
+  (the S&P 500 benchmark, `Benchmark: S&P 500 (Buy & Hold)`) — as a
+  standard broad-market index it wasn't picked for its own return, only as
+  the neutral "just buy the index" comparison line. The
   scenario rules themselves are a first pass, neither optimized nor
   backtested, and everything rests on a single historical price series — no
   Monte Carlo, no confidence intervals. Differences of a few percentage
   points between two strategies are not meaningful. The dashboard's
   **Premises page** (`docs/praemissen.html`, reachable from the three-dot
-  menu on every page) spells this out for readers, including a dedicated
-  section listing the unallocated data series separately.
+  menu on every page) spells this out for readers.
 - **Placeholder constants:** `VORABPAUSCHALE_BASISZINS_PLATZHALTER` (2.0%)
   is not a real annual BMF base rate, and `_RISIKOFREIER_ZINS_PLATZHALTER`
   (0%) used by the Sharpe/Sortino ratios is not a real reference rate. Taxes
@@ -594,17 +618,3 @@ pytest -q
 - `data/price_history.csv` deliberately starts empty (header only) – the
   first real row is created by the first workflow run (possibly triggered
   manually via `workflow_dispatch`), not by manual seeding.
-
-## Deviations from the requirements
-
-| Requirements v2.0 | This implementation |
-|---|---|
-| Google Drive/Sheets as price history | `data/price_history.csv` in the Git repo |
-| Daily price fetch via Cowork scheduled task | Weekly price fetch via GitHub Actions cron (price source interchangeable, see above) |
-| Dashboard on demand as an artifact in a conversation | Static HTML page (Chart.js), automatically rebuilt after every price fetch, deployed on GitHub Pages |
-| "Model B": price fetching and dashboard generation automated separately | One combined workflow (price fetch → test → dashboard build → commit → deploy) |
-| Only the Barbell 20/80 strategy | Multiple interchangeable strategies (`strategies.py`), dashboard shows them comparatively |
-
-Rebalancing threshold, order fees, and tax logic (26.375%, €1,000 tax-free
-allowance, loss carryforward) were carried over from the requirements
-document unchanged.

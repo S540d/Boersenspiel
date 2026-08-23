@@ -12,8 +12,10 @@ from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
 
+import boersenspiel.dashboard as dashboard_module
 from boersenspiel.dashboard import (
     _allokierte_ticker,
+    _benchmark_reihen,
     _BTC_FRUEHPHASE_ENDE,
     _BTC_TICKER,
     _build_strategy_view,
@@ -38,6 +40,7 @@ from boersenspiel.strategies import (
     ORDERGEBUEHR,
     SPARERPAUSCHBETRAG_PRO_JAHR,
     Beitrag,
+    Optimierungen,
     Strategy,
     Topf,
 )
@@ -232,6 +235,58 @@ def test_build_dashboard_ohne_teil_von_zeigt_keine_gruppen_charts(tmp_path: Path
 
     assert "Kombi im Vergleich" not in html
     assert "gruppen-chart" not in html
+
+
+# --- Eigene Chart-Skala fuer weit abweichende Strategien (SP500_BENCHMARK, s. #64) ----
+
+
+def _strategien_mit_ausreisser() -> list[Strategy]:
+    """Eine normale Strategie (T1 verdoppelt sich) plus ein Ausreisser mit
+    eigene_chart_skala=True, dessen Wertreihe (T2 verhundertfacht sich) um ein
+    Vielfaches groesser ist - reproduziert das Verhaeltnis SP500_BENCHMARK vs.
+    die uebrigen Strategien auf der Startseite."""
+    basis = dict(
+        startkapital=Decimal("1000"),
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    normal = Strategy(
+        name="A: Normal",
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        **basis,
+    )
+    ausreisser = Strategy(
+        name="B: Ausreisser",
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T2": Decimal("1")})],
+        eigene_chart_skala=True,
+        **basis,
+    )
+    return [normal, ausreisser]
+
+
+def _rows_mit_ausreisser() -> list[PriceRow]:
+    return [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "T2": Decimal("100")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("150"), "T2": Decimal("10000")}),
+    ]
+
+
+def test_ausreisser_strategie_fliesst_nicht_ins_gemeinsame_chart_maximum_ein(tmp_path: Path):
+    output = build_dashboard(_rows_mit_ausreisser(), _strategien_mit_ausreisser(), output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    # Das gemeinsame Maximum (wertChartMax) darf nur aus "A: Normal" stammen (Endwert
+    # rund 1498.50) - der Ausreisser (Endwert rund 99900) wuerde es sonst dominieren
+    # und alle anderen Charts auf der Startseite optisch flachdruecken.
+    wert_chart_max_js = html.split("const wertChartMax = ", 1)[1].split(";", 1)[0]
+    assert float(wert_chart_max_js) < 2000
+
+    # "A: Normal" nutzt weiterhin das gemeinsame Maximum, "B: Ausreisser" sein eigenes.
+    chart_1_js = html.split("getElementById('value-chart-1')", 1)[0].rsplit("{\n", 1)[1]
+    assert "const eigeneSkala = false;" in chart_1_js
+    chart_2_js = html.split("getElementById('value-chart-2')", 1)[0].rsplit("{\n", 1)[1]
+    assert "const eigeneSkala = true;" in chart_2_js
 
 
 # --- Risikokennzahlen: Volatilitaet & Max Drawdown (#40) ------------------------------
@@ -792,3 +847,104 @@ def test_praemissen_seite_versteckt_abschnitt_wenn_alles_allokiert_ist(tmp_path:
     html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
 
     assert "<h3>Datenreihen ohne Allokation</h3>" not in html
+
+
+# --- Benchmark-Overlay-Schalter (#72) ---------------------------------------------
+
+
+def _benchmark_fixture(name: str = "Benchmark X", ticker: str = "BX") -> Strategy:
+    """Reiner Einzelinstrument-Buy&Hold, wie es BENCHMARK_STRATEGIEN in
+    strategies.py verlangt (siehe deren Docstring)."""
+    return Strategy(
+        name=name,
+        startkapital=Decimal("10000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={ticker: Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("5"),
+        optimierungen=Optimierungen(rebalancing=False),
+    )
+
+
+def _rows_mit_benchmark_ticker() -> list[PriceRow]:
+    return [
+        PriceRow(date(2024, 1, 1), {"T1": Decimal("100"), "BX": Decimal("50")}),
+        PriceRow(date(2024, 1, 8), {"T1": Decimal("150"), "BX": Decimal("55")}),
+    ]
+
+
+def test_benchmark_reihen_simuliert_mit_startkapital_der_angezeigten_strategie(monkeypatch):
+    bench = _benchmark_fixture()
+    monkeypatch.setattr(dashboard_module, "BENCHMARK_STRATEGIEN", [bench])
+    strategie = Strategy(
+        name="Eigene Strategie",
+        startkapital=Decimal("500"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    rows = _rows_mit_benchmark_ticker()
+
+    overlays = _benchmark_reihen(rows, strategie)
+
+    assert len(overlays) == 1
+    assert overlays[0]["id"] == _slug("Benchmark X")
+    assert overlays[0]["label"] == "Benchmark X"
+    # Gleiche Laenge wie die Kurshistorie (ein Punkt je Zeile), Startwert nahe am
+    # Startkapital der ANGEZEIGTEN Strategie (500), nicht dem Default der
+    # Benchmark-Fixture (10000).
+    assert len(overlays[0]["total_values"]) == len(rows)
+    assert 490 < overlays[0]["total_values"][0] < 500
+
+
+def test_benchmark_reihen_schliesst_sich_selbst_aus(monkeypatch):
+    bench = _benchmark_fixture(name="Eigene Strategie", ticker="T1")
+    monkeypatch.setattr(dashboard_module, "BENCHMARK_STRATEGIEN", [bench])
+    strategie = _benchmark_fixture(name="Eigene Strategie", ticker="T1")
+
+    assert _benchmark_reihen(_rows_mit_benchmark_ticker(), strategie) == []
+
+
+def test_benchmark_reihen_ohne_kursdaten_wird_nicht_angeboten(monkeypatch):
+    bench = _benchmark_fixture(ticker="KEIN_KURS")
+    monkeypatch.setattr(dashboard_module, "BENCHMARK_STRATEGIEN", [bench])
+    strategie = Strategy(
+        name="Eigene Strategie",
+        startkapital=Decimal("500"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+
+    assert _benchmark_reihen(_rows_mit_benchmark_ticker(), strategie) == []
+
+
+def test_build_dashboard_rendert_benchmark_schalter_und_feste_skala(tmp_path: Path, monkeypatch):
+    bench = _benchmark_fixture()
+    monkeypatch.setattr(dashboard_module, "BENCHMARK_STRATEGIEN", [bench])
+    strategie = Strategy(
+        name="Eigene Strategie",
+        startkapital=Decimal("500"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T1": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    output = build_dashboard(_rows_mit_benchmark_ticker(), [strategie], output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert 'id="benchmark-switch"' in html
+    assert f'data-benchmark="{_slug("Benchmark X")}"' in html
+    assert '"label": "Benchmark X"' in html
+    # #72: fixes `max` statt `suggestedMax` auf dem Wertverlauf-Chart, damit die
+    # Skala sich durch die Benchmark-Linie nicht veraendert.
+    chart_js = html.split("getElementById('value-chart-1')", 1)[1].split("chart.__benchmarks", 1)[0]
+    assert "suggestedMax:" not in chart_js
+    assert "max: strategieMax * 1.05" in chart_js
+
+    detail_html = _detail_html(tmp_path, "eigene-strategie")
+    assert 'id="benchmark-switch"' in detail_html
+    assert f'data-benchmark="{_slug("Benchmark X")}"' in detail_html
+    assert "suggestedMax:" not in detail_html

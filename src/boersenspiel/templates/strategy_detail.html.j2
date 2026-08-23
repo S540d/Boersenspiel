@@ -43,6 +43,15 @@
       <button type="button" data-preset="{{ p.id }}"{% if p.id == 'alle' %} class="active"{% endif %}>{{ p.label }}</button>
       {% endfor %}
     </div>
+    {% if s.benchmarks %}
+    <div class="benchmark-switch" id="benchmark-switch">
+      <span>Benchmark einblenden:</span>
+      <button type="button" data-benchmark="none" class="active">Kein Benchmark</button>
+      {% for b in s.benchmarks %}
+      <button type="button" data-benchmark="{{ b.id }}">{{ b.label }}</button>
+      {% endfor %}
+    </div>
+    {% endif %}
     <div class="stat-row">
       <div class="stat-tile"><div class="label">Rendite % (brutto, im Zeitraum)</div><div class="value" id="zeitraum-rendite">{{ s.rendite_pct_label }}</div></div>
       <div class="stat-tile"><div class="label">Volatilität % (ann.)</div><div class="value" id="zeitraum-volatilitaet">{{ s.volatilitaet_label }}</div></div>
@@ -204,6 +213,31 @@
   const seriesPalette = [colors.series1, colors.series2, colors.series3, colors.series4];
 
   {% if s.zeitraum_presets %}
+  // Benchmark-Overlay-Schalter (#72), siehe dashboard.html.j2 fuer die ausfuehrliche
+  // Begruendung: fixes `max` statt `suggestedMax`, damit die Skala sich durch die
+  // Benchmark-Linie nicht veraendert; `zeitraumChart.__benchmarks` haelt die zum
+  // aktuell gewaehlten Zeitraum passenden Kandidaten.
+  let currentBenchmarkId = 'none';
+  function applyBenchmarkDataset(chart) {
+    const kandidaten = chart.__benchmarks || [];
+    const bench = kandidaten.find((b) => b.id === currentBenchmarkId);
+    if (bench) {
+      chart.data.datasets[1] = {
+        label: bench.label,
+        data: bench.total_values,
+        borderColor: colors.series4,
+        backgroundColor: colors.series4,
+        borderWidth: 1.5,
+        borderDash: [6, 4],
+        pointRadius: 0,
+        tension: 0.15,
+      };
+    } else {
+      chart.data.datasets.length = 1;
+    }
+    chart.update();
+  }
+
   // Zeitraum-Presets (#54, Variante B): jeder Preset ist bereits fertig aus einer
   // eigenen engine.simulate()-Neu-Simulation (frisches Startkapital, siehe
   // dashboard._zeitraum_presets()) - der Umschalter wechselt nur, welcher bereits
@@ -226,7 +260,7 @@
       }] },
       options: {
         responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: false }, title: { display: true, text: 'Wertverlauf im gewählten Zeitraum', color: colors.text } },
+        plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: 'Wertverlauf im gewählten Zeitraum', color: colors.text } },
         scales: { x: commonScales.x, y: { ...commonScales.y, min: 0 } },
       },
     });
@@ -239,8 +273,9 @@
       if (!preset) return;
       zeitraumChart.data.labels = preset.labels;
       zeitraumChart.data.datasets[0].data = preset.total_values;
-      zeitraumChart.options.scales.y.suggestedMax = (preset.chart_max || 0) * 1.05;
-      zeitraumChart.update();
+      zeitraumChart.options.scales.y.max = (preset.chart_max || 0) * 1.05;
+      zeitraumChart.__benchmarks = preset.benchmarks || [];
+      applyBenchmarkDataset(zeitraumChart);
       document.getElementById(tileIds.rendite).textContent = preset.rendite_label;
       document.getElementById(tileIds.volatilitaet).textContent = preset.volatilitaet_label;
       document.getElementById(tileIds.maxDrawdown).textContent = preset.max_drawdown_label;
@@ -252,6 +287,17 @@
       btn.addEventListener('click', () => apply(btn.dataset.preset));
     });
     apply('alle');
+
+    const benchmarkSwitchEl = document.getElementById('benchmark-switch');
+    if (benchmarkSwitchEl) {
+      benchmarkSwitchEl.querySelectorAll('button').forEach((btn) => {
+        btn.addEventListener('click', () => {
+          currentBenchmarkId = btn.dataset.benchmark;
+          benchmarkSwitchEl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+          applyBenchmarkDataset(zeitraumChart);
+        });
+      });
+    }
   }
   {% endif %}
 
