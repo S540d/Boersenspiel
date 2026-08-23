@@ -95,29 +95,26 @@ INSTRUMENTS: dict[str, Instrument] = {
         Instrument("RIVN", "Rivian Automotive", "US76954A1034", ausschuettend=True),
         Instrument("KO", "Coca-Cola (defensiver Blue Chip)", "US1912161007", ausschuettend=True),
         Instrument("RHHBY", "Roche Holding (ADR, defensiver Blue Chip)", "US7711951043", ausschuettend=True),
-        # --- Datenreihen ohne Allokation (#64) ---------------------------------
-        # Sieben zusaetzliche Instrumente, die das taegliche Alpha-Vantage-Budget
-        # von 25 Requests ausschoepfen (vorher 18). Sie stehen BEWUSST in KEINEM
-        # Topf einer Strategie: `engine.simulate()` liest ausschliesslich
-        # `strategy.alle_ticker_gewichte()`, ein Instrument ohne Topf wird also
-        # nie gehandelt und veraendert keine einzige veroeffentlichte Zahl. Es
-        # landet nur in `price_history.csv`.
+        # --- Sieben zusaetzliche Instrumente (#64) ------------------------------
+        # Ergaenzt am 22.08.2026, um das taegliche Alpha-Vantage-Budget von 25
+        # Requests auszuschoepfen (vorher 18). Alle sieben sind XETRA-Symbole in
+        # EUR, kosten also keinen zusaetzlichen FX-Request.
         #
-        # Das ist Absicht: erst Daten sammeln, dann allokieren. Die Zuordnung zu
-        # Toepfen haengt an den Methodenentscheidungen aus #63 (insbesondere dem
-        # Rebalancing-Trigger) - bis dahin waere jede Gewichtung geraten. Ohne
-        # die Kurse jetzt mitzuerheben braeuchte es spaeter aber einen zweiten
-        # kompletten Backfill an einem zweiten Tag.
+        # Steuerattribute verifiziert: `teilfreistellung`/`thesaurierend`/
+        # `ausschuettend` wurden gegen oeffentliche Fondsanbieter-Fact-Sheets
+        # (justETF/extraETF/onvista/DAS INVESTMENT) abgeglichen, nicht nur aus
+        # Fondsgattung/Namenszusatz geraten. Dabei zwei Fehler gefunden und
+        # korrigiert: IBCI und EXXY sind tatsaechlich thesaurierende
+        # Acc-Anteilsklassen, waren aber faelschlich als ausschuettend markiert.
         #
-        # ACHTUNG bei der spaeteren Allokation: `teilfreistellung`,
-        # `thesaurierend` und `ausschuettend` unten sind aus Fondsgattung und
-        # Namenszusatz (Dist/Acc) abgeleitet, NICHT gegen die Fondsprospekte
-        # geprueft. Solange die Instrumente in keinem Topf liegen, wertet die
-        # Engine sie nie aus - sobald sie allokiert werden, gehoeren sie
-        # verifiziert, sonst rechnet das Steuermodell mit falschen Annahmen.
+        # IUSA dient ausschliesslich als Benchmark (`SP500_BENCHMARK` in
+        # strategies.py, 100% Einzelinstrument, nie rebalanciert) - es ist
+        # NICHT zusaetzlich Bestandteil einer der Barbell-Topf-Allokationen.
+        # Die uebrigen sechs (XEON, EXSA, IBCL, IBCI, IQQ6, EXXY) sind Teil von
+        # `BARBELL_20_80_DIVERSIFIZIERT`.
         Instrument(
             "IUSA",
-            "S&P 500 ETF (iShares Core, aussch.) - Benchmark, nicht allokiert",
+            "S&P 500 ETF (iShares Core, aussch.) - nur Benchmark",
             "IE0031442068",
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             ausschuettend=True,
@@ -144,9 +141,11 @@ INSTRUMENTS: dict[str, Instrument] = {
         ),
         Instrument(
             "IBCI",
-            "Inflationsindexierte Euro-Staatsanleihen ETF (iShares)",
+            "Inflationsindexierte Euro-Staatsanleihen ETF (iShares, thes.)",
             "IE00B0M62X26",
-            ausschuettend=True,
+            # Acc-Anteilsklasse (WKN A0HGV1), nicht Dist - siehe Verifikations-
+            # Hinweis oben.
+            thesaurierend=True,
         ),
         Instrument(
             "IQQ6",
@@ -154,16 +153,17 @@ INSTRUMENTS: dict[str, Instrument] = {
             "IE00B1FZS350",
             # Haelt boersennotierte Immobiliengesellschaften/REITs, also >51%
             # Aktien -> Aktienfonds-Teilfreistellung, nicht die Immobilienfonds-
-            # Quote. Bei der Allokation gegen den Prospekt pruefen.
+            # Quote.
             teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
             ausschuettend=True,
         ),
         Instrument(
             "EXXY",
-            "Rohstoff-ETF breit (iShares Diversified Commodity Swap)",
+            "Rohstoff-ETF breit (iShares Diversified Commodity Swap, thes.)",
             "DE000A0H0728",
-            # Rohstofffonds -> keine Teilfreistellung.
-            ausschuettend=True,
+            # Rohstofffonds -> keine Teilfreistellung. Acc-Anteilsklasse, nicht
+            # Dist - siehe Verifikations-Hinweis oben.
+            thesaurierend=True,
         ),
     ]
 }

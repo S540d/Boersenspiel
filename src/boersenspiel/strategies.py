@@ -267,7 +267,110 @@ BARBELL_20_60_20_SATELLIT = Strategy(
     ),
 )
 
-STRATEGIES: list[Strategy] = [BARBELL_20_80, BARBELL_30_70, BARBELL_20_60_20_SATELLIT]
+# --- Strategie 4: Barbell 20/80, breiter diversifiziert (#64) --------------
+#
+# Adressiert zwei im Rahmen von #64 identifizierte Luecken der bestehenden
+# Barbell-Strategien: Topf A ("Sicherheit") besteht bei BARBELL_20_80 zur
+# Haelfte aus EUNL (Aktien-ETF) - kein echter Cash-Baustein. Und Topf B
+# ("Wachstum") ist stark auf USA/Tech konzentriert (LYMS Nasdaq-100 + SEMI
+# Halbleiter = 70% des Topfs), Europa fehlt komplett, ebenso Immobilien und
+# breite Rohstoffe. Diese Variante nutzt sechs der sieben in #64 ergaenzten
+# Instrumente (alle ausser IUSA, das ausschliesslich als Benchmark dient,
+# siehe SP500_BENCHMARK unten), um beide Luecken zu schliessen, OHNE
+# BARBELL_20_80 selbst zu veraendern - eine zusaetzliche Strategie neben den
+# bestehenden, nach demselben Muster wie BARBELL_20_60_20_SATELLIT.
+#
+# Topf A behaelt 20% des Gesamtdepots, verliert aber EUNL zugunsten von
+# echtem EUR-Cash (XEON) sowie Anleihen mit anderer Duration/Realzins-
+# Eigenschaft (IBCL/IBCI) neben EUNA/4GLD. Topf B behaelt 80%, EUNL wandert
+# hierher, EXSA (Europa) senkt den USA/Tech-Anteil, IQQ6/EXXY ergaenzen
+# Immobilien und breite Rohstoffe. Erster Ansatz, Gewichte nicht optimiert
+# oder gebacktestet (wie alle Szenarien in scenarios.py).
+
+BARBELL_20_80_DIVERSIFIZIERT = Strategy(
+    name="Barbell 20/80 (breiter diversifiziert)",
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Sicherheit",
+            gewicht_gesamt=Decimal("0.20"),
+            sub_gewichte={
+                "EUNA": Decimal("0.25"),
+                "4GLD": Decimal("0.15"),
+                "XEON": Decimal("0.25"),
+                "IBCL": Decimal("0.15"),
+                "IBCI": Decimal("0.20"),
+            },
+        ),
+        Topf(
+            name="Topf B - Wachstum",
+            gewicht_gesamt=Decimal("0.80"),
+            sub_gewichte={
+                "EUNL": Decimal("0.25"),
+                "EXSA": Decimal("0.15"),
+                "LYMS": Decimal("0.20"),
+                "SEMI": Decimal("0.10"),
+                "EIMI": Decimal("0.15"),
+                "IQQ6": Decimal("0.05"),
+                "EXXY": Decimal("0.05"),
+                "BTC-EUR": Decimal("0.05"),
+            },
+        ),
+    ],
+    ziel_topf="Topf A - Sicherheit",
+    ziel_gewicht=Decimal("0.20"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
+    beschreibung=(
+        "Wie Barbell 20/80 (20% Sicherheit / 80% Wachstum), aber mit breiterer "
+        "Streuung der sechs in #64 ergänzten Instrumente: Topf A bekommt mit XEON "
+        "(EUR-Geldmarkt) einen echten Cash-Baustein statt eines Aktien-ETF-Anteils, "
+        "dazu IBCL/IBCI (Anleihen anderer Duration/Realzins-Eigenschaft). Topf B "
+        "reduziert die USA/Tech-Konzentration durch EXSA (Europa) und ergänzt "
+        "Immobilien (IQQ6) und breite Rohstoffe (EXXY). Erster Ansatz, nicht "
+        "optimiert/gebacktestet."
+    ),
+)
+
+# --- Strategie 5: Benchmark S&P 500 (#64) -----------------------------------
+#
+# Reine Vergleichslinie: "einfach den Index kaufen", das Dashboard hatte
+# bislang keine solche Referenz gegen die aktiven Strategien/Szenarien. Ein
+# einziger Topf mit 100% IUSA, nie rebalanciert - bei nur einem Instrument
+# waere ein Rebalancing-Trigger ohnehin wirkungslos, aber wie bei
+# scenarios.BUY_AND_HOLD wird das bewusst ehrlich ueber den
+# Optimierungs-Schalter (#17) abgeschaltet statt implizit ueber eine
+# unerreichbare Schwelle.
+
+SP500_BENCHMARK = Strategy(
+    name="Benchmark: S&P 500 (Buy & Hold)",
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Benchmark",
+            gewicht_gesamt=Decimal("1"),
+            sub_gewichte={"IUSA": Decimal("1")},
+        ),
+    ],
+    ziel_topf="Topf A - Benchmark",
+    ziel_gewicht=Decimal("1"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    optimierungen=Optimierungen(rebalancing=False),
+    beschreibung=(
+        "Reine Vergleichslinie: einmaliger Kauf von IUSA (S&P 500, USD, EUR-notiert "
+        "an der Xetra), nie aktiv umgeschichtet. Dient als Referenz 'einfach den "
+        "Index kaufen' gegenüber den Barbell-Strategien und Szenarien, kein "
+        "eigenständiger Anlagevorschlag."
+    ),
+)
+
+STRATEGIES: list[Strategy] = [
+    BARBELL_20_80,
+    BARBELL_30_70,
+    BARBELL_20_60_20_SATELLIT,
+    BARBELL_20_80_DIVERSIFIZIERT,
+    SP500_BENCHMARK,
+]
 
 STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
 

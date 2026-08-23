@@ -466,14 +466,21 @@ def test_neue_datenreihen_sind_in_euro_notiert():
         assert ticker not in USD_TICKERS, f"{ticker} braeuchte sonst FX-Umrechnung"
 
 
-def test_neue_datenreihen_liegen_in_keinem_topf():
-    """Solange die Zuordnung an #63 haengt, duerfen die neuen Instrumente keine
-    Strategie beeinflussen: engine.simulate() liest nur
-    strategy.alle_ticker_gewichte(), ein Ticker ohne Topf wird nie gehandelt."""
+def test_neue_datenreihen_bleiben_ausserhalb_der_urspruenglichen_strategien():
+    """Die drei ursprünglichen Barbell-Strategien und alle Szenarien (die
+    strukturell BARBELL_20_80.toepfe wiederverwenden) duerfen von den sieben in
+    #64 ergaenzten Instrumenten weiterhin unberuehrt bleiben - nur die beiden
+    dafuer neu geschaffenen Strategien (BARBELL_20_80_DIVERSIFIZIERT,
+    SP500_BENCHMARK) allokieren sie (#64, zweiter Umsetzungsschritt)."""
     from boersenspiel.scenarios import SCENARIOS
-    from boersenspiel.strategies import STRATEGIES
+    from boersenspiel.strategies import (
+        BARBELL_20_60_20_SATELLIT,
+        BARBELL_20_80,
+        BARBELL_30_70,
+    )
 
     neue = {"IUSA", "XEON", "EXSA", "IBCL", "IBCI", "IQQ6", "EXXY"}
-    for strategie in list(STRATEGIES) + list(SCENARIOS):
+    unveraendert = [BARBELL_20_80, BARBELL_30_70, BARBELL_20_60_20_SATELLIT, *SCENARIOS]
+    for strategie in unveraendert:
         allokiert = set(strategie.alle_ticker_gewichte())
         assert not (allokiert & neue), f"{strategie.name} allokiert {allokiert & neue}"
