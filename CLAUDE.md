@@ -130,9 +130,9 @@ inkrementell fortgeschrieben).
   Optimierung/Backtesting der Auswahl oder Gewichtung. Optionales Feld
   `Strategy.beschreibung` liefert die Kurzbeschreibung, die das Dashboard je
   Strategie/Szenario anzeigt (leer = keine Beschreibung). Optionales Feld
-  `Strategy.optimierungen` (Instanz von `Optimierungen`, vier Bool-Schalter
-  `steueroptimierung`/`rebalancing`/`ordergebuehren`/`besteuerung`, alle
-  standardmäßig `True`) bestimmt, welche der vier strategieübergreifenden
+  `Strategy.optimierungen` (Instanz von `Optimierungen`, fünf Bool-Schalter
+  `steueroptimierung`/`rebalancing`/`ordergebuehren`/`besteuerung`/`fondskosten`, alle
+  standardmäßig `True`) bestimmt, welche der fünf strategieübergreifenden
   Simulationsmechanismen `engine.simulate()` für diese Strategie anwendet —
   `BUY_AND_HOLD` nutzt z. B. `Optimierungen(rebalancing=False)` statt einer
   künstlich unerreichbaren Rebalancing-Schwelle.
@@ -381,7 +381,7 @@ inkrementell fortgeschrieben).
   verbleibende Sparerpauschbetrag des Jahres gedeckt ist, mit sofortigem
   Rückkauf zum selben Kurs. `simulate(price_history, strategy,
   optimierungen=None)` nimmt optional eine `Optimierungen`-Instanz entgegen
-  (Default: `strategy.optimierungen`) und schaltet damit die vier
+  (Default: `strategy.optimierungen`) und schaltet damit die fünf
   strategieübergreifenden Mechanismen einzeln ab: `ordergebuehren=False`
   macht alle Trades gebührenfrei (lokale `gebuehr`-Variable statt der
   Konstante `ORDERGEBUEHR`), `besteuerung=False` lässt `process_realized_gain`
@@ -389,9 +389,10 @@ inkrementell fortgeschrieben).
   unverändert — der simulierte Portfoliowert selbst wird nirgends um Steuer
   gemindert, das ist reines Tracking), `rebalancing=False` überspringt die
   periodische Rückführung auf die Zielgewichte, `steueroptimierung=False`
-  überspringt den kompletten Dezember-Harvest-Block. Diese Schalter dienen
-  dazu, den isolierten Renditebeitrag jedes Mechanismus messbar zu machen
-  (#17) — siehe `dashboard._optimierungs_effekte()`.
+  überspringt den kompletten Dezember-Harvest-Block, `fondskosten=False`
+  lässt die laufenden Fondskosten (`Instrument.ter`, #76) weg. Diese Schalter
+  dienen dazu, den isolierten Renditebeitrag jedes Mechanismus messbar zu
+  machen (#17) — siehe `dashboard._optimierungs_effekte()`.
   **Steuerkorrekturen (#37/#38/#39, Paket A aus #46)**, alle über
   `Instrument`-Felder in `instruments.py` gesteuert, nicht über
   `Optimierungen` (das sind Modellfehler-Korrekturen, keine ein-/
@@ -489,7 +490,7 @@ inkrementell fortgeschrieben).
   Tabelle): je Teilregel die Leave-one-out-Differenz in Prozentpunkten.
   Jede Detailseite bekommt außerdem unbedingt den Abschnitt "Effekt der
   Optimierungs-Schalter" (`dashboard._optimierungs_effekte()`): je einer der
-  vier `Optimierungen`-Mechanismen (#17) als Leave-one-out-Differenz zur
+  fünf `Optimierungen`-Mechanismen (#17) als Leave-one-out-Differenz zur
   Rendite mit genau diesem Mechanismus aus. Für beide Abschnitte simuliert
   die Darstellungsschicht die Vergleichsvarianten zusätzlich — auch das
   bleibt reine Anwendung von `engine.simulate()`, keine eigene
@@ -514,9 +515,9 @@ inkrementell fortgeschrieben).
   Überrendite ÷ annualisierte Volatilität bzw. ÷ Downside-Deviation nur der
   Verlustwochen, `_downside_deviation()`) — eine hohe Rendite bei ebenso
   hoher Streuung ist kein besseres Ergebnis als eine niedrigere Rendite bei
-  wenig Risiko. `_RISIKOFREIER_ZINS_PLATZHALTER = 0.0` ist ein bewusster
-  Platzhalter nach demselben Muster wie
-  `VORABPAUSCHALE_BASISZINS_PLATZHALTER`, kein echter Referenzzins. Jede
+  wenig Risiko. Der risikofreie Zins dafür kommt seit #75 aus dem
+  Geldmarkt-ETF statt aus einer Konstante (siehe „Risikofreier Zins" weiter
+  unten); `_RISIKOFREIER_ZINS_PLATZHALTER` ist nur noch Rückfallwert. Jede
   Detailseite bekommt zusätzlich (sofern genug Kurshistorie vorliegt) den
   Abschnitt "Robustheit über Teilperioden (Walk-Forward)"
   (`_walk_forward_segmente()`): die Kurshistorie wird in bis zu drei
@@ -562,10 +563,13 @@ inkrementell fortgeschrieben).
   denen alle Zahlen beruhen — Datenbasis und Zeitraum, Instrumententabelle
   mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
   Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
-  nicht Modellierten (unternehmensspezifische Dividendenhöhen — Einzelaktien
-  nutzen seit #57 einheitlich eine pauschale Platzhalter-Dividendenrendite,
-  siehe `strategies.DIVIDENDENRENDITE_PLATZHALTER` —, Inflation,
-  Spread/Slippage, TER, Zinsen auf Cash). Ein eigener Abschnitt "Cash und
+  nicht Modellierten (jahresgenaue Dividendenhistorien — je Instrument gilt
+  ein konstanter Satz aus `Instrument.dividendenrendite`, #74 —, Inflation,
+  Spread/Slippage, Depotgebühren/Ausgabeaufschläge, Zinsen auf Cash). Die
+  TER steht seit #76 NICHT mehr auf dieser Liste, sie wird modelliert; die
+  Seite weist sie je Instrument in der Instrumententabelle aus, ebenso die
+  Ausschüttungsrendite (#74) und den je Strategie abgeleiteten risikofreien
+  Zins (#75). Ein eigener Abschnitt "Cash und
   ungenutztes Kapital"
   begründet, warum Strategien keine eigene Cash-Zielallokation kennen (Topf
   A übernimmt die Cash-Rolle, #35) und zeigt zusätzlich
@@ -717,7 +721,7 @@ ADR-Verhältniswechsel). `_split_bereinigte_close_series()` leitet aus
 Nominalkurse dadurch. Bewusst split-only statt des vollen `adjusted close`:
 der ist eine Total-Return-Reihe und enthält auch Dividenden, die die
 Simulation bereits separat als Barertrag modelliert (`ausschuettend` /
-`DIVIDENDENRENDITE_PLATZHALTER`, #57) — sonst zählten sie doppelt. Liefert
+`Instrument.dividendenrendite`, #57/#74) — sonst zählten sie doppelt. Liefert
 ein Symbol gar keinen `adjusted close`, bleibt es beim Nominalkurs.
 
 **Handgepflegte Ergänzungen (#62):** Der Backfill setzt
@@ -932,6 +936,30 @@ eingetragenen „17" zeigt; dass die Prämissen-Seite allokierte und nicht
 allokierte Instrumente in getrennte Tabellen/Abschnitte einsortiert; und
 dass der „Datenreihen ohne Allokation"-Abschnitt gar nicht erst gerendert
 wird, wenn eine Strategie ausnahmsweise alle Ticker hält.
+Für den gemeinsamen Vergleichszeitraum (#73): `_gemeinsamer_beginn()` gegen
+zwei Strategien mit unterschiedlichem Startdatum, `_vergleichs_cagr_pct()`
+gegen eine Reihe, die erst spät zu steigen beginnt (der Ausschnitt muss eine
+deutlich andere CAGR liefern als die volle Historie) sowie den Grenzfall unter
+`_VERGLEICH_MIN_WOCHEN` (liefert `None`), und End-to-End, dass die
+Übersichtstabelle Vergleichszeitraum plus beide eigenen Zeiträume rendert —
+und dass die Überrendite-Spalte ohne Benchmark-Strategie unter den angezeigten
+Strategien gar nicht erst erscheint. Für den risikofreien Zins (#75):
+`_risikofreier_zins_pct()` gegen eine konstruierte 4%-Geldmarktreihe, gegen
+eine Historie ganz ohne `XEON` und gegen einen zu kurzen Zeitraum (beide →
+Platzhalter), dass ein positiver Zins Sharpe *und* Sortino gegenüber 0 senkt
+(vorher gar nicht möglich) und dass ein Aufruf ohne Zinsangabe unverändert den
+Platzhalter nutzt. In `tests/test_engine.py` für #74: dass die sieben
+Nicht-Zahler `ausschuettend=False` sind und ohne Dividende auch keinen
+Cash-Zufluss bekommen, dass zwei Instrumente mit unterschiedlicher Rendite
+unterschiedlich viel ausschütten (handgerechnet), und dass ein ausschüttendes
+Instrument ohne eigenen Satz weiterhin auf den Platzhalter fällt. Für die TER
+(#76): handgerechneter Abzug gegen `(1 − TER/52)^52` über 52 Wochen,
+`fondskosten=False` reproduziert exakt den Wert ohne Kosten, Instrumente ohne
+TER (Einzelaktien, 4GLD, BTC) bleiben unberührt, und ein teurer Fonds wird
+stärker belastet als ein günstiger. Die TER-Tests nutzen bewusst
+**thesaurierende** ETFs (EXXY/IBCI), damit die Jahresausschüttung den Endwert
+nicht überlagert; bestehende handgerechnete Tests mit ETFs setzen
+`fondskosten=False`.
 `tests/test_learnings.py` fährt jede Learning-Regel gegen
 konstruierte Views mit bekannten Zahlen und prüft, dass die Aussagen den
 Daten folgen statt fest zu sein (inkl. Gegenprobe mit umgedrehter

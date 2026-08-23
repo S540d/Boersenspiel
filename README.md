@@ -79,6 +79,10 @@ All 24 tracked instruments, and which strategy actually holds each one:
 
 `engine.simulate()` only ever reads `strategy.alle_ticker_gewichte()` — an
 instrument only moves the numbers of the strategies that actually list it.
+`XEON` carries a second, allocation-independent role: as the EUR
+money-market series it supplies the risk-free rate for the Sharpe and Sortino
+ratios of *every* strategy, derived over each one's own evaluation window
+([#75](https://github.com/S540d/Boersenspiel/issues/75)).
 All Xetra-listed instruments above are quoted in EUR directly, so they need
 no FX conversion and sidestep the currency problem described further below;
 only the 10 single-stock satellite tickers (all but `S92`) trade in USD and
@@ -194,18 +198,24 @@ Three properties that are easy to miss:
 **Cutting across all strategies and scenarios** are mechanisms that the
 engine always applies identically to every run:
 
-| Mechanism | Effect |
-|---|---|
-| Rebalancing | Restores target weights once the threshold is exceeded |
-| Year-end tax optimization | Realizes losses or gains at the year boundary |
-| Order fees | €1 per buy and sell |
-| Taxation | Loss carryforward → tax-free allowance → 26.375% |
+| Mechanism | `Optimierungen` flag | Effect |
+|---|---|---|
+| Rebalancing | `rebalancing` | Restores target weights once the threshold is exceeded |
+| Year-end tax optimization | `steueroptimierung` | Realizes losses or gains at the year boundary |
+| Order fees | `ordergebuehren` | €1 per buy and sell |
+| Taxation | `besteuerung` | Loss carryforward → tax-free allowance → 26.375% |
+| Ongoing fund costs (TER) | `fondskosten` | `Instrument.ter` ÷ 52 deducted from the holding each week |
 
-These mechanisms are currently **not toggleable**. The dashboard comparison
-therefore only answers "which weighting rule performed better?", not "how
-much did the tax optimization actually contribute?". A proposal to make them
-individually toggleable, and thus measure their contribution as a difference,
-is tracked as [#17](https://github.com/S540d/Boersenspiel/issues/17).
+Each mechanism is **individually toggleable** via the `Optimierungen` flags
+([#17](https://github.com/S540d/Boersenspiel/issues/17); `fondskosten` added
+in [#76](https://github.com/S540d/Boersenspiel/issues/76)), and every detail
+page reports each one's isolated contribution as a leave-one-out difference
+in CAGR percentage points ("Effekt der Optimierungs-Schalter"). The dashboard
+comparison therefore answers not only "which weighting rule performed
+better?" but also "how much did the tax optimization actually contribute?".
+A strategy may set its own defaults — `BUY_AND_HOLD` uses
+`Optimierungen(rebalancing=False)` rather than an artificially unreachable
+rebalancing threshold.
 
 **Guiding principle:** Only raw data (prices) is persisted long-term. Everything derived (position values,
 rebalancing, tax, tax-free allowance, loss carryforward) is recomputed
@@ -223,7 +233,7 @@ strategy always yields the identical result.
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
 | `src/boersenspiel/engine.py` | Pure simulation function: (price history, strategy) → portfolio/tax state |
-| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back or full history), backed by four fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)) |
+| `src/boersenspiel/dashboard.py` | Renders simulation results as `docs/index.html`, one `docs/<slug>.html` detail page per strategy, and `docs/praemissen.html` (premises and assumptions). Every value-history chart on the start and detail pages also gets a client-side observation-period switcher (1/3/5 years back or full history), backed by four fully re-simulated presets per strategy computed at build time ([#54](https://github.com/S540d/Boersenspiel/issues/54)). The overview table's lead column re-simulates every strategy over a **common comparison period** and reports each one's excess return over the benchmark ([#73](https://github.com/S540d/Boersenspiel/issues/73)) |
 | `src/boersenspiel/templates/` | Jinja templates: `base.html.j2` (shared shell incl. the three-dot menu), `dashboard.html.j2`, `strategy_detail.html.j2`, `praemissen.html.j2` |
 | `src/boersenspiel/learnings.py` | Re-derives the key-learnings text on every build from the simulation results (no stored insights) |
 | `scripts/run_fetch.py` | Automated weekly price fetch (GitHub Actions) |
