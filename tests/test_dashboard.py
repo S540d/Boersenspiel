@@ -21,11 +21,13 @@ from boersenspiel.dashboard import (
     _BTC_TICKER,
     _build_strategy_view,
     _cagr_pct,
+    _ERSATZBOND_TICKER,
     _gemeinsamer_beginn,
     _downside_deviation,
     _f,
     _GELDMARKT_TICKER,
     _jahre_zurueck,
+    _mit_ersatzbond,
     _VERGLEICH_MIN_WOCHEN,
     _vergleichs_kennzahlen,
     _max_drawdown_pct,
@@ -579,6 +581,122 @@ def test_build_dashboard_zeigt_zeitraum_abschnitt_auf_detailseite(tmp_path: Path
 
     assert "Kennzahlen nach Betrachtungszeitraum" in detail_html
     assert 'id="detail-zeitraum-switch"' in detail_html
+
+
+# --- #80: laengerer Zeitraum per Ersatzbond-Annahme --------------------------
+
+_ZWEI_TICKER_STRATEGIE = Strategy(
+    name="C: Ersatzbond-Test",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(
+            name="Topf",
+            gewicht_gesamt=Decimal("1"),
+            sub_gewichte={"T1": Decimal("0.5"), "T2": Decimal("0.5")},
+        )
+    ],
+    ziel_topf="Topf",
+    ziel_gewicht=Decimal("1"),
+    rebalancing_schwelle_pp=Decimal("1000"),
+)
+
+
+def _rows_mit_spaeterem_instrument() -> list[PriceRow]:
+    """T1 und der Ersatzbond sind von Anfang an handelbar, T2 kommt erst in
+    Woche 3 hinzu - simuliert eine Boersenaufnahme mitten in der Historie."""
+    start = date(2020, 1, 6)
+    rows = []
+    for i in range(6):
+        prices = {"T1": Decimal("100"), _ERSATZBOND_TICKER: Decimal("50")}
+        if i >= 3:
+            prices["T2"] = Decimal("100")
+        rows.append(PriceRow(start + timedelta(weeks=i), prices))
+    return rows
+
+
+def test_mit_ersatzbond_leitet_das_gewicht_des_noch_nicht_handelbaren_tickers_auf_ihn_um():
+    erweitert = _mit_ersatzbond(_ZWEI_TICKER_STRATEGIE)
+    rows = _rows_mit_spaeterem_instrument()
+
+    # Vor Verfuegbarkeit von T2: dessen 50% wandern auf den Ersatzbond statt
+    # (wie handelbare_gewichte() es sonst taete) proportional auf T1 - T1
+    # bleibt bei seinem eigenen Zielgewicht.
+    gewichte_frueh = erweitert.gewichte_fn(rows, 0)
+    assert gewichte_frueh["T1"] == Decimal("0.5")
+    assert gewichte_frueh["T2"] == Decimal("0")
+    assert gewichte_frueh[_ERSATZBOND_TICKER] == Decimal("0.5")
+
+    # Sobald T2 handelbar ist, gelten wieder die normalen Zielgewichte, der
+    # Ersatzbond bekommt kein zusaetzliches Gewicht mehr.
+    gewichte_spaet = erweitert.gewichte_fn(rows, 3)
+    assert gewichte_spaet["T1"] == Decimal("0.5")
+    assert gewichte_spaet["T2"] == Decimal("0.5")
+    assert gewichte_spaet.get(_ERSATZBOND_TICKER, Decimal("0")) == Decimal("0")
+
+
+def test_mit_ersatzbond_haelt_das_depot_voll_investiert_ueber_die_ganze_reihe():
+    erweitert = _mit_ersatzbond(_ZWEI_TICKER_STRATEGIE)
+    rows = _rows_mit_spaeterem_instrument()
+    result = simulate(rows, erweitert)
+    # Kein Geld verschwindet und keins bleibt unverzinst liegen (siehe
+    # engine.py "Werterhaltung beim Rebalancing") - der Depotwert bleibt in
+    # jeder Zeile positiv und plausibel nah am Startkapital.
+    for vp in result.value_history:
+        assert vp.total_value > 0
+
+
+def test_mit_ersatzbond_ergaenzt_topf_nur_wenn_ersatzticker_noch_nicht_teil_der_strategie_ist():
+    # _ZWEI_TICKER_STRATEGIE kennt den Ersatzticker noch nicht -> ein
+    # zusaetzlicher Topf mit Gesamtgewicht 0 wird ergaenzt.
+    erweitert = _mit_ersatzbond(_ZWEI_TICKER_STRATEGIE)
+    assert _ERSATZBOND_TICKER in erweitert.alle_ticker_gewichte()
+    assert len(erweitert.toepfe) == len(_ZWEI_TICKER_STRATEGIE.toepfe) + 1
+
+    # Ist der Ersatzticker bereits Teil der Strategie, wird kein Topf ergaenzt
+    # (sonst gaebe es den Ticker zweimal, was topf_von() nicht vorsieht).
+    strategie_mit_ersatzticker = Strategy(
+        name="D: hat Ersatzbond schon",
+        startkapital=Decimal("1000"),
+        toepfe=[
+            Topf(
+                name="Topf",
+                gewicht_gesamt=Decimal("1"),
+                sub_gewichte={"T1": Decimal("0.5"), _ERSATZBOND_TICKER: Decimal("0.5")},
+            )
+        ],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+    erweitert2 = _mit_ersatzbond(strategie_mit_ersatzticker)
+    assert len(erweitert2.toepfe) == len(strategie_mit_ersatzticker.toepfe)
+
+
+def test_zeitraum_presets_bietet_erweiterten_zeitraum_nur_bei_tatsaechlichem_gewinn_an():
+    rows = _rows_mit_spaeterem_instrument()
+    eigene_rows = rows[3:]  # das, was _real_investierbarer_zeitraum() liefern wuerde
+
+    mit_gewinn = _zeitraum_presets(eigene_rows, _ZWEI_TICKER_STRATEGIE, erweiterte_rows=rows)
+    assert "erweitert" in [p["id"] for p in mit_gewinn]
+
+    # Ohne tatsaechlichen Gewinn an Historie (identischer Beginn) wird der
+    # Preset nicht angeboten - sonst waere er nur eine redundante Kopie von
+    # "Gesamte Historie".
+    ohne_gewinn = _zeitraum_presets(rows, _ZWEI_TICKER_STRATEGIE, erweiterte_rows=rows)
+    assert "erweitert" not in [p["id"] for p in ohne_gewinn]
+
+    # Ohne erweiterte_rows (Standardfall) entfaellt der Preset ebenfalls.
+    ohne_param = _zeitraum_presets(eigene_rows, _ZWEI_TICKER_STRATEGIE)
+    assert "erweitert" not in [p["id"] for p in ohne_param]
+
+
+def test_build_dashboard_zeigt_erweiterten_zeitraum_auf_detailseite_bei_lueckenhafter_historie(
+    tmp_path: Path,
+):
+    build_dashboard(_rows_mit_spaeterem_instrument(), [_ZWEI_TICKER_STRATEGIE], output_path=tmp_path / "index.html")
+    detail_html = _detail_html(tmp_path, "c-ersatzbond-test")
+    assert "Erweitert (Ersatzbond-Annahme)" in detail_html
+    assert _ERSATZBOND_TICKER in detail_html
     assert 'id="zeitraum-chart"' in detail_html
     for preset_id in ("1j", "3j", "5j", "alle"):
         assert f'data-preset="{preset_id}"' in detail_html
@@ -1220,3 +1338,52 @@ def test_spaltenzahl_passt_zum_tabellenkopf_mit_vergleichszeitraum(tmp_path: Pat
     assert zeilen
     for zeile in zeilen:
         assert len(re.findall(r"<td", zeile)) == kopf
+
+
+# --- #79: Portfolio-Uebersicht (Ticker + Name) auf der Startseite ------------
+
+
+def test_startseite_listet_alle_instrumente_mit_kuerzel_und_namen(tmp_path: Path):
+    from boersenspiel.instruments import INSTRUMENTS
+
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    # Alle TICKERS erscheinen, nicht nur die von ZWEI_STRATEGIEN allokierten
+    # ("T1") - die Liste soll unabhaengig von der Allokation zeigen, was
+    # ueberhaupt woechentlich abgerufen wird (#79).
+    assert len(TICKERS) > 1
+    for ticker in TICKERS:
+        assert f">{ticker}<" in html
+        assert INSTRUMENTS[ticker].name in html
+
+
+# --- #81: Info-Tooltips an den Kennzahl-Spalten der Uebersichtstabelle -------
+
+
+def test_uebersichtstabelle_hat_info_tooltips_an_den_kennzahl_spalten(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    tabelle = (
+        output.read_text(encoding="utf-8")
+        .split('<table class="summary-table">')[1]
+        .split("</table>")[0]
+    )
+    # Ein Tooltip je Kennzahl-Spalte im Tabellenkopf, mit erklaerendem Text -
+    # kein leeres Icon ohne Erklaerung.
+    assert tabelle.count('class="info-tip"') >= 7
+    assert "annualisierte" in tabelle.lower()
+
+
+# --- #82: Korrelationsgrafik Rendite (CAGR) gegen Risiko (Max Drawdown) -----
+
+
+def test_startseite_zeigt_korrelationsgrafik_rendite_gegen_drawdown(tmp_path: Path):
+    output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    html = output.read_text(encoding="utf-8")
+
+    assert '<canvas id="correlation-chart"></canvas>' in html
+    assert "correlation-chart" in html
+    # Beide Strategien-Namen stehen als Punktbeschriftung im Streudiagramm.
+    assert "A: Verdoppler" in html
+    assert "B: Verlierer" in html
+    assert "type: 'scatter'" in html

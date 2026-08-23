@@ -37,6 +37,20 @@
       Jeder Zeitraum ist eine eigenständige Neu-Simulation mit frischem
       Startkapital (kein fortgeführtes Depot) - analog zum Walk-Forward-
       Abschnitt unten, nur mit festen statt gleich großen Perioden (#54).
+      {% if 'erweitert' in (s.zeitraum_presets | map(attribute='id') | list) %}
+      Der Zeitraum <strong>„Erweitert (Ersatzbond-Annahme)"</strong> (#80) läuft
+      über die volle verfügbare Kurshistorie statt nur ab dem Zeitpunkt, ab dem
+      alle Zielinstrumente dieser Strategie handelbar waren: solange ein
+      Zielinstrument noch nicht existierte, gilt sein Kapitalanteil als in
+      <strong>IBCL</strong> (Euro-Staatsanleihen 15&ndash;30 Jahre) angelegt
+      &ndash; demselben Anleihe-ETF für ALLE Strategien und Szenarien, statt
+      je nach Strategie unterschiedlicher Ersatzinstrumente. Das vermeidet
+      die Überkonzentration früh existierender Instrumente (v. a. Bitcoin),
+      die sonst entstünde (siehe Prämissen, „Rückschaufehler mit Hebel"),
+      zeigt aber einen längeren Zeitraum auf Kosten einer zusätzlichen
+      Annahme: real hätte eine 2026 zusammengestellte Strategie 2006 noch gar
+      nicht existiert.
+      {% endif %}
     </p>
     <div class="zeitraum-switch" id="detail-zeitraum-switch">
       {% for p in s.zeitraum_presets %}

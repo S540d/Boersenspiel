@@ -33,6 +33,7 @@ from .strategies import (
     VORABPAUSCHALE_BASISZINS_PLATZHALTER,
     VORABPAUSCHALE_FAKTOR,
     Strategy,
+    Topf,
 )
 
 # Status-Werte in fetch_log.csv, bei denen der Kurs NICHT frisch abgerufen wurde
@@ -102,6 +103,75 @@ def _real_investierbarer_zeitraum(rows: list[PriceRow], strategy: Strategy) -> l
         if ziel_ticker <= set(row.prices):
             return rows[i:]
     return rows
+
+
+# --- #80: laengerer Betrachtungszeitraum per Ersatzbond-Annahme --------------
+#
+# _real_investierbarer_zeitraum() (F4/#63) schneidet die Historie auf den
+# Zeitpunkt zurecht, ab dem ALLE Zielinstrumente einer Strategie handelbar
+# sind - das vermeidet die Ueberkonzentration frueh existierender Instrumente
+# (v.a. Bitcoin), kostet aber Jahre an Historie: die dreitoepfige
+# Barbell-Strategie startet dadurch z.B. erst 2021 statt am Beginn der
+# Kurshistorie (2006). Issue #80 bittet ausdruecklich um einen laengeren
+# Zeitraum, mit der Annahme, dass das Kapital eines noch nicht handelbaren
+# Zielinstruments bis zu dessen Verfuegbarkeit in einem einzigen, fuer ALLE
+# Strategien/Szenarien GLEICHEN Anleihe-ETF angelegt war - "nicht
+# unterschiedliche Bonds" war eine explizite Vorgabe im Issue.
+#
+# IBCL (Euro-Staatsanleihen 15-30 Jahre) ist die Wahl: eine echte Anleihe (im
+# Gegensatz zum Geldmarkt-ETF XEON, der als Cash-Aequivalent fuer den
+# risikofreien Zins dient, siehe _GELDMARKT_TICKER) mit der laengsten
+# verfuegbaren Historie unter den Anleihen-ETFs (ab 2007-05-18, siehe
+# instruments.py) - deckt damit fast die gesamte Kurshistorie ab 2006-09 ab.
+#
+# Umsetzung ueber Strategy.gewichte_fn statt eines Engine-Eingriffs (dieselbe
+# Erweiterungsstelle wie scenarios.py): die Ziel-Gewichte jedes noch nicht
+# handelbaren Instruments wandern in dieser Zeile auf IBCL um, statt wie in
+# handelbare_gewichte() anteilig auf die UEBRIGEN Zielinstrumente verteilt zu
+# werden (genau das war die in F4 beschriebene Ueberkonzentration). IBCL muss
+# dafuer Teil von Strategy.alle_ticker_gewichte() sein, sonst wuerde
+# engine.simulate() das umgeleitete Gewicht stillschweigend verwerfen (siehe
+# engine.rebalance_to_targets(): iteriert nur ueber die beim Start fixierten
+# `tickers`) - ist IBCL noch nicht Teil der Strategie, ergaenzt ein
+# zusaetzlicher Topf mit Gesamtgewicht 0 es, ohne die eigentlichen
+# Topf-Zielgewichte zu veraendern.
+_ERSATZBOND_TICKER = "IBCL"
+
+
+def _mit_ersatzbond(strategy: Strategy) -> Strategy:
+    """Erweitert ``strategy`` um die Ersatzbond-Annahme aus #80 (siehe oben)."""
+    basis_gewichte = strategy.alle_ticker_gewichte()
+    hat_ersatzbond_schon = _ERSATZBOND_TICKER in basis_gewichte
+    toepfe = strategy.toepfe
+    if not hat_ersatzbond_schon:
+        toepfe = [
+            *toepfe,
+            Topf(
+                name="Ersatzbond (vor Verfügbarkeit, #80)",
+                gewicht_gesamt=Decimal(0),
+                sub_gewichte={_ERSATZBOND_TICKER: Decimal(1)},
+            ),
+        ]
+    urspruengliche_gewichte_fn = strategy.gewichte_fn
+
+    def gewichte_fn(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+        gewichte = dict(
+            urspruengliche_gewichte_fn(rows, i) if urspruengliche_gewichte_fn is not None else basis_gewichte
+        )
+        prices = rows[i].prices
+        ersatz_anteil = Decimal(0)
+        for ticker in list(gewichte):
+            if ticker == _ERSATZBOND_TICKER:
+                continue
+            gewicht = gewichte[ticker]
+            if gewicht > 0 and ticker not in prices:
+                ersatz_anteil += gewicht
+                gewichte[ticker] = Decimal(0)
+        if ersatz_anteil > 0:
+            gewichte[_ERSATZBOND_TICKER] = gewichte.get(_ERSATZBOND_TICKER, Decimal(0)) + ersatz_anteil
+        return gewichte
+
+    return replace(strategy, toepfe=toepfe, gewichte_fn=gewichte_fn)
 
 # Wochen-Naeherung der klassischen 50-/200-Tage-Durchschnitte (5 Handelstage/Woche),
 # fuer die wochenweise gefuehrte Kurshistorie - derselbe Ansatz wie beim Szenario
@@ -372,7 +442,35 @@ def _jahre_zurueck(stichtag: date, jahre: int) -> date:
         return stichtag.replace(year=stichtag.year - jahre, day=28)
 
 
-def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
+def _preset_eintrag(preset_id: str, label: str, preset_rows: list[PriceRow], strategy: Strategy) -> dict:
+    result = simulate(preset_rows, strategy)
+    # Risikofreier Zins aus dem Geldmarkt-ETF ueber genau DIESEN Preset-Zeitraum
+    # (#75) - ein 1-Jahres-Preset im Hochzinsumfeld hat einen anderen Referenzzins
+    # als die volle Historie.
+    zins_pct = _risikofreier_zins_pct(preset_rows)
+    total_values = [_f(vp.total_value) for vp in result.value_history]
+    labels = [vp.date.isoformat() for vp in result.value_history]
+    rendite_pct = _rendite_pct(result, strategy)
+    return {
+        "id": preset_id,
+        "label": label,
+        "rendite_pct": _f(rendite_pct),
+        "rendite_label": f"{rendite_pct:+.2f}",
+        "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
+        "max_drawdown_label": f"{-_max_drawdown_pct(total_values):.2f}",
+        "sharpe_label": f"{_sharpe_ratio(total_values, zins_pct):.2f}",
+        "sortino_label": f"{_sortino_ratio(total_values, zins_pct):.2f}",
+        "risikofreier_zins_label": f"{zins_pct:.2f}".replace(".", ","),
+        "labels": labels,
+        "total_values": total_values,
+        "chart_max": max(total_values) if total_values else 0.0,
+        "benchmarks": _benchmark_reihen(preset_rows, strategy),
+    }
+
+
+def _zeitraum_presets(
+    rows: list[PriceRow], strategy: Strategy, erweiterte_rows: list[PriceRow] | None = None
+) -> list[dict]:
     letztes_datum = rows[-1].date
     presets = []
     for preset_id, jahre in _ZEITRAUM_PRESETS:
@@ -383,30 +481,16 @@ def _zeitraum_presets(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
             preset_rows = [r for r in rows if r.date >= cutoff]
         if len(preset_rows) < 1:
             continue
-        result = simulate(preset_rows, strategy)
-        # Risikofreier Zins aus dem Geldmarkt-ETF ueber genau DIESEN Preset-Zeitraum
-        # (#75) - ein 1-Jahres-Preset im Hochzinsumfeld hat einen anderen Referenzzins
-        # als die volle Historie.
-        zins_pct = _risikofreier_zins_pct(preset_rows)
-        total_values = [_f(vp.total_value) for vp in result.value_history]
-        labels = [vp.date.isoformat() for vp in result.value_history]
-        rendite_pct = _rendite_pct(result, strategy)
+        presets.append(_preset_eintrag(preset_id, _ZEITRAUM_PRESET_LABELS[preset_id], preset_rows, strategy))
+    # #80: zusaetzlicher Preset ueber die volle (nicht auf "alle Zielinstrumente
+    # handelbar" zurechtgeschnittene) Historie, mit der Ersatzbond-Annahme statt
+    # der Look-ahead-Vermeidung aus F4/#63 - nur anbieten, wenn dadurch
+    # tatsaechlich mehr Historie zur Verfuegung steht, sonst waere er identisch
+    # mit "Gesamte Historie" und nur verwirrende Redundanz.
+    if erweiterte_rows is not None and erweiterte_rows and erweiterte_rows[0].date < rows[0].date:
+        erweiterte_strategie = _mit_ersatzbond(strategy)
         presets.append(
-            {
-                "id": preset_id,
-                "label": _ZEITRAUM_PRESET_LABELS[preset_id],
-                "rendite_pct": _f(rendite_pct),
-                "rendite_label": f"{rendite_pct:+.2f}",
-                "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
-                "max_drawdown_label": f"{-_max_drawdown_pct(total_values):.2f}",
-                "sharpe_label": f"{_sharpe_ratio(total_values, zins_pct):.2f}",
-                "sortino_label": f"{_sortino_ratio(total_values, zins_pct):.2f}",
-                "risikofreier_zins_label": f"{zins_pct:.2f}".replace(".", ","),
-                "labels": labels,
-                "total_values": total_values,
-                "chart_max": max(total_values) if total_values else 0.0,
-                "benchmarks": _benchmark_reihen(preset_rows, strategy),
-            }
+            _preset_eintrag("erweitert", "Erweitert (Ersatzbond-Annahme)", erweiterte_rows, erweiterte_strategie)
         )
     return presets
 
@@ -632,6 +716,7 @@ def _build_strategy_view(
     result: SimulationResult,
     rows: list[PriceRow],
     carry_forward: dict[str, int] | None = None,
+    erweiterte_rows: list[PriceRow] | None = None,
 ) -> dict:
     points = result.value_history
     labels = [vp.date.isoformat() for vp in points]
@@ -709,7 +794,7 @@ def _build_strategy_view(
         if walk_forward_segmente
         else 0.0
     )
-    zeitraum_presets = _zeitraum_presets(rows, strategy)
+    zeitraum_presets = _zeitraum_presets(rows, strategy, erweiterte_rows)
     benchmarks = _benchmark_reihen(rows, strategy)
 
     # Leave-one-out: Einzeleffekt jeder Teilregel als Differenz zur Variante ohne sie,
@@ -994,7 +1079,13 @@ def build_dashboard(
     strategie_rows = {s.name: _real_investierbarer_zeitraum(rows_ohne_btc_fruehphase, s) for s in strategies}
 
     views = [
-        _build_strategy_view(s, simulate(strategie_rows[s.name], s), strategie_rows[s.name], carry_forward)
+        _build_strategy_view(
+            s,
+            simulate(strategie_rows[s.name], s),
+            strategie_rows[s.name],
+            carry_forward,
+            erweiterte_rows=rows_ohne_btc_fruehphase,
+        )
         for s in strategies
     ]
     # Gemeinsamer Vergleichszeitraum (#73): jede Strategie zusaetzlich ab dem
@@ -1115,6 +1206,16 @@ def build_dashboard(
         # eingetragen, damit die Zahl auf jeder Seite automatisch mit einem
         # künftigen Instrumente-/Strategiewechsel mitzieht.
         instrumente_anzahl=len(_allokierte_ticker(strategies)),
+        # #79: alle abgerufenen Instrumente (Ticker + ausgeschriebener Name) auf
+        # der Startseite, generisch aus instruments.TICKERS/INSTRUMENTS abgeleitet
+        # statt hinterlegt - zieht bei einer künftigen Instrumentenänderung
+        # automatisch mit, statt wie die README-Tabelle von Hand nachgezogen zu
+        # werden. Bewusst ALLE Ticker (nicht nur die allokierten, #66): die
+        # Frage "was wird da wöchentlich abgerufen?" ist unabhängig davon, ob
+        # ein Instrument aktuell in einer Strategie steckt.
+        portfolio_instrumente=[
+            {"ticker": t, "name": INSTRUMENTS[t].name} for t in TICKERS
+        ],
         benchmark_optionen=[{"id": k, "label": v} for k, v in benchmark_optionen.items()],
         **vergleich_kontext,
     )

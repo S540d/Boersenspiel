@@ -708,6 +708,78 @@ inkrementell fortgeschrieben).
   Fließtext schreiben, was nicht aus `views` belegt ist, und die
   Deutsch-Formatierung über `_zahl()/_pp()/_pct()/_eur()` laufen lassen (ein
   `.replace(".", ",")` auf dem ganzen Satz erwischt sonst den Satzpunkt).
+  **Drei kleinere Startseiten-Ergänzungen (#79/#81/#82), alle rein in der
+  Darstellungsschicht, keine neue Simulation:**
+  - `common_context["portfolio_instrumente"]` (#79) listet ALLE
+    `instruments.TICKERS` (nicht nur die allokierten, anders als
+    `instrumente_anzahl`/#66) mit Ticker und ausgeschriebenem Namen in einer
+    Tabelle im Abschnitt „Das Portfolio" der Startseite — beantwortet direkt
+    "was wird da eigentlich wöchentlich abgerufen?", unabhängig davon, ob ein
+    Instrument aktuell in einer Strategie/einem Szenario steckt.
+  - Info-Tooltips (#81): jede Kennzahl-Spaltenüberschrift der
+    Übersichtstabelle (CAGR, Überrendite, Volatilität, Max Drawdown, Sharpe,
+    Sortino, Gesamtrendite, Eigener Zeitraum) bekommt ein `<span
+    class="info-tip" title="...">i</span>` mit Erklärungstext — natives
+    `title`-Attribut statt JS-Tooltip (kein zusätzliches Skript, per
+    Tastatur/Screenreader über `tabindex="0"` erreichbar). Die Tooltip-Texte
+    dürfen das Wort "Vergleichszeitraum" nicht enthalten, wenn sie außerhalb
+    des `{% if vergleich_verfuegbar %}`-Blocks stehen — ein Test prüft, dass
+    ohne gemeinsamen Vergleichszeitraum dieses Wort in der gesamten Tabelle
+    nirgends vorkommt (`test_ohne_gemeinsamen_zeitraum_...`), ein zu
+    ausführlicher Tooltip-Text an einer immer gerenderten Spalte hätte das
+    sonst unbeabsichtigt verletzt.
+  - Korrelationsgrafik (#82): ein Chart.js-Scatter-Chart
+    (`#correlation-chart`) direkt unter dem CAGR-Balkendiagramm, x-Achse
+    CAGR % p.a., y-Achse Max Drawdown % (negativ dargestellt, wie in der
+    Tabelle) — je Strategie/Szenario ein Punkt, aus denselben `summary`-Werten
+    wie die Übersichtstabelle (Vergleichszeitraum-Werte, falls verfügbar,
+    sonst der jeweils eigene Zeitraum). Macht den Rendite-Risiko-Tausch, den
+    die Tabelle nur spaltenweise zeigt, auf einen Blick sichtbar.
+  **Längerer Betrachtungszeitraum per Ersatzbond-Annahme (#80), zusätzlicher
+  Preset statt Ersatz der bestehenden Zeiträume:** `_real_investierbarer_
+  zeitraum()` (F4/#63) schneidet die Historie je Strategie auf den Zeitpunkt
+  zurecht, ab dem ALLE Zielinstrumente handelbar sind — das kostet z. B. bei
+  der dreitöpfigen Barbell-Strategie rund 15 Jahre Historie (Start erst 2021
+  statt 2006). Issue #80 bittet ausdrücklich um einen längeren Zeitraum, mit
+  der Annahme, dass das Kapital eines noch nicht handelbaren Zielinstruments
+  bis zu dessen Verfügbarkeit in einem einzigen, für ALLE Strategien/Szenarien
+  GLEICHEN Anleihe-ETF angelegt war ("nicht unterschiedliche Bonds", explizite
+  Vorgabe im Issue). `_ERSATZBOND_TICKER = "IBCL"` (Euro-Staatsanleihen
+  15–30 Jahre, Historie ab 2007-05-18, die längste unter den Anleihen-ETFs) ist
+  die Wahl — bewusst eine echte Anleihe, nicht `_GELDMARKT_TICKER` (XEON), das
+  als Cash-Äquivalent für den risikofreien Zins (#75) dient.
+  `_mit_ersatzbond(strategy)` erweitert eine Strategie um diese Annahme über
+  `Strategy.gewichte_fn` (dieselbe Erweiterungsstelle wie `scenarios.py`, kein
+  Engine-Eingriff): das Ziel-Gewicht jedes in der aktuellen Zeile noch nicht
+  handelbaren Instruments wandert auf `_ERSATZBOND_TICKER`, statt wie in
+  `handelbare_gewichte()` anteilig auf die ÜBRIGEN Zielinstrumente verteilt zu
+  werden — genau das war die in F4 beschriebene Überkonzentration (v. a.
+  Bitcoin in der Frühphase). Der Ersatzticker muss dafür Teil von
+  `Strategy.alle_ticker_gewichte()` sein, sonst würde `engine.
+  rebalance_to_targets()` das umgeleitete Gewicht stillschweigend verwerfen
+  (iteriert nur über die beim Start fixierten `tickers`, siehe die
+  "Werterhaltung beim Rebalancing"-Erklärung zu `engine.py` oben) — ist der
+  Ersatzticker noch nicht Teil der Strategie, ergänzt `_mit_ersatzbond()` einen
+  zusätzlichen Topf mit `gewicht_gesamt=0`, ohne die eigentlichen
+  Topf-Zielgewichte zu verändern; ist er es schon (z. B. würde er es bei
+  künftigen Strategien sein), wird kein Topf ergänzt (sonst gäbe es den
+  Ticker doppelt, was `Strategy.topf_von()` nicht vorsieht).
+  `_zeitraum_presets()` bekommt dafür einen optionalen dritten Parameter
+  `erweiterte_rows` (in `build_dashboard()`: `rows_ohne_btc_fruehphase`, also
+  die volle, nur um die BTC-Frühphase bereinigte Historie, gemeinsam für alle
+  Strategien) und hängt bei tatsächlichem Gewinn an Historie
+  (`erweiterte_rows[0].date < rows[0].date`) einen fünften Preset
+  `"erweitert"` ("Erweitert (Ersatzbond-Annahme)") an — simuliert mit
+  `_mit_ersatzbond(strategy)` über `erweiterte_rows`. Bewusst NUR bei
+  tatsächlichem Gewinn angeboten (z. B. nicht bei `SP500_BENCHMARK`, dessen
+  einziges Instrument `IUSA` fast die gesamte Historie abdeckt) — sonst wäre
+  der Preset nur eine redundante Kopie von "Gesamte Historie". Weil der neue
+  Preset über den generischen `s.zeitraum_presets`-Loop in
+  `dashboard.html.j2`/`strategy_detail.html.j2` gerendert wird, war dafür
+  KEINE Template-Änderung nötig — nur ein zusätzlicher Hinweistext auf der
+  Detailseite, der erklärt, was die Annahme bedeutet. Ändert nichts an der
+  primären "Eigener Zeitraum"/"Vergleichszeitraum"-Darstellung (#73/#78) oder
+  an bestehenden Tests — rein additiv.
 
 ### Kursquelle wechseln
 
