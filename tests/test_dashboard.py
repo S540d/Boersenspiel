@@ -8,6 +8,7 @@ kommt aus ``engine.simulate()``).
 
 from __future__ import annotations
 
+import re
 from datetime import date, timedelta
 from decimal import Decimal
 from pathlib import Path
@@ -22,10 +23,11 @@ from boersenspiel.dashboard import (
     _cagr_pct,
     _gemeinsamer_beginn,
     _downside_deviation,
+    _f,
     _GELDMARKT_TICKER,
     _jahre_zurueck,
     _VERGLEICH_MIN_WOCHEN,
-    _vergleichs_cagr_pct,
+    _vergleichs_kennzahlen,
     _max_drawdown_pct,
     _ohne_btc_fruehphase,
     _real_investierbarer_zeitraum,
@@ -977,7 +979,7 @@ def test_gemeinsamer_beginn_ist_das_spaeteste_startdatum():
     assert _gemeinsamer_beginn({"A": []}) is None
 
 
-def test_vergleichs_cagr_nutzt_nur_den_zeitraum_ab_dem_gemeinsamen_beginn():
+def test_vergleichs_kennzahlen_nutzen_nur_den_zeitraum_ab_dem_gemeinsamen_beginn():
     # Erst 52 Wochen flach, danach 52 Wochen steigend. Die CAGR ueber die volle
     # Historie muss deutlich unter der CAGR ab dem Anstieg liegen - sonst wuerde
     # der Ausschnitt gar nicht wirken.
@@ -990,17 +992,17 @@ def test_vergleichs_cagr_nutzt_nur_den_zeitraum_ab_dem_gemeinsamen_beginn():
         float(simulate(rows, strategy).value_history[-1].total_value / strategy.startkapital - 1) * 100,
         (rows[-1].date - rows[0].date).days,
     )
-    ausschnitt = _vergleichs_cagr_pct(strategy, rows, date(2021, 1, 4))
+    ausschnitt = _vergleichs_kennzahlen(strategy, rows, date(2021, 1, 4))
 
     assert ausschnitt is not None
-    assert ausschnitt > voll + 10
+    assert ausschnitt["cagr_pct"] > voll + 10
 
 
-def test_vergleichs_cagr_entfaellt_bei_zu_kurzem_gemeinsamem_zeitraum():
+def test_vergleichs_kennzahlen_entfallen_bei_zu_kurzem_gemeinsamem_zeitraum():
     rows = _lange_reihe(date(2020, 1, 6), _VERGLEICH_MIN_WOCHEN + 5, 1.01, "T1")
     zu_kurz = rows[-(_VERGLEICH_MIN_WOCHEN - 1)].date
-    assert _vergleichs_cagr_pct(ZWEI_STRATEGIEN[0], rows, zu_kurz) is None
-    assert _vergleichs_cagr_pct(ZWEI_STRATEGIEN[0], rows, rows[0].date) is not None
+    assert _vergleichs_kennzahlen(ZWEI_STRATEGIEN[0], rows, zu_kurz) is None
+    assert _vergleichs_kennzahlen(ZWEI_STRATEGIEN[0], rows, rows[0].date) is not None
 
 
 def test_uebersichtstabelle_zeigt_vergleichszeitraum_und_ueberrendite(tmp_path: Path):
@@ -1039,7 +1041,7 @@ def test_uebersichtstabelle_zeigt_vergleichszeitraum_und_ueberrendite(tmp_path: 
     # Der gemeinsame Beginn ist der spaetere der beiden Simulationsbeginne.
     gemeinsam = rows[40].date.isoformat()
     assert gemeinsam in html
-    assert "im Vergleichszeitraum" in html
+    assert "Vergleichszeitraum" in html
     # Beide eigenen Zeitraeume stehen als eigene Spalte in der Tabelle.
     assert rows[0].date.isoformat() in html
     assert rows[-1].date.isoformat() in html
@@ -1053,7 +1055,7 @@ def test_ohne_benchmark_strategie_entfaellt_die_ueberrendite_spalte(tmp_path: Pa
     build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     html = (tmp_path / "index.html").read_text(encoding="utf-8")
 
-    assert "im Vergleichszeitraum" in html
+    assert "Vergleichszeitraum" in html
     assert "Überrendite pp p.a." not in html
 
 
@@ -1117,3 +1119,104 @@ def test_praemissen_seite_weist_den_zins_je_strategie_aus(tmp_path: Path):
 
     assert "Risikofreier Zins" in html
     assert _GELDMARKT_TICKER in html
+
+
+def test_uebersicht_zeigt_risikokennzahlen_aus_dem_gemeinsamen_zeitraum(tmp_path: Path):
+    """#78: Der Kern des Befunds - eine Strategie mit langer eigener Historie
+    schleppt Krisen mit, die die uebrigen nie durchlaufen haben. Hier stuerzt
+    "Lang" frueh um 60% ab, lange bevor "Spaet" ueberhaupt existiert. Ihr Max
+    Drawdown ueber den eigenen Zeitraum ist deshalb dramatisch, ueber den
+    gemeinsamen dagegen klein - die Uebersicht muss den kleinen zeigen."""
+    lang = ZWEI_STRATEGIEN[0]
+    spaet = Strategy(
+        name="Spaet",
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T2": Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+
+    rows = []
+    start = date(2020, 1, 6)
+    for i in range(120):
+        # T1 bricht in Woche 10 um 60% ein und erholt sich danach stetig; in
+        # Woche 80 (also NACH dem gemeinsamen Beginn) gibt es einen kleinen
+        # Ruecksetzer, damit der Vergleichs-Drawdown nicht exakt 0 ist.
+        if i == 10:
+            t1 = Decimal("40")
+        elif i == 80:
+            t1 = (Decimal("100") + Decimal(i)) * Decimal("0.95")
+        else:
+            t1 = Decimal("100") + Decimal(i)
+        preise = {"T1": t1}
+        if i >= 60:
+            preise["T2"] = Decimal("100") + Decimal(i)
+        rows.append(PriceRow(start + timedelta(weeks=i), preise))
+
+    beginn = rows[60].date
+    eigen = _max_drawdown_pct(
+        [_f(vp.total_value) for vp in simulate(rows, lang).value_history]
+    )
+    gemeinsam = _vergleichs_kennzahlen(lang, rows, beginn)
+
+    assert gemeinsam is not None
+    # Der Crash liegt vor dem gemeinsamen Beginn - er darf dort nicht mehr auftauchen.
+    assert eigen > 50.0
+    assert 0.0 < gemeinsam["max_drawdown_pct"] < 10.0
+
+    build_dashboard(rows, [lang, spaet], output_path=tmp_path / "index.html")
+    tabelle = (
+        (tmp_path / "index.html")
+        .read_text(encoding="utf-8")
+        .split('<table class="summary-table">')[1]
+        .split("</table>")[0]
+    )
+
+    # In der Uebersicht steht der kleine (vergleichbare) Drawdown, nicht der grosse.
+    assert f"{-gemeinsam['max_drawdown_pct']:.2f}" in tabelle
+    assert f"{-eigen:.2f}" not in tabelle
+
+    # Die Kennzahlen des eigenen Zeitraums bleiben auf der Detailseite erhalten.
+    detail = _detail_html(tmp_path, _slug(lang.name))
+    assert "Kennzahlen nach Betrachtungszeitraum" in detail
+    assert f"{-eigen:.2f}" in detail
+
+
+def test_ohne_gemeinsamen_zeitraum_bleibt_die_uebersicht_bei_den_eigenen_werten(tmp_path: Path):
+    """Faellt der Vergleichszeitraum weg (zu kurz), darf die Tabelle keine leeren
+    Risikospalten zeigen - dann gelten durchgehend die Werte des eigenen
+    Zeitraums, und die Spaltenzahl muss weiterhin zum Kopf passen."""
+    rows = _lange_reihe(date(2020, 1, 6), _VERGLEICH_MIN_WOCHEN - 2, 1.005, "T1")
+    build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    tabelle = (
+        (tmp_path / "index.html")
+        .read_text(encoding="utf-8")
+        .split('<table class="summary-table">')[1]
+        .split("</table>")[0]
+    )
+
+    assert "Vergleichszeitraum" not in tabelle
+    kopf = len(re.findall(r"<th>", tabelle))
+    zeilen = re.findall(r"<tr>\s*<td>.*?</tr>", tabelle, re.S)
+    assert zeilen
+    for zeile in zeilen:
+        assert len(re.findall(r"<td", zeile)) == kopf
+
+
+def test_spaltenzahl_passt_zum_tabellenkopf_mit_vergleichszeitraum(tmp_path: Path):
+    rows = _lange_reihe(date(2020, 1, 6), 80, 1.005, "T1")
+    build_dashboard(rows, ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    tabelle = (
+        (tmp_path / "index.html")
+        .read_text(encoding="utf-8")
+        .split('<table class="summary-table">')[1]
+        .split("</table>")[0]
+    )
+
+    assert "Vergleichszeitraum" in tabelle
+    kopf = len(re.findall(r"<th>", tabelle))
+    zeilen = re.findall(r"<tr>\s*<td>.*?</tr>", tabelle, re.S)
+    assert zeilen
+    for zeile in zeilen:
+        assert len(re.findall(r"<td", zeile)) == kopf

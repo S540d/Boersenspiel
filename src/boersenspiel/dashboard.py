@@ -505,7 +505,7 @@ def _cagr_pct(rendite_pct: float, tage: int) -> float:
     return (faktor ** (1 / jahre) - 1) * 100
 
 
-# --- Gemeinsamer Vergleichszeitraum (#73) -----------------------------------------
+# --- Gemeinsamer Vergleichszeitraum (#73, Risikokennzahlen #78) --------------------
 #
 # _real_investierbarer_zeitraum() (F4, #63) schneidet die Historie JE STRATEGIE auf
 # den Zeitraum zu, ab dem deren komplettes Instrumentenset handelbar war. Das ist fuer
@@ -526,6 +526,31 @@ def _cagr_pct(rendite_pct: float, tage: int) -> float:
 # gemeinsamen Startdatum aller angezeigten Strategien - frisch, mit eigenem
 # Startkapital, exakt nach demselben Muster wie _walk_forward_segmente() und
 # _zeitraum_presets(). Die Uebersichtstabelle sortiert danach.
+#
+# #78: Das gilt seither fuer RENDITE UND RISIKO. Zunaechst waren nur die
+# Renditespalten umgestellt, Volatilitaet/Max-Drawdown/Sharpe/Sortino blieben auf
+# dem jeweils eigenen Zeitraum und wurden nur mit ausgewiesenem Zeitraum je Zeile
+# gekennzeichnet. Das reichte nicht: der Effekt konzentriert sich fast vollstaendig
+# auf die Benchmark-Zeile (alle uebrigen Strategien liegen ohnehin fast ganz im
+# gemeinsamen Fenster), und dort war er gross genug, um die Aussage der Tabelle zu
+# drehen - der Max Drawdown des S&P-500-Benchmarks stand bei -51,95% (enthaelt die
+# Finanzkrise 2008) gegenueber rund -30% der Barbell-Strategien, auf gleicher Basis
+# sind es -21,21%. Der Index sah damit als einziger sowohl renditeschwaecher als
+# auch mit Abstand riskanter aus, war auf vergleichbarer Basis aber der mit dem
+# GERINGSTEN Drawdown im Feld: aus scheinbarer Dominanz der Barbell-Strategien auf
+# beiden Achsen wird ein echter Rendite-Risiko-Tausch - genau die Abwaegung, um die
+# es bei einer Barbell-Strategie ueberhaupt geht. Auch ein Sharpe-Paarvergleich
+# kippte (0,76 gegen 0,64 wurde zu 0,66 gegen 0,66), weil fuer die beiden Zeitraeume
+# unterschiedliche risikofreie Zinsen gelten (0,76% ueber 20 Jahre, 2,05% ueber 5,
+# siehe #75). Ein je Zeile ausgewiesener Zeitraum macht das nachvollziehbar, aber
+# nicht aufloesbar - aus "2006-2026" laesst sich nicht ableiten, wie gross der
+# Drawdown ohne 2008 gewesen waere.
+#
+# Die Uebersichtstabelle zeigt deshalb AUSSCHLIESSLICH Vergleichszeitraum-Werte
+# (Owner-Entscheidung zu #78). Die Kennzahlen ueber den jeweils eigenen Zeitraum
+# einer Strategie gehen dadurch nicht verloren: sie stehen weiterhin auf deren
+# Detailseite im Abschnitt "Kennzahlen nach Betrachtungszeitraum" (#54), dessen
+# Preset "Gesamte Historie" genau die volle eigene Historie abbildet.
 
 # Unter dieser Laenge ist ein gemeinsamer Zeitraum keine belastbare Aussage mehr -
 # dann entfaellt die Spalte, statt eine aus wenigen Wochen annualisierte Zahl zu
@@ -540,16 +565,37 @@ def _gemeinsamer_beginn(strategie_rows: dict[str, list[PriceRow]]) -> date | Non
     return max(beginne) if beginne else None
 
 
-def _vergleichs_cagr_pct(
+def _vergleichs_kennzahlen(
     strategy: Strategy, rows: list[PriceRow], beginn: date
-) -> float | None:
-    """CAGR dieser Strategie, frisch simuliert ab ``beginn``. ``None``, wenn der
-    verbleibende Zeitraum zu kurz fuer eine belastbare Annualisierung ist."""
+) -> dict | None:
+    """ALLE Kennzahlen dieser Strategie, frisch simuliert ab ``beginn`` - Rendite
+    UND Risiko. ``None``, wenn der verbleibende Zeitraum zu kurz fuer eine
+    belastbare Annualisierung ist.
+
+    Lieferte bis #78 nur die CAGR und verwarf die Wertreihe des Vergleichslaufs,
+    obwohl die Risikokennzahlen daraus ohne weitere Simulation ableitbar sind. Das
+    war nicht bloss ungenutztes Potenzial, sondern liess die Uebersichtstabelle
+    Rendite und Risiko aus zwei VERSCHIEDENEN Zeitraeumen nebeneinanderstellen -
+    siehe den Kommentar an ``_VERGLEICH_MIN_WOCHEN`` oben und #78.
+
+    Der risikofreie Zins fuer Sharpe/Sortino kommt aus genau diesem Ausschnitt
+    (#75), nicht aus dem eigenen Zeitraum der Strategie - sonst waere die
+    Ueberrendite gegen einen Zins gemessen, der in diesem Fenster gar nicht galt.
+    """
     ausschnitt = [r for r in rows if r.date >= beginn]
     if len(ausschnitt) < _VERGLEICH_MIN_WOCHEN:
         return None
     result = simulate(ausschnitt, strategy)
-    return _cagr_pct(_f(_rendite_pct(result, strategy)), _tage_zwischen(result))
+    total_values = [_f(vp.total_value) for vp in result.value_history]
+    zins_pct = _risikofreier_zins_pct(ausschnitt)
+    return {
+        "cagr_pct": _cagr_pct(_f(_rendite_pct(result, strategy)), _tage_zwischen(result)),
+        "volatilitaet_pct": _volatilitaet_pct(total_values),
+        "max_drawdown_pct": _max_drawdown_pct(total_values),
+        "sharpe_ratio": _sharpe_ratio(total_values, zins_pct),
+        "sortino_ratio": _sortino_ratio(total_values, zins_pct),
+        "risikofreier_zins_pct": zins_pct,
+    }
 
 
 def _optimierungs_effekte(
@@ -956,10 +1002,10 @@ def build_dashboard(
     # Uebersichtstabelle Gleiches mit Gleichem vergleicht. Siehe _gemeinsamer_beginn().
     beginn = _gemeinsamer_beginn(strategie_rows)
     benchmark_namen = {b.name for b in BENCHMARK_STRATEGIEN}
-    vergleich_cagr: dict[str, float | None] = {}
+    vergleich: dict[str, dict | None] = {}
     if beginn is not None:
         for s in strategies:
-            vergleich_cagr[s.name] = _vergleichs_cagr_pct(s, strategie_rows[s.name], beginn)
+            vergleich[s.name] = _vergleichs_kennzahlen(s, strategie_rows[s.name], beginn)
     # Referenzlinie fuer die Ueberrendite: die erste Benchmark-Strategie, die im
     # gemeinsamen Zeitraum ueberhaupt eine Zahl liefert. Steht keine zur Verfuegung
     # (kein Benchmark unter den angezeigten Strategien), entfaellt die Spalte still,
@@ -967,15 +1013,37 @@ def build_dashboard(
     benchmark_cagr: float | None = None
     benchmark_label: str | None = None
     for s in strategies:
-        if s.name in benchmark_namen and vergleich_cagr.get(s.name) is not None:
-            benchmark_cagr = vergleich_cagr[s.name]
+        kennzahlen = vergleich.get(s.name)
+        if s.name in benchmark_namen and kennzahlen is not None:
+            benchmark_cagr = kennzahlen["cagr_pct"]
             benchmark_label = s.name
             break
 
     for view in views:
-        wert = vergleich_cagr.get(view["name"])
+        k = vergleich.get(view["name"])
+        wert = k["cagr_pct"] if k is not None else None
         view["vergleich_cagr_pct"] = wert
         view["vergleich_cagr_label"] = f"{wert:+.2f}" if wert is not None else "–"
+        # #78: Auch die Risikokennzahlen der UEBERSICHT stammen aus dem gemeinsamen
+        # Zeitraum - aber bewusst unter EIGENEN Feldnamen. Die gleichnamigen Felder
+        # ohne Praefix beschreiben weiterhin den eigenen Zeitraum der Strategie und
+        # werden anderswo gebraucht: die Detailseite nutzt sie als Startwerte der
+        # Kacheln im Abschnitt "Kennzahlen nach Betrachtungszeitraum" (#54, Preset
+        # "Gesamte Historie"), die Praemissen-Seite den risikofreien Zins der
+        # eigenen Simulation. Sie hier zu ueberschreiben wuerde beide verfaelschen.
+        view["vergleich_volatilitaet_label"] = (
+            f"{k['volatilitaet_pct']:.2f}" if k is not None else None
+        )
+        view["vergleich_max_drawdown_pct"] = k["max_drawdown_pct"] if k is not None else None
+        view["vergleich_max_drawdown_label"] = (
+            (f"{-k['max_drawdown_pct']:.2f}" if k["max_drawdown_pct"] else "0.00")
+            if k is not None
+            else None
+        )
+        view["vergleich_sharpe_ratio"] = k["sharpe_ratio"] if k is not None else None
+        view["vergleich_sharpe_label"] = f"{k['sharpe_ratio']:.2f}" if k is not None else None
+        view["vergleich_sortino_ratio"] = k["sortino_ratio"] if k is not None else None
+        view["vergleich_sortino_label"] = f"{k['sortino_ratio']:.2f}" if k is not None else None
         if wert is None or benchmark_cagr is None or view["name"] in benchmark_namen:
             view["alpha_pp"] = None
             view["alpha_pp_label"] = "–"
@@ -983,7 +1051,15 @@ def build_dashboard(
             view["alpha_pp"] = wert - benchmark_cagr
             view["alpha_pp_label"] = f"{wert - benchmark_cagr:+.2f}"
 
+    # Der risikofreie Zins des Vergleichszeitraums gilt fuer ALLE Zeilen gleich (es
+    # ist derselbe Zeitraum) - deshalb einmal im Seitenkontext statt je View.
+    vergleich_zins = next(
+        (k["risikofreier_zins_pct"] for k in vergleich.values() if k is not None), None
+    )
     vergleich_kontext = {
+        "vergleich_zins_label": (
+            f"{vergleich_zins:.2f}".replace(".", ",") if vergleich_zins is not None else None
+        ),
         "vergleich_beginn": beginn.isoformat() if beginn is not None else None,
         "vergleich_ende": rows[-1].date.isoformat(),
         "vergleich_benchmark": benchmark_label,

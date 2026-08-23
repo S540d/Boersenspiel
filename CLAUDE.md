@@ -661,10 +661,31 @@ inkrementell fortgeschrieben).
   `build_dashboard()` legt daraus `vergleich_cagr_*` und `alpha_pp_*` (gegen
   die erste verfügbare Strategie aus `BENCHMARK_STRATEGIEN`) in jede View und
   sortiert die Übersicht danach. Unter `_VERGLEICH_MIN_WOCHEN` entfällt die
-  Spalte still, statt aus wenigen Wochen zu annualisieren. **Wichtig:** Die
-  Risikospalten (Volatilität/Max-Drawdown/Sharpe/Sortino) beziehen sich
-  weiterhin auf den jeweils eigenen Zeitraum — die Tabelle weist ihn deshalb
-  je Zeile mit aus.
+  Spalte still, statt aus wenigen Wochen zu annualisieren.
+  **Risikokennzahlen ebenfalls aus dem Vergleichszeitraum (#78):** Zunächst
+  galt das nur für die Rendite, Volatilität/Max-Drawdown/Sharpe/Sortino blieben
+  auf dem eigenen Zeitraum und wurden nur je Zeile gekennzeichnet — das
+  reichte nicht. Der Effekt trifft praktisch nur die Benchmark-Zeile (alle
+  übrigen Strategien liegen ohnehin fast ganz im gemeinsamen Fenster), war
+  dort aber groß genug, die Aussage der Tabelle zu drehen: Max Drawdown des
+  S&P-500-Benchmarks −51,95% über die eigene Historie (enthält 2008) gegen
+  −21,21% über den gemeinsamen Zeitraum, womit der Index vom scheinbar
+  riskantesten zu einem der risikoärmsten wird — aus vermeintlicher Dominanz
+  der Barbell-Strategien auf beiden Achsen wird ein echter
+  Rendite-Risiko-Tausch. Ein Sharpe-Paarvergleich kippte ebenfalls (0,76 gegen
+  0,64 wurde zu 0,66 gegen 0,66), weil für die beiden Zeiträume
+  unterschiedliche risikofreie Zinsen gelten (#75). `_vergleichs_cagr_pct()`
+  heißt deshalb jetzt `_vergleichs_kennzahlen()` und liefert das komplette
+  Bündel (CAGR/Vola/MaxDD/Sharpe/Sortino plus den Zins des Ausschnitts) statt
+  nur die CAGR — die Wertreihe des Vergleichslaufs lag ohnehin vor und wurde
+  bis dahin verworfen. **Beim Ändern beachten:** die Werte landen unter
+  eigenen `vergleich_*`-Feldnamen in der View. Die gleichnamigen Felder ohne
+  Präfix beschreiben weiter den eigenen Zeitraum und werden anderswo gebraucht
+  (Detailseite: Startwerte der Kacheln in „Kennzahlen nach
+  Betrachtungszeitraum"; Prämissen-Seite: risikofreier Zins der eigenen
+  Simulation) — sie zu überschreiben verfälscht beide. Die Übersichtstabelle
+  zeigt ausschließlich Vergleichszeitraum-Werte (Owner-Entscheidung), die
+  Eigen-Zeitraum-Kennzahlen bleiben vollständig auf der Detailseite.
   **Risikofreier Zins (#75):** `_risikofreier_zins_pct(rows)` leitet ihn aus
   dem EUR-Geldmarkt-ETF `_GELDMARKT_TICKER` (`XEON`, durchgehende Historie
   seit 2007) über exakt den ausgewerteten Zeitraum ab, statt ihn zu
