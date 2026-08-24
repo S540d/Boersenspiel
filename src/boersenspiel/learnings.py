@@ -71,9 +71,73 @@ def _eur_en(wert: float) -> str:
     return f"€{wert:,.0f}"
 
 
+def _gleiche_kurshistorie(views: list[dict]) -> bool:
+    """Deckt jede Strategie tatsächlich denselben Zeitraum ab?
+
+    Strategien mit unterschiedlichen Zielinstrumenten werden je auf den
+    Zeitpunkt zurechtgeschnitten, ab dem ALLE ihre Instrumente handelbar sind
+    (F4/#63, ``dashboard._real_investierbarer_zeitraum()``) - der
+    S&P-500-Benchmark läuft dadurch z. B. seit ~2006, eine dreitöpfige
+    Barbell-Strategie erst seit ~2021. ``rendite_pct``/``cagr_pct`` sind dann
+    NICHT über dieselbe Kurshistorie berechnet, auch wenn beide aus derselben
+    ``price_history.csv`` stammen.
+    """
+    beginne = {v.get("sim_beginn") for v in views}
+    enden = {v.get("sim_ende") for v in views}
+    return len(beginne) == 1 and None not in beginne and len(enden) == 1 and None not in enden
+
+
 def _spannweite(views: list[dict]) -> Learning | None:
-    """Wie viel hängt überhaupt an der Regel - bei identischer Kurshistorie?"""
+    """Wie viel hängt überhaupt an der Regel - im vergleichbaren Zeitraum?"""
     if len(views) < 2:
+        return None
+
+    # Bevorzugt: annualisierte Rendite (CAGR) im gemeinsamen Vergleichszeitraum
+    # (#73/#78, dashboard._vergleichs_kennzahlen()) - vergleicht Gleiches mit
+    # Gleichem, auch wenn die Strategien unterschiedlich lange eigene
+    # Simulationszeiträume haben.
+    vergleichbar = [v for v in views if v.get("vergleich_cagr_pct") is not None]
+    if len(vergleichbar) >= 2:
+        rangliste = sorted(vergleichbar, key=lambda v: v["vergleich_cagr_pct"], reverse=True)
+        bester, schlechtester = rangliste[0], rangliste[-1]
+        spread = bester["vergleich_cagr_pct"] - schlechtester["vergleich_cagr_pct"]
+        return Learning(
+            titel_de="Die Regel entscheidet, nicht der Markt",
+            titel_en="The rule decides, not the market",
+            kernaussage_de=(
+                f"{_pp(spread)} CAGR-Unterschied zwischen bester und schlechtester Regel - "
+                f"im selben, gemeinsamen Vergleichszeitraum."
+            ),
+            kernaussage_en=(
+                f"{_pp_en(spread)} CAGR difference between the best and worst rule - "
+                f"over the same shared comparison period."
+            ),
+            detail_de=(
+                f"„{bester['name']}\" kommt auf {_pp(bester['vergleich_cagr_pct'])} p. a., "
+                f"„{schlechtester['name']}\" auf {_pp(schlechtester['vergleich_cagr_pct'])} p. a. "
+                f"Beide Werte sind auf den gleichen, gemeinsamen Vergleichszeitraum "
+                f"zurückgerechnet (siehe Vergleichsseite) - die eigenen Simulationszeiträume "
+                f"der Strategien unterscheiden sich sonst, weil jede erst dort startet, wo "
+                f"alle ihre Zielinstrumente tatsächlich handelbar waren. Der verbleibende "
+                f"Unterschied entsteht daraus, wann umgeschichtet wird, nicht aus "
+                f"unterschiedlich langen Kurshistorien."
+            ),
+            detail_en=(
+                f"\"{bester['name']}\" reaches {_pp_en(bester['vergleich_cagr_pct'])} p.a., "
+                f"\"{schlechtester['name']}\" reaches {_pp_en(schlechtester['vergleich_cagr_pct'])} p.a. "
+                f"Both figures are recomputed over the same shared comparison period (see the "
+                f"comparison page) - the strategies' own simulation periods otherwise differ, "
+                f"since each one only starts once all of its target instruments were actually "
+                f"tradeable. The remaining difference comes from when the portfolio gets "
+                f"reshuffled, not from differently long price histories."
+            ),
+        )
+
+    # Fallback: nur zulässig, wenn alle übergebenen Läufe wirklich denselben
+    # Zeitraum abdecken (z. B. Test-Fixtures oder zu kurze Historien ohne
+    # gemeinsamen Vergleichszeitraum) - sonst würde die Aussage "bei exakt
+    # derselben Kurshistorie" nicht aus den Daten folgen.
+    if not _gleiche_kurshistorie(views):
         return None
     rangliste = _nach_rendite(views)
     bester, schlechtester = rangliste[0], rangliste[-1]

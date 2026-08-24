@@ -43,6 +43,9 @@ def _view(
     trade_count: int = 10,
     steuer: float = 0.0,
     beitraege: list[dict] | None = None,
+    sim_beginn: str = "2024-01-01",
+    sim_ende: str = "2024-01-08",
+    vergleich_cagr_pct: float | None = None,
 ) -> dict:
     return {
         "name": name,
@@ -51,6 +54,14 @@ def _view(
         "steuer_num": steuer,
         "startkapital_num": 10000.0,
         "beitraege": beitraege or [],
+        # Default: alle Fixtures teilen denselben Zeitraum, damit bestehende
+        # Tests weiterhin die "identische Kurshistorie"-Aussage abdecken
+        # (siehe _gleiche_kurshistorie() in learnings.py). Ein abweichender
+        # Wert simuliert unterschiedlich lange Simulationszeiträume je
+        # Strategie (F4/#63).
+        "sim_beginn": sim_beginn,
+        "sim_ende": sim_ende,
+        "vergleich_cagr_pct": vergleich_cagr_pct,
     }
 
 
@@ -66,6 +77,48 @@ def test_spannweite_nennt_beste_und_schlechteste_regel():
     assert "+70,00 pp" in learning.kernaussage_de
     assert "Gut" in learning.detail_de and "+50,00 %" in learning.detail_de
     assert "Schlecht" in learning.detail_de and "-20,00 %" in learning.detail_de
+
+
+def test_spannweite_faellt_bei_unterschiedlichen_zeitraeumen_ohne_vergleichszeitraum_weg():
+    """Regressionstest: unterschiedlich lange Simulationszeiträume (F4/#63, z. B.
+    S&P-500-Benchmark seit ~2006 vs. eine Barbell-Strategie seit ~2021) dürfen die
+    Aussage "bei exakt derselben Kurshistorie" nicht erfinden, wenn kein
+    gemeinsamer Vergleichszeitraum (#73) vorliegt."""
+    views = [
+        _view("Benchmark", 706.40, sim_beginn="2006-01-06", sim_ende="2026-08-14"),
+        _view("Barbell", 70.96, sim_beginn="2021-11-19", sim_ende="2026-08-14"),
+    ]
+    assert "Die Regel entscheidet, nicht der Markt" not in _titel(derive_learnings(views))
+
+
+def test_spannweite_nutzt_vergleichs_cagr_bei_unterschiedlichen_zeitraeumen():
+    """Sobald ein gemeinsamer Vergleichszeitraum (#73) verfügbar ist, vergleicht die
+    Regel annualisierte CAGR-Werte über diesen gemeinsamen Zeitraum statt der
+    Gesamtrendite über je eigene, unterschiedlich lange Zeiträume."""
+    views = [
+        _view(
+            "Benchmark",
+            706.40,
+            sim_beginn="2006-01-06",
+            sim_ende="2026-08-14",
+            vergleich_cagr_pct=8.0,
+        ),
+        _view(
+            "Barbell",
+            70.96,
+            sim_beginn="2021-11-19",
+            sim_ende="2026-08-14",
+            vergleich_cagr_pct=15.0,
+        ),
+    ]
+    learning = next(l for l in derive_learnings(views) if l.titel_de == "Die Regel entscheidet, nicht der Markt")
+
+    # Spread 15.0 - 8.0 = 7 pp CAGR, nicht 706.40 - 70.96 Gesamtrendite-pp.
+    assert "+7,00 pp" in learning.kernaussage_de
+    assert "CAGR" in learning.kernaussage_de
+    assert "Barbell" in learning.detail_de and "+15,00 pp" in learning.detail_de
+    assert "Benchmark" in learning.detail_de and "+8,00 pp" in learning.detail_de
+    assert "706,40" not in learning.detail_de and "70,96" not in learning.detail_de
 
 
 def test_aktivitaet_nennt_platzierung_der_handelsintensivsten_regel():
