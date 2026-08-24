@@ -5897,3 +5897,6 @@ Date,Ticker,Status,Source,Note
 2021-11-07,RIVN,missing,alphavantage-backfill,Kein aktueller und kein historischer Kurs verfuegbar
 2021-11-14,RIVN,missing,alphavantage-backfill,Kein aktueller und kein historischer Kurs verfuegbar
 2026-08-21,EXXY,carried_forward,alphavantage,"Rate-Limit der Quelle erreicht, letzter bekannter Kurs uebernommen"
+2026-08-21,IBCI,carried_forward,alphavantage,"Rate-Limit der Quelle erreicht, letzter bekannter Kurs uebernommen"
+2026-08-21,IQQ6,carried_forward,alphavantage,"Rate-Limit der Quelle erreicht, letzter bekannter Kurs uebernommen"
+2026-08-21,EXXY,carried_forward,alphavantage,"Rate-Limit der Quelle erreicht, letzter bekannter Kurs uebernommen"
