@@ -538,6 +538,34 @@ def _zeitraum_presets(
     return presets
 
 
+def _zeitraum_presets_optionen(views: list[dict]) -> list[dict]:
+    """#95: Button-Liste fuer den EINEN zentralen Zeitraum-Schalter auf der
+    Startseite, der alle Wertverlauf-Charts (Einzelstrategien UND den
+    Boersenweisheiten-Gruppen-Chart) gleichzeitig umschaltet - vorher hatte
+    jede Strategie/jedes Szenario ihren/seinen eigenen Schalter. Angeboten
+    wird nur ein Preset, das WIRKLICH JEDE angezeigte Strategie auch hat
+    (sonst gaebe es einen Klick, fuer den einzelne Charts keinen Datensatz
+    haben). "erweitert" (#80) bleibt bewusst aussen vor - das ist weiterhin
+    der separate Schalter im Drei-Punkt-Menue (#91), der Chart-Daten direkt
+    ueber ``entry.presets['erweitert']`` austauscht, ohne ueber diese
+    Buttons gerendert zu werden."""
+    if not views:
+        return []
+    gemeinsame_ids = {p["id"] for p in views[0]["zeitraum_presets"]}
+    for view in views[1:]:
+        gemeinsame_ids &= {p["id"] for p in view["zeitraum_presets"]}
+    gemeinsame_ids.discard("erweitert")
+    return [
+        {
+            "id": preset_id,
+            "label": _ZEITRAUM_PRESET_LABELS[preset_id],
+            "label_en": _ZEITRAUM_PRESET_LABELS_EN[preset_id],
+        }
+        for preset_id, _jahre in _ZEITRAUM_PRESETS
+        if preset_id in gemeinsame_ids
+    ]
+
+
 # --- Eingefrorene Kurse (#42) ------------------------------------------------------
 
 
@@ -591,6 +619,42 @@ def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list
         eltern_view = views_by_id[_slug(eltern_name)]
         mitglieder = [eltern_view] + kinder
         alle_werte = [wert for m in mitglieder for wert in m["total_values"]]
+
+        # #95: der zentrale Zeitraum-Schalter der Startseite steuert seither auch
+        # diesen Gruppen-Chart - je Preset-Id ein fertiger Datensatz mit einer Reihe
+        # je Mitglied (Kombi zuerst, dann die Unterszenarien in Dataset-Reihenfolge),
+        # generisch analog zu den Einzelstrategie-Chart-Presets unten. Nur Preset-Ids,
+        # die JEDES Mitglied hat, werden aufgenommen - alle Mitglieder teilen
+        # dieselbe Kurshistorie/dasselbe Instrumentenset, i.d.R. also identisch, die
+        # Absicherung bleibt trotzdem generisch statt fest verdrahtet.
+        member_presets = [{p["id"]: p for p in m["zeitraum_presets"]} for m in mitglieder]
+        gemeinsame_preset_ids = set(member_presets[0].keys())
+        for pm in member_presets[1:]:
+            gemeinsame_preset_ids &= set(pm.keys())
+        presets_json: dict[str, dict] = {}
+        for preset_id in gemeinsame_preset_ids:
+            reihen = [pm[preset_id]["total_values"] for pm in member_presets]
+            werte = [wert for reihe in reihen for wert in reihe]
+            presets_json[preset_id] = {
+                "labels": member_presets[0][preset_id]["labels"],
+                "reihen": reihen,
+                "chart_max": max(werte) if werte else 0.0,
+                "benchmarks": member_presets[0][preset_id]["benchmarks"],
+            }
+        # #91: der separate Schalter fuer den verlaengerten Auswertezeitraum im
+        # Drei-Punkt-Menue nutzt eine andere Datenquelle (`view["erweitert"]`, aus
+        # _erweiterte_kennzahlen() - jede Strategie hat das, unabhaengig davon, ob
+        # sie ueber die Ersatzbond-Annahme einen eigenen "erweitert"-Preset hat)
+        # und wird deshalb, wie zuvor, gesondert unter demselben Schluessel
+        # "erweitert" abgelegt, damit ihn derselbe zentrale JS-Mechanismus greift.
+        if all(m.get("erweitert") for m in mitglieder):
+            presets_json["erweitert"] = {
+                "labels": mitglieder[0]["erweitert"]["labels"],
+                "reihen": [m["erweitert"]["total_values"] for m in mitglieder],
+                "chart_max": max(max(m["erweitert"]["total_values"]) for m in mitglieder),
+                "benchmarks": eltern_view["erweitert"]["benchmarks"],
+            }
+
         gruppen.append(
             {
                 "name": eltern_name,
@@ -602,21 +666,7 @@ def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list
                 # Strategie passen ohne Datumsabgleich, weil alle Mitglieder ueber
                 # dieselben `rows` simuliert werden (gleiches Instrumentenset).
                 "benchmarks_json": json.dumps(eltern_view["benchmarks"]),
-                # #91: dieselbe Grafik ueber den verlaengerten Auswertezeitraum,
-                # sofern jedes Mitglied dort eine Reihe hat (sonst haetten die
-                # Datensaetze unterschiedliche Laengen).
-                "erweitert_json": json.dumps(
-                    {
-                        "labels": mitglieder[0]["erweitert"]["labels"],
-                        "reihen": [m["erweitert"]["total_values"] for m in mitglieder],
-                        "chart_max": max(
-                            max(m["erweitert"]["total_values"]) for m in mitglieder
-                        ),
-                        "benchmarks": eltern_view["erweitert"]["benchmarks"],
-                    }
-                    if all(m.get("erweitert") for m in mitglieder)
-                    else None
-                ),
+                "presets_json": json.dumps(presets_json),
             }
         )
     return gruppen
@@ -1420,6 +1470,9 @@ def build_dashboard(
         summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
     learnings = derive_learnings(views)
     teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
+    # #95: EIN zentraler Zeitraum-Schalter fuer alle Wertverlauf-Charts der
+    # Startseite statt eines Schalters je Strategie/Szenario.
+    zeitraum_presets_optionen = _zeitraum_presets_optionen(views)
 
     # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
     # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
@@ -1485,6 +1538,7 @@ def build_dashboard(
         learnings=learnings,
         wert_chart_max=wert_chart_max,
         teilszenario_gruppen=teilszenario_gruppen,
+        zeitraum_presets_optionen=zeitraum_presets_optionen,
         **common_context,
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)

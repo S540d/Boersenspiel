@@ -726,8 +726,12 @@ def test_build_dashboard_zeigt_zeitraum_umschalter_auf_startseite(tmp_path: Path
     output = build_dashboard(_mehrjaehrige_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
     html = output.read_text(encoding="utf-8")
 
-    assert 'id="zeitraum-switch-1"' in html
-    assert "initZeitraumSwitch" in html
+    # #95: EIN zentraler Schalter statt eines Schalters je Strategie/Szenario.
+    assert 'id="zeitraum-switch"' in html
+    assert 'id="zeitraum-switch-1"' not in html
+    assert "zeitraumEntries" in html
+    for preset_id in ("1j", "3j", "5j", "alle"):
+        assert f'data-preset="{preset_id}"' in html
 
 
 # --- Praemissen-Seite -------------------------------------------------------------
@@ -1535,6 +1539,31 @@ def test_gruppen_chart_haengt_am_benchmark_schalter(tmp_path: Path, monkeypatch)
     assert "suggestedMax" not in gruppen_js.split("chartRefreshers", 1)[0]
     # Schalter steht ueber dem Gruppen-Abschnitt.
     assert html.index('id="benchmark-switch"') < html.index('id="gruppe-kombi"')
+
+
+def test_zentraler_zeitraum_schalter_steht_nahe_am_benchmark_schalter_und_erfasst_gruppen_chart(
+    tmp_path: Path, monkeypatch
+):
+    """#95: EIN Zeitraum-Schalter fuer die gesamte Startseite, in der Naehe des
+    Benchmark-Schalters, der auch den Boersenweisheiten-Gruppen-Chart erfasst
+    (vorher hing dort nur der separate Erweitert-Mechanismus)."""
+    monkeypatch.setattr(dashboard_module, "BENCHMARK_STRATEGIEN", [_benchmark_fixture(ticker="T1")])
+    output = build_dashboard(
+        _mehrjaehrige_rows(),
+        _strategien_mit_unterszenarien(),
+        output_path=tmp_path / "index.html",
+    )
+    html = output.read_text(encoding="utf-8")
+
+    assert 'id="zeitraum-switch"' in html
+    # Beide zentralen Schalter stehen direkt beieinander, vor dem Gruppen-Abschnitt.
+    zeitraum_pos = html.index('id="zeitraum-switch"')
+    benchmark_pos = html.index('id="benchmark-switch"')
+    gruppe_pos = html.index('id="gruppe-kombi"')
+    assert zeitraum_pos < benchmark_pos < gruppe_pos
+
+    gruppen_js = html.split("getElementById('gruppen-chart-1')", 1)[1].split("{% endfor %}", 1)[0]
+    assert "zeitraumEntries.push" in gruppen_js
 
 
 def test_startseite_verweist_fuers_kombinationsverfahren_auf_die_praemissen(tmp_path: Path):
