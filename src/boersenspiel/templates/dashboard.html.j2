@@ -69,6 +69,14 @@
     <div class="summary-chart-box"><canvas id="summary-chart"></canvas></div>
     <p class="detail-link"><a href="vergleich.html" data-i18n-en="All metrics compared &rarr;">Alle Kennzahlen im Vergleich &rarr;</a></p>
   </section>
+{% if zeitraum_presets_optionen %}
+  <div class="zeitraum-switch" id="zeitraum-switch">
+    <span data-i18n-en="Show a period in the value-history charts:">Zeitraum in den Wertverlauf-Charts anzeigen:</span>
+    {% for p in zeitraum_presets_optionen %}
+    <button type="button" data-preset="{{ p.id }}"{% if p.id == 'alle' %} class="active"{% endif %} data-i18n-en="{{ p.label_en }}">{{ p.label }}</button>
+    {% endfor %}
+  </div>
+{% endif %}
 {% if benchmark_optionen %}
   <div class="benchmark-switch" id="benchmark-switch">
     <span data-i18n-en="Show a benchmark in the value-history charts:">Benchmark in den Wertverlauf-Charts einblenden:</span>
@@ -98,14 +106,6 @@
   <section class="strategy" id="{{ s.id }}">
     <h2>{{ s.name }}</h2>
     {% if s.beschreibung %}<p class="hint" data-i18n-en="{{ s.beschreibung_en }}">{{ s.beschreibung }}</p>{% endif %}
-    {% if s.zeitraum_presets %}
-    <div class="zeitraum-switch" id="zeitraum-switch-{{ loop.index }}">
-      {% for p in s.zeitraum_presets %}
-      <button type="button" data-preset="{{ p.id }}"{% if p.id == 'alle' %} class="active"{% endif %} data-i18n-en="{{ p.label_en }}">{{ p.label }}</button>
-      {% endfor %}
-      <span class="zeitraum-rendite"></span>
-    </div>
-    {% endif %}
     <div class="chart-box-large"><canvas id="value-chart-{{ loop.index }}"></canvas></div>
     <p class="detail-link"><a href="{{ s.id }}.html" data-i18n-en="View details (metrics, bucket weighting, instruments) &rarr;">Details ansehen (Kennzahlen, Topf-Gewichtung, Instrumente) &rarr;</a></p>
   </section>
@@ -269,6 +269,53 @@
     });
   }
 
+  // Zentraler Zeitraum-Schalter (#95): EIN Schalter fuer ALLE Wertverlauf-Charts der
+  // Startseite (Einzelstrategien UND der Boersenweisheiten-Gruppen-Chart) statt eines
+  // Schalters je Strategie/Szenario - analog zum Benchmark-Schalter oben.
+  // `entry.presets` haelt je Preset-Id (1j/3j/5j/alle, siehe dashboard._zeitraum_presets())
+  // einen bereits beim Build fertig neu simulierten Datensatz; ein Klick tauscht hier nur
+  // aus, welcher davon angezeigt wird, ohne neu zu rechnen. "erweitert" ist bewusst KEIN
+  // Button dieses Schalters (dashboard._zeitraum_presets_optionen()) - das bleibt der
+  // separate Schalter im Drei-Punkt-Menue (#91), der bei aktivem verlaengertem
+  // Auswertezeitraum denselben Mechanismus ueber `entry.presets['erweitert']` ansteuert
+  // und damit vorrangig vor der hier gewaehlten Preset-Id ist.
+  let currentZeitraumId = 'alle';
+  let erweitertAktiv = false;
+  const zeitraumEntries = [];
+
+  function applyZeitraumDataset(entry) {
+    const id = (erweitertAktiv && entry.presets.erweitert) ? 'erweitert' : currentZeitraumId;
+    const preset = entry.presets[id] || entry.presets.alle;
+    if (!preset) return;
+    entry.chart.data.labels = preset.labels;
+    if (preset.reihen) {
+      preset.reihen.forEach((reihe, i) => { entry.chart.data.datasets[i].data = reihe; });
+    } else {
+      entry.chart.data.datasets[0].data = preset.total_values;
+    }
+    entry.chart.options.scales.y.max = (preset.chart_max || entry.defaultMax) * 1.05;
+    entry.chart.__benchmarks = preset.benchmarks || [];
+    applyBenchmarkDataset(entry.chart);
+  }
+
+  const zeitraumSwitchEl = document.getElementById('zeitraum-switch');
+  if (zeitraumSwitchEl) {
+    zeitraumSwitchEl.querySelectorAll('button').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        currentZeitraumId = btn.dataset.preset;
+        zeitraumSwitchEl.querySelectorAll('button').forEach((b) => b.classList.toggle('active', b === btn));
+        zeitraumEntries.forEach(applyZeitraumDataset);
+      });
+    });
+  }
+  // #91: derselbe Mechanismus reagiert auch auf den Schalter im Drei-Punkt-Menue -
+  // aktiviert er den verlaengerten Auswertezeitraum, gewinnt (wo vorhanden) dessen
+  // "erweitert"-Datensatz vor der aktuell gewaehlten Preset-Id (siehe applyZeitraumDataset).
+  window.__erweitertRefresh.push(function (erweitert) {
+    erweitertAktiv = erweitert;
+    zeitraumEntries.forEach(applyZeitraumDataset);
+  });
+
   const gruppenSeriesColors = [
     colors.series1, colors.series2, colors.series3,
     colors.series5, colors.series6, colors.series7,
@@ -306,27 +353,13 @@
     gruppenChart{{ loop.index }}.__baseDatasetCount = {{ gruppe.mitglieder|length }};
     gruppenChart{{ loop.index }}.__benchmarks = {{ gruppe.benchmarks_json | safe }};
     benchmarkCharts.push(gruppenChart{{ loop.index }});
-    // #91: dieser Chart hat keinen Zeitraum-Umschalter - der Schalter im
-    // Drei-Punkt-Menue tauscht deshalb Reihen, Skala und Benchmark direkt aus.
-    {
-      const eigen = {
-        labels: gruppenChart{{ loop.index }}.data.labels,
-        reihen: gruppenChart{{ loop.index }}.data.datasets.map((d) => d.data),
-        chart_max: {{ gruppe.chart_max }},
-        benchmarks: gruppenChart{{ loop.index }}.__benchmarks,
-      };
-      const erweitertDaten = {{ gruppe.erweitert_json | safe }};
-      if (erweitertDaten) {
-        window.__erweitertRefresh.push(function (erweitert) {
-          const q = erweitert ? erweitertDaten : eigen;
-          gruppenChart{{ loop.index }}.data.labels = q.labels;
-          q.reihen.forEach((reihe, i) => { gruppenChart{{ loop.index }}.data.datasets[i].data = reihe; });
-          gruppenChart{{ loop.index }}.options.scales.y.max = q.chart_max * 1.05;
-          gruppenChart{{ loop.index }}.__benchmarks = q.benchmarks;
-          applyBenchmarkDataset(gruppenChart{{ loop.index }});
-        });
-      }
-    }
+    // #95: haengt jetzt wie die Einzelstrategie-Charts unten am zentralen
+    // Zeitraum-Schalter (vorher: eigener, auf "erweitert" beschraenkter Mechanismus).
+    zeitraumEntries.push({
+      chart: gruppenChart{{ loop.index }},
+      presets: {{ gruppe.presets_json | safe }},
+      defaultMax: {{ gruppe.chart_max }},
+    });
     chartRefreshers.push(function () {
       gruppenChart{{ loop.index }}.options.plugins.title.text = T('Wertverlauf im Vergleich', 'Value history compared');
       gruppenChart{{ loop.index }}.update();
@@ -334,45 +367,6 @@
     chartRefreshers[chartRefreshers.length - 1]();
   }
   {% endfor %}
-
-  // Zeitraum-Presets (#54, Variante B): jeder Preset ist bereits fertig aus einer
-  // eigenen engine.simulate()-Neu-Simulation (frisches Startkapital, siehe
-  // dashboard._zeitraum_presets()) - der Umschalter hier wechselt nur, welcher
-  // bereits vorhandene Datensatz im Chart angezeigt wird, ohne neu zu rechnen.
-  function initZeitraumSwitch(chart, switchEl, presets, defaultMax) {
-    if (!switchEl) return;
-    const byId = Object.fromEntries(presets.map((p) => [p.id, p]));
-    const renditeEl = switchEl.querySelector('.zeitraum-rendite');
-    let currentPreset = null;
-    const setRenditeText = () => {
-      if (renditeEl && currentPreset) {
-        renditeEl.textContent = `${T('Rendite im Zeitraum', 'Return over the period')}: ${currentPreset.rendite_label}%`;
-      }
-    };
-    const apply = (id) => {
-      const preset = byId[id];
-      if (!preset) return;
-      currentPreset = preset;
-      chart.data.labels = preset.labels;
-      chart.data.datasets[0].data = preset.total_values;
-      chart.options.scales.y.max = (preset.chart_max || defaultMax) * 1.05;
-      chart.__benchmarks = preset.benchmarks || [];
-      applyBenchmarkDataset(chart);
-      setRenditeText();
-      switchEl.querySelectorAll('button').forEach((btn) => btn.classList.toggle('active', btn.dataset.preset === id));
-    };
-    switchEl.querySelectorAll('button').forEach((btn) => {
-      btn.addEventListener('click', () => apply(btn.dataset.preset));
-    });
-    apply('alle');
-    chartRefreshers.push(setRenditeText);
-    // #91: der Schalter im Drei-Punkt-Menue waehlt den bereits vorberechneten
-    // "Erweitert"-Preset (#80), wo es ihn gibt - Charts ohne zusaetzliche
-    // Historie bleiben auf "Gesamte Historie".
-    window.__erweitertRefresh.push(function (erweitert) {
-      apply(erweitert && byId['erweitert'] ? 'erweitert' : 'alle');
-    });
-  }
 
   {% for s in strategies %}
   {
@@ -416,8 +410,17 @@
       chart.update();
     });
     chartRefreshers[chartRefreshers.length - 1]();
-    initZeitraumSwitch(chart, document.getElementById('zeitraum-switch-{{ loop.index }}'), {{ s.zeitraum_presets_json | safe }}, strategieMax);
+    zeitraumEntries.push({
+      chart: chart,
+      presets: Object.fromEntries({{ s.zeitraum_presets_json | safe }}.map((p) => [p.id, p])),
+      defaultMax: strategieMax,
+    });
   }
   {% endfor %}
+
+  // Initialen Datensatz ('alle') auf allen registrierten Charts anwenden - deckt
+  // sich mit den bereits beim Erzeugen gesetzten Daten, haelt aber Skala/Benchmarks
+  // konsistent mit dem, was ein Klick auf "Gesamte Historie" liefern wuerde.
+  zeitraumEntries.forEach(applyZeitraumDataset);
 </script>
 {% endblock %}

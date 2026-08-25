@@ -621,11 +621,35 @@ inkrementell fortgeschrieben).
   `_jahre_zurueck()`, sowie "Gesamte Historie") jeweils VOLLSTÄNDIG NEU
   (frisches Startkapital, analog `_walk_forward_segmente()`) inklusive
   Rendite/Volatilität/Max-Drawdown/Sharpe/Sortino und eigenem
-  Wertverlauf-Chart. Auf der Startseite bekommt dafür jeder Wertverlauf-Chart
-  einen Zeitraum-Umschalter (reines Chart.js-Datenwechsel im Browser, `<script>`
-  `initZeitraumSwitch()`); auf der Detailseite ergänzt ein eigener Abschnitt
-  "Kennzahlen nach Betrachtungszeitraum" (eigener Chart + fünf Kennzahl-
-  Kacheln) denselben Umschalter — die bislang nur auf der Startseite
+  Wertverlauf-Chart. Auf der Startseite gab es dafür zunächst je Strategie/
+  Szenario einen eigenen Zeitraum-Umschalter unter dem jeweiligen Chart;
+  seit #95 ist das EIN zentraler Schalter (`id="zeitraum-switch"`, in der
+  Nähe des Benchmark-Schalters #72 platziert, denselben "ein Schalter steuert
+  alle Charts der Seite"-Aufbau nachbildend) für ALLE Wertverlauf-Charts der
+  Startseite gleichzeitig — inklusive des Börsenweisheiten-Gruppen-Charts
+  (#30/#93), der vorher gar keinen Zeitraum-Umschalter hatte. Nur Preset-Ids,
+  die WIRKLICH JEDE angezeigte Strategie/Szenario auch hat, werden als Button
+  angeboten (`dashboard._zeitraum_presets_optionen()`); ein Klick ruft
+  `applyZeitraumDataset()` für jeden registrierten Chart-Eintrag
+  (`zeitraumEntries`, reines Chart.js-Datenwechsel im Browser, kein
+  Server-Request) auf, das je Chart nur austauscht, welcher bereits fertig
+  simulierte Preset-Datensatz angezeigt wird. Für den Gruppen-Chart bekommt
+  jeder Eintrag statt einer einzelnen Wertreihe ein `reihen`-Array (eine
+  Reihe je Mitglied, Kombi zuerst) — `dashboard._teilszenario_gruppen()`
+  baut das je Preset-Id aus den `zeitraum_presets` ALLER Mitglieder
+  (`presets_json`). Der bisherige, auf "erweitert" (#91) beschränkte
+  Sondermechanismus des Gruppen-Charts läuft jetzt über denselben zentralen
+  Mechanismus: `entry.presets['erweitert']` wird von `applyZeitraumDataset()`
+  bevorzugt vor der aktuell gewählten Preset-Id angewendet, sobald der
+  separate "Verlängerter Auswertezeitraum"-Schalter im Drei-Punkt-Menü aktiv
+  ist — für Einzelstrategien weiterhin aus dem optionalen "erweitert"-Preset
+  in `zeitraum_presets` (#80), für den Gruppen-Chart weiterhin aus
+  `view["erweitert"]` (#91, `_erweiterte_kennzahlen()`), da nicht jedes
+  Mitglied notwendigerweise einen eigenen #80-Preset hat. Die Detailseite ist
+  von #95 unberührt: sie behält ihren eigenen, lokalen Zeitraum-Umschalter
+  (`id="detail-zeitraum-switch"`) für den einen dort gezeigten Chart, ergänzt
+  um den Abschnitt "Kennzahlen nach Betrachtungszeitraum" (eigener Chart plus
+  fünf Kennzahl-Kacheln) — die bislang nur auf der Startseite
   gezeigten Kennzahlen Volatilität/Max Drawdown/Sharpe/Sortino (#40/#41)
   erscheinen dadurch jetzt auch auf der Detailseite, aber ausschließlich
   innerhalb dieses neuen, periodenabhängigen Abschnitts (nicht als
