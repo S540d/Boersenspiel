@@ -86,12 +86,17 @@
     {% endfor %}
   </div>
 {% endif %}
-{% for gruppe in teilszenario_gruppen %}
-  <section class="strategy" id="gruppe-{{ gruppe.id }}">
-    <h2><span data-i18n-en="{{ gruppe.name }} compared">{{ gruppe.name }} im Vergleich</span></h2>
-    <p class="hint" data-i18n-en="The thick line is the combination of all {{ gruppe.mitglieder|length - 1 }} rules, the thin ones are the same rules on their own. The combination follows no single rule: each rule proposes an equity quota per week, and what gets traded is the average of those proposals. So two rules that contradict each other partly cancel out instead of one of them winning. That makes it readable whether throwing the rules together beats each rule by itself.">
+{% for rubrik in rubrik_gruppen %}
+  <section class="strategy" id="gruppe-{{ rubrik.id }}">
+{% if rubrik.mitglieder|length == 1 %}
+    <h2>{{ rubrik.name }}</h2>
+    {% if rubrik.mitglieder[0].beschreibung %}<p class="hint" data-i18n-en="{{ rubrik.mitglieder[0].beschreibung_en }}">{{ rubrik.mitglieder[0].beschreibung }}</p>{% endif %}
+{% else %}
+    <h2><span data-i18n-en="{{ rubrik.name }} compared">{{ rubrik.name }} im Vergleich</span></h2>
+{% if rubrik.ist_kombi_rubrik %}
+    <p class="hint" data-i18n-en="The thick line is the combination of all {{ rubrik.mitglieder|length - 1 }} rules, the thin ones are the same rules on their own. The combination follows no single rule: each rule proposes an equity quota per week, and what gets traded is the average of those proposals. So two rules that contradict each other partly cancel out instead of one of them winning. That makes it readable whether throwing the rules together beats each rule by itself.">
       Die dicke Linie ist die Kombination aus allen
-      {{ gruppe.mitglieder|length - 1 }} Regeln, die dünnen sind dieselben
+      {{ rubrik.mitglieder|length - 1 }} Regeln, die dünnen sind dieselben
       Regeln einzeln. Die Kombination folgt keiner Regel allein: jede Regel
       schlägt pro Woche eine Aktienquote vor, gehandelt wird der Mittelwert
       dieser Vorschläge. Zwei Regeln, die sich widersprechen, heben sich damit
@@ -99,15 +104,27 @@
       Zusammenwerfen mehr bringt als jede Regel für sich.
     </p>
     <p class="detail-link"><a href="praemissen.html#kombination" data-i18n-en="How the combination is computed &rarr;">Wie die Kombination genau rechnet &rarr;</a></p>
+{% else %}
+    <p class="hint" data-i18n-en="All {{ rubrik.mitglieder|length }} scenarios in this category on the same real price history, in one chart - the list below explains each one briefly.">
+      Alle {{ rubrik.mitglieder|length }} Szenarien dieser Rubrik auf derselben
+      echten Kurshistorie, in einem Chart - die Liste darunter erklärt jedes
+      kurz.
+    </p>
+{% endif %}
+{% endif %}
     <div class="chart-box-large"><canvas id="gruppen-chart-{{ loop.index }}"></canvas></div>
-  </section>
-{% endfor %}
-{% for s in strategies %}
-  <section class="strategy" id="{{ s.id }}">
-    <h2>{{ s.name }}</h2>
-    {% if s.beschreibung %}<p class="hint" data-i18n-en="{{ s.beschreibung_en }}">{{ s.beschreibung }}</p>{% endif %}
-    <div class="chart-box-large"><canvas id="value-chart-{{ loop.index }}"></canvas></div>
-    <p class="detail-link"><a href="{{ s.id }}.html" data-i18n-en="View details (metrics, bucket weighting, instruments) &rarr;">Details ansehen (Kennzahlen, Topf-Gewichtung, Instrumente) &rarr;</a></p>
+{% if rubrik.mitglieder|length > 1 %}
+    <ul class="rubrik-liste">
+      {% for m in rubrik.mitglieder %}
+      <li>
+        <a href="{{ m.id }}.html">{{ m.name }}</a>
+        {% if m.beschreibung %}<span class="hint" data-i18n-en="{{ m.beschreibung_en }}"> – {{ m.beschreibung }}</span>{% endif %}
+      </li>
+      {% endfor %}
+    </ul>
+{% else %}
+    <p class="detail-link"><a href="{{ rubrik.mitglieder[0].id }}.html" data-i18n-en="View details (metrics, bucket weighting, instruments) &rarr;">Details ansehen (Kennzahlen, Topf-Gewichtung, Instrumente) &rarr;</a></p>
+{% endif %}
   </section>
 {% endfor %}
 {% endblock %}
@@ -139,14 +156,6 @@
   function T(de, en) { return document.documentElement.lang === 'en' ? en : de; }
   const chartRefreshers = [];
   window.__i18nRefresh.push(function () { chartRefreshers.forEach(function (fn) { fn(); }); });
-
-  // Gemeinsames Maximum ueber alle Wertverlauf-Charts (#24), damit unterschiedliche
-  // Strategien optisch vergleichbar bleiben statt jeweils unabhaengig zu skalieren.
-  const wertChartMax = {{ wert_chart_max | tojson }};
-  const wertChartScales = {
-    x: commonScales.x,
-    y: { ...commonScales.y, min: 0, suggestedMax: wertChartMax * 1.05 },
-  };
 
   {
     const summaryChart = new Chart(document.getElementById('summary-chart'), {
@@ -321,20 +330,20 @@
     colors.series5, colors.series6, colors.series7,
   ];
 
-  {% for gruppe in teilszenario_gruppen %}
+  {% for rubrik in rubrik_gruppen %}
   {
     const gruppenChart{{ loop.index }} = new Chart(document.getElementById('gruppen-chart-{{ loop.index }}'), {
       type: 'line',
       data: {
-        labels: {{ gruppe.mitglieder[0].labels_json | safe }},
+        labels: {{ rubrik.mitglieder[0].labels_json | safe }},
         datasets: [
-          {% for m in gruppe.mitglieder %}
+          {% for m in rubrik.mitglieder %}
           {
             label: {{ m.name | tojson }},
             data: {{ m.total_values_json | safe }},
             borderColor: gruppenSeriesColors[{{ loop.index0 }} % gruppenSeriesColors.length],
             backgroundColor: gruppenSeriesColors[{{ loop.index0 }} % gruppenSeriesColors.length],
-            borderWidth: {{ 3 if loop.first else 1.5 }},
+            borderWidth: {{ 3 if (loop.first and rubrik.ist_kombi_rubrik) else 1.5 }},
             pointRadius: 0,
             tension: 0.15,
           },
@@ -346,75 +355,25 @@
         plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: '', color: colors.text } },
         scales: {
           x: commonScales.x,
-          y: { ...commonScales.y, min: 0, max: {{ gruppe.chart_max }} * 1.05 },
+          y: { ...commonScales.y, min: 0, max: {{ rubrik.chart_max }} * 1.05 },
         },
       },
     });
-    gruppenChart{{ loop.index }}.__baseDatasetCount = {{ gruppe.mitglieder|length }};
-    gruppenChart{{ loop.index }}.__benchmarks = {{ gruppe.benchmarks_json | safe }};
+    gruppenChart{{ loop.index }}.__baseDatasetCount = {{ rubrik.mitglieder|length }};
+    gruppenChart{{ loop.index }}.__benchmarks = {{ rubrik.benchmarks_json | safe }};
     benchmarkCharts.push(gruppenChart{{ loop.index }});
-    // #95: haengt jetzt wie die Einzelstrategie-Charts unten am zentralen
-    // Zeitraum-Schalter (vorher: eigener, auf "erweitert" beschraenkter Mechanismus).
+    // #95: haengt am zentralen Zeitraum-Schalter (vorher: eigener, auf
+    // "erweitert" beschraenkter Mechanismus je Rubrik-Chart).
     zeitraumEntries.push({
       chart: gruppenChart{{ loop.index }},
-      presets: {{ gruppe.presets_json | safe }},
-      defaultMax: {{ gruppe.chart_max }},
+      presets: {{ rubrik.presets_json | safe }},
+      defaultMax: {{ rubrik.chart_max }},
     });
     chartRefreshers.push(function () {
       gruppenChart{{ loop.index }}.options.plugins.title.text = T('Wertverlauf im Vergleich', 'Value history compared');
       gruppenChart{{ loop.index }}.update();
     });
     chartRefreshers[chartRefreshers.length - 1]();
-  }
-  {% endfor %}
-
-  {% for s in strategies %}
-  {
-    // #64-Folgearbeit: Strategien mit eigener Chart-Skala (z. B. der SP500-Benchmark,
-    // dessen Endwert ein Vielfaches der uebrigen betraegt) nutzen ihr eigenes Maximum
-    // statt des gemeinsamen wertChartMax - sonst wuerden alle anderen Charts auf der
-    // Startseite durch sie flachgedrueckt.
-    const eigeneSkala = {{ 'true' if s.eigene_chart_skala else 'false' }};
-    const strategieMax = eigeneSkala ? {{ s.own_chart_max | tojson }} : wertChartMax;
-    const chart = new Chart(document.getElementById('value-chart-{{ loop.index }}'), {
-      type: 'line',
-      data: {
-        labels: {{ s.labels_json | safe }},
-        datasets: [{
-          label: 'Gesamtwert (€)',
-          data: {{ s.total_values_json | safe }},
-          borderColor: colors.series1,
-          backgroundColor: colors.series1,
-          borderWidth: 2,
-          pointRadius: 0,
-          tension: 0.15,
-        }],
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        plugins: { legend: { display: true, labels: { color: colors.text } }, title: { display: true, text: '', color: colors.text } },
-        // Eigenes scales-Objekt statt der geteilten wertChartScales-Referenz: der
-        // Zeitraum-Umschalter unten mutiert scales.y.max je Chart-Instanz, ein
-        // geteiltes Objekt wuerde das auf alle Charts gleichzeitig anwenden. Fixes
-        // `max` statt `suggestedMax` (#72): die Skala darf sich durch den
-        // Benchmark-Schalter nicht veraendern, ein `suggestedMax` waere von Chart.js
-        // aber nur als Untergrenze behandelt und durch eine groessere Benchmark-Reihe
-        // ueberschritten worden.
-        scales: { x: commonScales.x, y: { ...commonScales.y, min: 0, max: strategieMax * 1.05 } },
-      },
-    });
-    chart.__benchmarks = {{ s.benchmarks_json | safe }};
-    benchmarkCharts.push(chart);
-    chartRefreshers.push(function () {
-      chart.options.plugins.title.text = T('Wertverlauf', 'Value history');
-      chart.update();
-    });
-    chartRefreshers[chartRefreshers.length - 1]();
-    zeitraumEntries.push({
-      chart: chart,
-      presets: Object.fromEntries({{ s.zeitraum_presets_json | safe }}.map((p) => [p.id, p])),
-      defaultMax: strategieMax,
-    });
   }
   {% endfor %}
 

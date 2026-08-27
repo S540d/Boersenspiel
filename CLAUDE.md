@@ -621,32 +621,33 @@ inkrementell fortgeschrieben).
   `_jahre_zurueck()`, sowie "Gesamte Historie") jeweils VOLLSTÄNDIG NEU
   (frisches Startkapital, analog `_walk_forward_segmente()`) inklusive
   Rendite/Volatilität/Max-Drawdown/Sharpe/Sortino und eigenem
-  Wertverlauf-Chart. Auf der Startseite gab es dafür zunächst je Strategie/
-  Szenario einen eigenen Zeitraum-Umschalter unter dem jeweiligen Chart;
+  Wertverlauf-Chart. Auf der Startseite gab es dafür ursprünglich je Strategie/
+  Szenario einen eigenen Zeitraum-Umschalter unter dem jeweiligen Chart (#54);
   seit #95 ist das EIN zentraler Schalter (`id="zeitraum-switch"`, in der
   Nähe des Benchmark-Schalters #72 platziert, denselben "ein Schalter steuert
-  alle Charts der Seite"-Aufbau nachbildend) für ALLE Wertverlauf-Charts der
-  Startseite gleichzeitig — inklusive des Börsenweisheiten-Gruppen-Charts
-  (#30/#93), der vorher gar keinen Zeitraum-Umschalter hatte. Nur Preset-Ids,
-  die WIRKLICH JEDE angezeigte Strategie/Szenario auch hat, werden als Button
-  angeboten (`dashboard._zeitraum_presets_optionen()`); ein Klick ruft
+  alle Charts der Seite"-Aufbau nachbildend). Mit #94 gibt es auf der
+  Startseite ohnehin keinen Chart mehr je Einzelstrategie (siehe unten,
+  `dashboard._rubrik_gruppen()`) — der zentrale Schalter steuert seither ALLE
+  Rubrik-Charts gleichzeitig, exakt EIN Schalter für die gesamte Seite statt
+  eines Schalters je Rubrik. Nur Preset-Ids, die WIRKLICH JEDE angezeigte
+  Strategie/Szenario auch hat, werden als Button angeboten
+  (`dashboard._zeitraum_presets_optionen()`); ein Klick ruft
   `applyZeitraumDataset()` für jeden registrierten Chart-Eintrag
   (`zeitraumEntries`, reines Chart.js-Datenwechsel im Browser, kein
   Server-Request) auf, das je Chart nur austauscht, welcher bereits fertig
-  simulierte Preset-Datensatz angezeigt wird. Für den Gruppen-Chart bekommt
-  jeder Eintrag statt einer einzelnen Wertreihe ein `reihen`-Array (eine
-  Reihe je Mitglied, Kombi zuerst) — `dashboard._teilszenario_gruppen()`
+  simulierte Preset-Datensatz angezeigt wird. Jeder Rubrik-Chart bekommt statt
+  einer einzelnen Wertreihe ein `reihen`-Array (eine Reihe je Mitglied, bei
+  einer Kombi-Rubrik die Kombi-Strategie zuerst) — `dashboard._rubrik_gruppen()`
   baut das je Preset-Id aus den `zeitraum_presets` ALLER Mitglieder
   (`presets_json`). Der bisherige, auf "erweitert" (#91) beschränkte
-  Sondermechanismus des Gruppen-Charts läuft jetzt über denselben zentralen
+  Sondermechanismus des Gruppen-Charts läuft über denselben zentralen
   Mechanismus: `entry.presets['erweitert']` wird von `applyZeitraumDataset()`
   bevorzugt vor der aktuell gewählten Preset-Id angewendet, sobald der
   separate "Verlängerter Auswertezeitraum"-Schalter im Drei-Punkt-Menü aktiv
-  ist — für Einzelstrategien weiterhin aus dem optionalen "erweitert"-Preset
-  in `zeitraum_presets` (#80), für den Gruppen-Chart weiterhin aus
-  `view["erweitert"]` (#91, `_erweiterte_kennzahlen()`), da nicht jedes
-  Mitglied notwendigerweise einen eigenen #80-Preset hat. Die Detailseite ist
-  von #95 unberührt: sie behält ihren eigenen, lokalen Zeitraum-Umschalter
+  ist — aus `view["erweitert"]` (#91, `_erweiterte_kennzahlen()`) je Mitglied,
+  da nicht jedes Mitglied notwendigerweise einen eigenen #80-Preset hat. Die
+  Detailseite ist von #95 unberührt: sie behält ihren eigenen, lokalen
+  Zeitraum-Umschalter
   (`id="detail-zeitraum-switch"`) für den einen dort gezeigten Chart, ergänzt
   um den Abschnitt "Kennzahlen nach Betrachtungszeitraum" (eigener Chart plus
   fünf Kennzahl-Kacheln) — die bislang nur auf der Startseite
@@ -850,6 +851,41 @@ inkrementell fortgeschrieben).
     `applyBenchmarkDataset()` schreibt die Overlay-Linie deshalb hinter
     `chart.__baseDatasetCount` statt fest auf Position 1, sonst würde sie ein
     Mitglied überschreiben. Der Schalter steht jetzt ÜBER dem Abschnitt.
+  - **Rubriken statt eines Charts je Strategie (#94):** Die Startseite zeigt
+    keinen einzelnen Wertverlauf-Chart mehr je Strategie/Szenario. Optionales
+    Feld `Strategy.rubrik` (`strategies.RUBRIK_BARBELL`/`RUBRIK_BOERSENWEISHEITEN`/
+    `RUBRIK_CHARTTECHNIK`/`RUBRIK_WEITERE_ANALYSEN`/`RUBRIK_REFERENZ`) gruppiert
+    Strategien/Szenarien zu fünf Rubriken; `dashboard._rubrik_gruppen()`
+    (generalisiert das bisherige `_teilszenario_gruppen()`, das damit entfällt)
+    baut je Rubrik EINEN kombinierten Vergleichs-Chart (alle Mitglieder als
+    eigene Linie) plus eine `<ul>`-Aufzählung mit Kurzbeschreibung + Link zur
+    Detailseite je Mitglied — ersetzt dort den vorherigen Chart-je-Strategie-
+    Abschnitt. Detailseiten (inkl. Zeitraum-Umschalter, `own_chart_max`,
+    `eigene_chart_skala`) bleiben unverändert, nur die Startseite fasst
+    zusammen. Fällt `Strategy.rubrik` weg (z. B. in Tests mit einer eigenen
+    Ad-hoc-Strategieliste), bildet jede Strategie ohne `rubrik`/`teil_von`
+    ihre eigene Einzel-Rubrik unter ihrem Namen — das erhält für solche Aufrufe
+    weiterhin einen (Einzel-)Chart pro Strategie, ohne dass Tests künstlich
+    eine der fünf produktiven Rubriken tragen müssten. Der S&P-500-Benchmark
+    bekommt bewusst eine eigene Rubrik `RUBRIK_REFERENZ` statt der
+    Barbell-Rubrik (Owner-Entscheidung): er ist strukturell kein Barbell,
+    sondern eine reine Vergleichslinie. Zusammengesetzte Strategien mit
+    `Strategy.beitraege` (aktuell nur die Börsenweisheiten-Kombi) behalten
+    innerhalb ihrer Rubrik die bisherige Kombi/Kind-Optik (dicke Linie für die
+    Kombi, dünne für die einzelnen Teilregeln, Verweis auf
+    `praemissen.html#kombination`) — `_rubrik_gruppen()` erkennt das an
+    `Strategy.beitraege` und sortiert die Kombi-Strategie dafür an die erste
+    Stelle der Mitgliederliste, unabhängig von ihrer Position in
+    `STRATEGIES`/`SCENARIOS` (in `scenarios.SCENARIOS` steht die Kombi bewusst
+    NACH ihren fünf Kindern). `wertChartMax`/`wertChartScales`
+    (gemeinsame Y-Achse über ALLE Strategien, #24) sowie der zugehörige
+    Kontext-Wert `wert_chart_max` sind dadurch entfallen — jede Rubrik
+    skaliert jetzt unabhängig über ihr eigenes `chart_max`, ein Ausreisser
+    (Detail siehe #95-Abschnitt weiter oben zum zentralen Zeitraum-Schalter,
+    der seit dem Zusammenführen von #94 und #95 direkt auf den Rubrik-Charts
+    statt auf Einzelstrategie-Charts arbeitet)
+    (früher `eigene_chart_skala`) kann die Skala einer fremden Rubrik gar
+    nicht mehr erreichen.
   - Korrelationsgrafik (#82): ein Chart.js-Scatter-Chart
     (`#correlation-chart`, seit #88 auf `docs/vergleich.html` statt auf der
     Startseite), x-Achse

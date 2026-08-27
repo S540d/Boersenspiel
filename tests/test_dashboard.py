@@ -145,8 +145,9 @@ def test_startseite_zeigt_nur_wertverlauf_alles_andere_auf_detailseite(tmp_path:
     index_html = output.read_text(encoding="utf-8")
     detail_html = _detail_html(tmp_path, "a-verdoppler")
 
-    # Wertverlauf-Chart bleibt auf der Startseite (#31).
-    assert 'id="value-chart-1"' in index_html
+    # Wertverlauf-Chart bleibt auf der Startseite, seit #94 als kombinierter
+    # Rubrik-Chart statt eines einzelnen Charts je Strategie (#31).
+    assert 'id="gruppen-chart-1"' in index_html
     assert "Wertverlauf" in index_html
     # Stat-Kacheln, Topf-Gewichtung und Instrumententabelle sind Detailseiten-Inhalt,
     # nicht (mehr) auf der Startseite.
@@ -260,12 +261,15 @@ def test_build_dashboard_gruppiert_unterszenarien_in_eigenem_chart(tmp_path: Pat
     assert gruppen_chart_js.count("label:") == 3  # Kombi + Kind A + Kind B
 
 
-def test_build_dashboard_ohne_teil_von_zeigt_keine_gruppen_charts(tmp_path: Path):
+def test_build_dashboard_ohne_teil_von_zeigt_keinen_kombi_vergleich(tmp_path: Path):
+    """Ohne ``teil_von``/``rubrik`` bildet jede Strategie ihre eigene
+    Einzel-Rubrik (#94) - sie bekommt zwar weiterhin einen (Einzel-)Chart,
+    aber keinen "<Name> im Vergleich"-Abschnitt mit mehreren Linien."""
     output = build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
     html = output.read_text(encoding="utf-8")
 
     assert "Kombi im Vergleich" not in html
-    assert "gruppen-chart" not in html
+    assert "im Vergleich</span>" not in html
 
 
 # --- Eigene Chart-Skala fuer weit abweichende Strategien (SP500_BENCHMARK, s. #64) ----
@@ -304,20 +308,23 @@ def _rows_mit_ausreisser() -> list[PriceRow]:
 
 
 def test_ausreisser_strategie_fliesst_nicht_ins_gemeinsame_chart_maximum_ein(tmp_path: Path):
+    """Seit #94 hat jede Strategie ohne eigene ``rubrik``/``teil_von`` ihre
+    eigene Einzel-Rubrik mit eigenem Chart und eigener Skala (``chart_max`` je
+    Rubrik-Gruppe) - ein Ausreisser wie der Endwert von "B: Ausreisser"
+    (rund 99900 gegenüber rund 1498.50 bei "A: Normal") kann die Skala eines
+    fremden Rubrik-Charts damit gar nicht mehr erreichen. ``eigene_chart_skala``
+    setzt hier also ohnehin nichts mehr durch (die Rubrik-Skalierung genügt
+    bereits) - das Feld bleibt gesetzt, ist aber seit #94 wirkungslos."""
     output = build_dashboard(_rows_mit_ausreisser(), _strategien_mit_ausreisser(), output_path=tmp_path / "index.html")
     html = output.read_text(encoding="utf-8")
 
-    # Das gemeinsame Maximum (wertChartMax) darf nur aus "A: Normal" stammen (Endwert
-    # rund 1498.50) - der Ausreisser (Endwert rund 99900) wuerde es sonst dominieren
-    # und alle anderen Charts auf der Startseite optisch flachdruecken.
-    wert_chart_max_js = html.split("const wertChartMax = ", 1)[1].split(";", 1)[0]
-    assert float(wert_chart_max_js) < 2000
-
-    # "A: Normal" nutzt weiterhin das gemeinsame Maximum, "B: Ausreisser" sein eigenes.
-    chart_1_js = html.split("getElementById('value-chart-1')", 1)[0].rsplit("{\n", 1)[1]
-    assert "const eigeneSkala = false;" in chart_1_js
-    chart_2_js = html.split("getElementById('value-chart-2')", 1)[0].rsplit("{\n", 1)[1]
-    assert "const eigeneSkala = true;" in chart_2_js
+    chart_1_js = html.split("getElementById('gruppen-chart-1')", 1)[1].split("chartRefreshers", 1)[0]
+    assert "max: 1000" not in chart_1_js  # keine falsche Fixierung
+    max_1 = float(chart_1_js.split("max: ", 1)[1].split(" *", 1)[0])
+    chart_2_js = html.split("getElementById('gruppen-chart-2')", 1)[1].split("chartRefreshers", 1)[0]
+    max_2 = float(chart_2_js.split("max: ", 1)[1].split(" *", 1)[0])
+    assert max_1 < 2000
+    assert max_2 > 90000
 
 
 # --- Risikokennzahlen: Volatilitaet & Max Drawdown (#40) ------------------------------
@@ -726,7 +733,7 @@ def test_build_dashboard_zeigt_zeitraum_umschalter_auf_startseite(tmp_path: Path
     output = build_dashboard(_mehrjaehrige_rows(), [ZWEI_STRATEGIEN[0]], output_path=tmp_path / "index.html")
     html = output.read_text(encoding="utf-8")
 
-    # #95: EIN zentraler Schalter statt eines Schalters je Strategie/Szenario.
+    # #95: EIN zentraler Schalter statt eines Schalters je Strategie/Szenario/Rubrik (#94).
     assert 'id="zeitraum-switch"' in html
     assert 'id="zeitraum-switch-1"' not in html
     assert "zeitraumEntries" in html
@@ -1125,11 +1132,11 @@ def test_build_dashboard_rendert_benchmark_schalter_und_feste_skala(tmp_path: Pa
     assert 'id="benchmark-switch"' in html
     assert f'data-benchmark="{_slug("Benchmark X")}"' in html
     assert '"label": "Benchmark X"' in html
-    # #72: fixes `max` statt `suggestedMax` auf dem Wertverlauf-Chart, damit die
-    # Skala sich durch die Benchmark-Linie nicht veraendert.
-    chart_js = html.split("getElementById('value-chart-1')", 1)[1].split("chart.__benchmarks", 1)[0]
+    # #72: fixes `max` statt `suggestedMax` auf dem Wertverlauf-Chart (seit #94 der
+    # Rubrik-Chart), damit die Skala sich durch die Benchmark-Linie nicht veraendert.
+    chart_js = html.split("getElementById('gruppen-chart-1')", 1)[1].split("__baseDatasetCount", 1)[0]
     assert "suggestedMax:" not in chart_js
-    assert "max: strategieMax * 1.05" in chart_js
+    assert "max: " in chart_js
 
     detail_html = _detail_html(tmp_path, "eigene-strategie")
     assert 'id="benchmark-switch"' in detail_html

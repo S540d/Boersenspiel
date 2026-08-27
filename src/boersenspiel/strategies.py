@@ -135,6 +135,14 @@ class Strategy:
     # Börsenweisheiten haben mit "<Kombi-Name> im Vergleich" ohnehin einen
     # eigenen Chart auf derselben Seite.
     im_startseiten_chart: bool = True
+    # Optional: Name der Rubrik, unter der diese Strategie/dieses Szenario auf der
+    # Startseite gruppiert wird (#94) - z. B. "Barbell-Varianten", "Charttechnik".
+    # None bedeutet: kein Rubrik-Chart, die Strategie erscheint nur im
+    # CAGR-Balkendiagramm und der Vergleichstabelle, nicht in einer der
+    # gruppierten Übersichten (aktuell nur für Sonderfälle gedacht, alle
+    # produktiven Strategien/Szenarien setzen eine Rubrik). Rein deklarativ,
+    # ändert nichts an der Simulation - siehe ``dashboard._rubrik_gruppen()``.
+    rubrik: str | None = None
 
     def alle_ticker_gewichte(self) -> dict[str, Decimal]:
         """Ziel-Gewicht jedes Instruments am Gesamtdepot."""
@@ -151,10 +159,26 @@ class Strategy:
         raise KeyError(f"Kein Topf für Ticker {ticker!r} in Strategie {self.name!r}")
 
 
+# --- Rubriken (#94) --------------------------------------------------------
+#
+# Vier Kategorien, unter denen die Startseite Strategien/Szenarien gruppiert
+# (siehe dashboard._rubrik_gruppen()): je Rubrik ein gemeinsamer
+# Vergleichschart aller Mitglieder plus eine Aufzählung ihrer
+# Kurzbeschreibungen statt eines einzelnen Charts je Strategie. Der
+# S&P-500-Benchmark bekommt bewusst eine eigene, fünfte Rubrik statt der
+# Barbell-Rubrik - er ist strukturell kein Barbell, sondern eine reine
+# Vergleichslinie "einfach den Index kaufen" (Owner-Entscheidung zu #94).
+RUBRIK_BARBELL = "Barbell-Varianten"
+RUBRIK_BOERSENWEISHEITEN = "Börsenweisheiten"
+RUBRIK_CHARTTECHNIK = "Charttechnik"
+RUBRIK_WEITERE_ANALYSEN = "Weitere Analysen"
+RUBRIK_REFERENZ = "Referenz"
+
 # --- Strategie 1: Barbell 20/80 (Pflichtenheft v2.0) -----------------------
 
 BARBELL_20_80 = Strategy(
     name="Barbell 20/80",
+    rubrik=RUBRIK_BARBELL,
     startkapital=Decimal("10000"),
     toepfe=[
         Topf(
@@ -199,6 +223,7 @@ BARBELL_20_80 = Strategy(
 
 BARBELL_30_70 = Strategy(
     name="Barbell 30/70",
+    rubrik=RUBRIK_BARBELL,
     startkapital=Decimal("10000"),
     toepfe=[
         Topf(
@@ -252,6 +277,7 @@ BARBELL_30_70 = Strategy(
 
 BARBELL_20_60_20_SATELLIT = Strategy(
     name="Barbell 20/60/20 + Einzelaktien-Satellit",
+    rubrik=RUBRIK_BARBELL,
     startkapital=Decimal("10000"),
     toepfe=[
         Topf(
@@ -328,6 +354,7 @@ BARBELL_20_60_20_SATELLIT = Strategy(
 
 BARBELL_20_80_DIVERSIFIZIERT = Strategy(
     name="Barbell 20/80 (breiter diversifiziert)",
+    rubrik=RUBRIK_BARBELL,
     im_startseiten_chart=False,
     startkapital=Decimal("10000"),
     toepfe=[
@@ -393,6 +420,7 @@ BARBELL_20_80_DIVERSIFIZIERT = Strategy(
 
 SP500_BENCHMARK = Strategy(
     name="Benchmark: S&P 500 (Buy & Hold)",
+    rubrik=RUBRIK_REFERENZ,
     startkapital=Decimal("10000"),
     toepfe=[
         Topf(

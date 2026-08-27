@@ -596,28 +596,53 @@ def _slug(name: str) -> str:
     return re.sub(r"-+", "-", re.sub(r"[^a-z0-9]+", "-", normalisiert)).strip("-")
 
 
-def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list[dict]:
-    """Gruppiert Unterszenarien (``Strategy.teil_von``, #30) je übergeordneter
-    Strategie für einen gemeinsamen Vergleichs-Chart auf der Startseite -
-    generisch für jede zusammengesetzte Strategie (aktuell: die fünf
-    einzelnen Börsenweisheiten-Szenarien unter "Börsenweisheiten (alle fünf
-    kombiniert)"), keine eigene Simulationslogik. Liefert nur Gruppen, deren
-    übergeordnete Strategie tatsächlich mitgerendert wird."""
+def _rubrik_gruppen(views: list[dict], strategies: list[Strategy]) -> list[dict]:
+    """Gruppiert Strategien/Szenarien nach ``Strategy.rubrik`` (#94) für je einen
+    kombinierten Vergleichs-Chart auf der Startseite (alle Mitglieder als eigene
+    Linie) plus eine Aufzählung ihrer Kurzbeschreibungen - ersetzt dort den
+    bisherigen einzelnen Chart je Strategie. Reine Darstellungsschicht, keine
+    neue Simulationslogik; Reihenfolge folgt der ersten Nennung der Rubrik in
+    ``strategies``, Mitgliederreihenfolge folgt derselben Liste. Eine Strategie
+    ohne gesetzte ``rubrik`` bildet ihre eigene Einzel-Rubrik (ihr eigener Name) -
+    das erhält das alte "ein Chart pro Strategie"-Verhalten für Ad-hoc-Aufrufe von
+    ``build_dashboard()`` mit einer eigenen Strategieliste (z. B. in Tests), ohne
+    dass jede solche Strategie eine der vier produktiven Rubriken tragen müsste."""
     views_by_id = {v["id"]: v for v in views}
-    kinder_je_eltern: dict[str, list[dict]] = {}
+    strategien_je_rubrik: dict[str, list[Strategy]] = {}
     for s in strategies:
-        if s.teil_von is None:
+        if _slug(s.name) not in views_by_id:
             continue
-        eltern_id = _slug(s.teil_von)
-        kind_id = _slug(s.name)
-        if eltern_id not in views_by_id or kind_id not in views_by_id:
-            continue
-        kinder_je_eltern.setdefault(s.teil_von, []).append(views_by_id[kind_id])
+        if s.rubrik is not None:
+            rubrik_name = s.rubrik
+        elif s.teil_von is not None:
+            # Unterszenario ohne eigene ``rubrik`` (z. B. die fünf einzelnen
+            # Börsenweisheiten) gruppiert sich unter dem Namen seiner
+            # Kombi-Strategie, statt eine eigene Einzel-Rubrik zu bilden. Die
+            # Kombi-Strategie selbst hat kein ``teil_von`` und faellt daher auf
+            # ihren eigenen Namen zurueck (naechster Zweig) - identisch.
+            rubrik_name = s.teil_von
+        else:
+            rubrik_name = s.name
+        strategien_je_rubrik.setdefault(rubrik_name, []).append(s)
 
     gruppen = []
-    for eltern_name, kinder in kinder_je_eltern.items():
-        eltern_view = views_by_id[_slug(eltern_name)]
-        mitglieder = [eltern_view] + kinder
+    for rubrik_name, rubrik_strategien in strategien_je_rubrik.items():
+        # Hat eine der Strategien dieser Rubrik ``beitraege`` gesetzt (eine
+        # zusammengesetzte Strategie mit Leave-one-out-Teilregeln, z. B. die
+        # Börsenweisheiten-Kombi), zeigen ihre ``teil_von``-Kinder dieselbe
+        # Kombi/Teilregel-Beziehung wie bisher (dicke Linie fuer die Kombi,
+        # duenne fuer die Teilregeln). Die Kombi-Strategie muss dafuer als
+        # ERSTES Mitglied stehen, unabhaengig von ihrer Position in
+        # ``strategies`` (in scenarios.SCENARIOS steht die Kombi bewusst NACH
+        # ihren fuenf Kindern) - sonst waere die dicke Linie zufaellig die
+        # eines Kindes statt der Kombi. Ohne ``beitraege`` bleibt die
+        # Mitgliederreihenfolge einfach die der Rubrik.
+        kombi_strategien = [s for s in rubrik_strategien if s.beitraege]
+        ist_kombi_rubrik = bool(kombi_strategien)
+        if ist_kombi_rubrik:
+            kombi = kombi_strategien[0]
+            rubrik_strategien = [kombi] + [s for s in rubrik_strategien if s is not kombi]
+        mitglieder = [views_by_id[_slug(s.name)] for s in rubrik_strategien]
         alle_werte = [wert for m in mitglieder for wert in m["total_values"]]
 
         # #95: der zentrale Zeitraum-Schalter der Startseite steuert seither auch
@@ -652,20 +677,24 @@ def _teilszenario_gruppen(views: list[dict], strategies: list[Strategy]) -> list
                 "labels": mitglieder[0]["erweitert"]["labels"],
                 "reihen": [m["erweitert"]["total_values"] for m in mitglieder],
                 "chart_max": max(max(m["erweitert"]["total_values"]) for m in mitglieder),
-                "benchmarks": eltern_view["erweitert"]["benchmarks"],
+                "benchmarks": mitglieder[0]["erweitert"]["benchmarks"],
             }
 
         gruppen.append(
             {
-                "name": eltern_name,
-                "id": _slug(eltern_name),
+                "name": rubrik_name,
+                "id": _slug(rubrik_name),
                 "mitglieder": mitglieder,
+                "ist_kombi_rubrik": ist_kombi_rubrik,
                 "chart_max": max(alle_werte) if alle_werte else 0.0,
                 # #93: der Gruppen-Chart hing bisher als einziger Wertverlauf-Chart
                 # nicht am Benchmark-Schalter (#72). Die Reihen der uebergeordneten
                 # Strategie passen ohne Datumsabgleich, weil alle Mitglieder ueber
                 # dieselben `rows` simuliert werden (gleiches Instrumentenset).
-                "benchmarks_json": json.dumps(eltern_view["benchmarks"]),
+                "benchmarks_json": json.dumps(mitglieder[0]["benchmarks"]),
+                # #95: der zentrale Zeitraum-Schalter der Startseite (der einzige
+                # Schalter, es gibt seit #94/#95 keinen Chart mehr je Einzelstrategie)
+                # steuert auch diesen Rubrik-Chart ueber genau diese Presets.
                 "presets_json": json.dumps(presets_json),
             }
         )
@@ -1469,23 +1498,13 @@ def build_dashboard(
     else:
         summary = sorted(views, key=lambda v: v["cagr_pct"], reverse=True)
     learnings = derive_learnings(views)
-    teilszenario_gruppen = _teilszenario_gruppen(views, strategies)
-    # #95: EIN zentraler Zeitraum-Schalter fuer alle Wertverlauf-Charts der
-    # Startseite statt eines Schalters je Strategie/Szenario.
+    # #94: Rubriken (Barbell-Varianten, Börsenweisheiten, Charttechnik, weitere
+    # Analysen, ...) fassen die Startseite zusammen - je Rubrik ein Vergleichs-
+    # Chart aller Mitglieder statt eines einzelnen Charts je Strategie.
+    rubrik_gruppen = _rubrik_gruppen(views, strategies)
+    # #95: EIN zentraler Zeitraum-Schalter fuer alle Rubrik-Charts der Startseite
+    # statt eines Schalters je Strategie/Szenario oder je Rubrik.
     zeitraum_presets_optionen = _zeitraum_presets_optionen(views)
-
-    # Gemeinsames Y-Achsen-Maximum ueber alle Wertverlauf-Charts (#24): ohne das skaliert
-    # jeder Chart unabhaengig, wodurch unterschiedliche Strategien optisch nicht mehr
-    # vergleichbar sind. Strategien mit `eigene_chart_skala=True` (z. B. der
-    # SP500_BENCHMARK, dessen Endwert ein Vielfaches der uebrigen betraegt) fliessen
-    # NICHT in dieses gemeinsame Maximum ein, sonst wuerden alle anderen Charts durch
-    # sie flachgedrueckt - sie bekommen stattdessen ihr eigenes Maximum (siehe
-    # "chart_max"/"eigene_chart_skala" je View unten).
-    eigene_skala_namen = {s.name for s in strategies if s.eigene_chart_skala}
-    alle_werte = [
-        wert for view in views for wert in view["total_values"] if view["name"] not in eigene_skala_namen
-    ]
-    wert_chart_max = max(alle_werte) if alle_werte else 0.0
 
     # Benchmark-Overlay-Schalter (#72): Union der auf irgendeiner Seite tatsächlich
     # verfügbaren Benchmarks (id + Anzeigename), fürs Rendern der Schalter-Buttons.
@@ -1528,7 +1547,6 @@ def build_dashboard(
 
     index_template = env.get_template("dashboard.html.j2")
     index_html = index_template.render(
-        strategies=views,
         summary=summary,
         # #92: das CAGR-Balkendiagramm der Startseite zeigt nur die Strategien
         # mit `im_startseiten_chart` - mit allen Läufen standen dort mehr Balken
@@ -1536,8 +1554,7 @@ def build_dashboard(
         # vollstaendige Liste bleibt in `summary` (Tabelle auf vergleich.html).
         chart_summary=[v for v in summary if v["im_startseiten_chart"]],
         learnings=learnings,
-        wert_chart_max=wert_chart_max,
-        teilszenario_gruppen=teilszenario_gruppen,
+        rubrik_gruppen=rubrik_gruppen,
         zeitraum_presets_optionen=zeitraum_presets_optionen,
         **common_context,
     )

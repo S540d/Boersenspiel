@@ -36,7 +36,16 @@ from decimal import Decimal
 from typing import Callable
 
 from .history_store import PriceRow
-from .strategies import BARBELL_20_80, Beitrag, Optimierungen, Strategy, Topf
+from .strategies import (
+    BARBELL_20_80,
+    RUBRIK_BOERSENWEISHEITEN,
+    RUBRIK_CHARTTECHNIK,
+    RUBRIK_WEITERE_ANALYSEN,
+    Beitrag,
+    Optimierungen,
+    Strategy,
+    Topf,
+)
 
 TOPF_SICHERHEIT: Topf = BARBELL_20_80.toepfe[0]
 TOPF_WACHSTUM: Topf = BARBELL_20_80.toepfe[1]
@@ -121,6 +130,7 @@ def sell_in_may_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
 
 SELL_IN_MAY = Strategy(
     name="Börsenweisheit: Sell in May",
+    rubrik=RUBRIK_BOERSENWEISHEITEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -168,6 +178,7 @@ def votum_buy_and_hold(rows: list[PriceRow], i: int) -> Decimal | None:
 
 BUY_AND_HOLD = Strategy(
     name="Börsenweisheit: Buy & Hold",
+    rubrik=RUBRIK_BOERSENWEISHEITEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -225,6 +236,7 @@ def santa_claus_rally_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decima
 
 SANTA_CLAUS_RALLY = Strategy(
     name="Börsenweisheit: Santa Claus Rally",
+    rubrik=RUBRIK_BOERSENWEISHEITEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -278,6 +290,7 @@ def buy_the_dip_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
 
 BUY_THE_DIP = Strategy(
     name="Börsenweisheit: Buy the Dip",
+    rubrik=RUBRIK_BOERSENWEISHEITEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -345,6 +358,7 @@ def cut_losses_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
 
 CUT_LOSSES = Strategy(
     name="Börsenweisheit: Cut Your Losses",
+    rubrik=RUBRIK_BOERSENWEISHEITEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -454,6 +468,7 @@ def _weisheiten_strategy(name: str, weisheiten: tuple[Weisheit, ...], **kwargs) 
 BOERSENWEISHEITEN = _weisheiten_strategy(
     BOERSENWEISHEITEN_NAME,
     WEISHEITEN,
+    rubrik=RUBRIK_BOERSENWEISHEITEN,
     # #92: die Boersenweisheiten haben auf der Startseite mit
     # "<Kombi-Name> im Vergleich" einen eigenen Chart - im
     # CAGR-Balkendiagramm daruber tauchen sie deshalb nicht mehr auf.
@@ -510,6 +525,7 @@ def chart_sma_crossover_gewichte(rows: list[PriceRow], i: int) -> dict[str, Deci
 
 CHART_SMA_CROSSOVER = Strategy(
     name="Charttechnik: SMA-Crossover (10/40 Wochen)",
+    rubrik=RUBRIK_CHARTTECHNIK,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -554,6 +570,7 @@ def chart_sma_crossover_kurz_gewichte(rows: list[PriceRow], i: int) -> dict[str,
 
 CHART_SMA_CROSSOVER_KURZ = Strategy(
     name="Charttechnik: SMA-Crossover (4/20 Wochen)",
+    rubrik=RUBRIK_CHARTTECHNIK,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -625,6 +642,7 @@ def momentum_rotation_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decima
 
 MOMENTUM_ROTATION = Strategy(
     name="Momentum: Relative-Stärke-Rotation",
+    rubrik=RUBRIK_WEITERE_ANALYSEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -698,6 +716,7 @@ def volatility_target_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decima
 
 VOLATILITY_TARGET = Strategy(
     name="Volatilitätsbasierte Aktienquote",
+    rubrik=RUBRIK_WEITERE_ANALYSEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
@@ -742,6 +761,7 @@ def cost_average_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
 
 COST_AVERAGE_ENTRY = Strategy(
     name="Cost-Average-Einstieg (10 Wochen)",
+    rubrik=RUBRIK_WEITERE_ANALYSEN,
     startkapital=Decimal("10000"),
     toepfe=BARBELL_20_80.toepfe,
     ziel_topf=BARBELL_20_80.ziel_topf,
