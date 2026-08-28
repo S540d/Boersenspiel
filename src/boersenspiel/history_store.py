@@ -13,6 +13,7 @@ from __future__ import annotations
 import csv
 import os
 from collections import Counter
+from collections.abc import Iterable
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
@@ -137,18 +138,40 @@ def record_week(
     as_of: date,
     quotes: dict[str, PriceQuote],
     data_dir: Path = DEFAULT_DATA_DIR,
+    angefragte_ticker: Iterable[str] | None = None,
 ) -> PriceRow:
     """Schreibt/aktualisiert die Zeile für die ISO-Kalenderwoche von ``as_of``.
 
     - Für Ticker mit Status "ok" wird der gelieferte Kurs übernommen.
     - Für Ticker mit Status "missing" (oder wenn ein Ticker in ``quotes``
-      fehlt) wird der letzte bekannte Kurs aus der bisherigen Historie
-      übernommen ("carry forward") und in fetch_log.csv vermerkt - so
-      entsteht nie eine Zeile mit Lücke, solange es einen Vorwert gibt.
+      fehlt) wird der letzte bekannte Kurs übernommen ("carry forward") und in
+      fetch_log.csv vermerkt - so entsteht nie eine Zeile mit Lücke, solange es
+      einen Vorwert gibt.
     - Läuft ein zweiter Abruf in derselben ISO-Kalenderwoche (z. B. ein
       manueller Re-Dispatch), wird die bestehende Zeile aktualisiert statt
       eine Dublette anzuhängen - das macht "wöchentlich" robust unabhängig
       vom genauen Wochentag des Laufs.
+
+    **Teilabrufe derselben Woche sind additiv (#99).** Der Wochenabruf läuft
+    seit #99 an zwei aufeinanderfolgenden Tagen mit je einer Ticker-Teilmenge
+    (Alpha-Vantage-Tageslimit, siehe ``sources.alphavantage.batch_tickers``).
+    Existiert für die Zielwoche bereits eine Zeile, gilt für einen Ticker ohne
+    frischen Kurs deshalb zuerst der **bereits in dieser Zeile stehende Wert**
+    und erst danach der Carry-Forward aus früheren Wochen. Ohne diesen Vorrang
+    würde der zweite Teilabruf die am Vortag frisch geholten Kurse des ersten
+    Batches auf den Stand der Vorwoche zurücksetzen.
+
+    ``angefragte_ticker`` benennt die Ticker, für die dieser Lauf zuständig
+    war (Default: alle). Nur für sie wird ein fehlender Kurs in fetch_log.csv
+    protokolliert - ein Ticker aus dem jeweils anderen Batch ist nicht
+    "eingefroren", sondern kommt schlicht am anderen Wochentag, und ein
+    Log-Eintrag dafür würde im Dashboard (#42) eine Kurslücke melden, die es
+    nicht gibt.
+
+    Das Zeilendatum bleibt bei einer bestehenden Wochenzeile das **frühere**
+    der beiden Daten: für die ISO-Wochen-Einordnung zählt ohnehin nur die
+    Kalenderwoche, und so hängt die Historie nicht davon ab, welcher der
+    beiden Läufe zuletzt durchlief.
     """
     _ensure_files(data_dir)
     existing_rows = read_price_history(data_dir)
@@ -172,12 +195,29 @@ def record_week(
             continue
         last_known.update(r.prices)
 
+    # Bereits in DIESER Woche stehende Kurse (aus einem frueheren Teilabruf
+    # derselben Woche) - haben Vorrang vor last_known, siehe Docstring.
+    bereits_diese_woche: dict[str, Decimal] = (
+        dict(existing_rows[same_week_index].prices) if same_week_index is not None else {}
+    )
+    zustaendig = set(TICKERS) if angefragte_ticker is None else set(angefragte_ticker)
+
+    # Bei einer bestehenden Wochenzeile gewinnt das fruehere Datum: welcher der
+    # beiden Wochenlaeufe zuletzt lief, soll die Historie nicht verschieben.
+    row_date = as_of if same_week_index is None else min(as_of, existing_rows[same_week_index].date)
+
     new_prices: dict[str, Decimal] = {}
     log_entries: list[list[str]] = []
     for ticker in TICKERS:
         quote = quotes.get(ticker)
         if quote is not None and quote.status == "ok" and quote.price is not None:
             new_prices[ticker] = Decimal(str(quote.price))
+            continue
+
+        if ticker in bereits_diese_woche:
+            # Frischer Kurs aus einem frueheren Teilabruf derselben Woche -
+            # weder ueberschreiben noch als Kursluecke protokollieren.
+            new_prices[ticker] = bereits_diese_woche[ticker]
             continue
 
         source = quote.source if quote else ""
@@ -189,26 +229,28 @@ def record_week(
                 if rate_limited
                 else "Kein aktueller Kurs verfuegbar, letzter bekannter Kurs uebernommen"
             )
-            log_entries.append([as_of.isoformat(), ticker, "carried_forward", source, note])
+            if ticker in zustaendig:
+                log_entries.append([row_date.isoformat(), ticker, "carried_forward", source, note])
         else:
             note = (
                 "Rate-Limit der Quelle erreicht, kein historischer Kurs verfuegbar"
                 if rate_limited
                 else "Kein aktueller und kein historischer Kurs verfuegbar"
             )
-            log_entries.append([as_of.isoformat(), ticker, "missing", source, note])
+            if ticker in zustaendig:
+                log_entries.append([row_date.isoformat(), ticker, "missing", source, note])
 
     if same_week_index is not None:
-        existing_rows[same_week_index] = PriceRow(date=as_of, prices=new_prices)
+        existing_rows[same_week_index] = PriceRow(date=row_date, prices=new_prices)
     else:
-        existing_rows.append(PriceRow(date=as_of, prices=new_prices))
+        existing_rows.append(PriceRow(date=row_date, prices=new_prices))
     existing_rows.sort(key=lambda r: r.date)
 
     _write_price_history(existing_rows, data_dir)
     if log_entries:
         _append_fetch_log(log_entries, data_dir)
 
-    return PriceRow(date=as_of, prices=new_prices)
+    return PriceRow(date=row_date, prices=new_prices)
 
 
 def _write_price_history(rows: list[PriceRow], data_dir: Path) -> None:

@@ -2,11 +2,12 @@
 Scraping - deutlich zuverlässiger für GitHub Actions als yfinance, das
 wiederholt an Yahoos Crumb/Cookie-Authentifizierung scheiterte (siehe README).
 
-Free-Tier-Limits: 25 Requests/Tag, max. 1 Request/Sekunde. Bei aktuell 17
-Tickern (7 Barbell-Basisinstrumente + 10 Einzelaktien-Satellit) einmal
-wöchentlich noch unproblematisch, lässt aber kaum noch Spielraum für
-zusätzliche manuelle Abrufe am selben Tag; zwischen den Requests wird ein
-kleiner Sleep eingehalten, um das Sekundenlimit nicht zu reißen.
+Free-Tier-Limits: 25 Requests/Tag, max. 1 Request/Sekunde. Die aktuell 26
+Ticker brauchen 27 Requests und passen damit nicht mehr in einen Tag - der
+wöchentliche Abruf läuft deshalb seit #99 in zwei Batches an zwei
+aufeinanderfolgenden Tagen (siehe ``batch_tickers`` weiter unten). Zwischen
+den Requests wird ein kleiner Sleep eingehalten, um das Sekundenlimit nicht zu
+reißen.
 
 Läuft in GitHub Actions gegen die reine REST-API (nicht über den
 Alpha-Vantage-MCP-Server, der nur innerhalb einer Claude-Session verfügbar
@@ -73,11 +74,55 @@ ALPHAVANTAGE_SYMBOLS: dict[str, str] = {
     "IBCI": "IBCI.DEX",
     "IQQ6": "IQQ6.DEX",
     "EXXY": "EXXY.DEX",
+    # Dividende und Value (#99) - ebenfalls XETRA/EUR. Am 28.08.2026 per
+    # SYMBOL_SEARCH und GLOBAL_QUOTE geprueft. Der im Issue vorgeschlagene
+    # Value-Ticker "IUVL" loest bei Alpha Vantage NICHT auf; die XETRA-Notierung
+    # desselben Fonds laeuft unter "IS3S.DEX" (die Alternative "IWVL.LON" waere
+    # USD-notiert und damit FX-pflichtig, siehe #62).
+    "ISPA": "ISPA.DEX",
+    "IS3S": "IS3S.DEX",
 }
 
 # Ticker, deren Alpha-Vantage-Symbol in USD notiert - Kurs wird bei jedem
 # Abruf per aktuellem EUR/USD-Kurs in EUR umgerechnet.
 USD_TICKERS: frozenset[str] = frozenset({"LITE", "BYDDY", "SEDG", "TSLA", "PLTR", "MSTR", "RIVN", "KO", "RHHBY"})
+
+# --- Wochenabruf in zwei Batches (#99) ---------------------------------------
+#
+# Alpha Vantages Free Tier erlaubt 25 Requests pro Tag und API-Key. Seit den
+# beiden Instrumenten aus #99 braucht ein Abruf ALLER Ticker 27 Requests
+# (26 Ticker + 1x CURRENCY_EXCHANGE_RATE) und passt damit nicht mehr in einen
+# einzigen Tag. Der Wochenabruf laeuft deshalb an zwei aufeinanderfolgenden
+# Tagen, jeder Lauf holt nur seinen Batch (siehe scripts/run_fetch.py --batch
+# und .github/workflows/weekly-update.yml). Jeder Ticker wird weiterhin genau
+# einmal pro Woche aktualisiert, nur eben nicht mehr alle am selben Wochentag;
+# history_store.record_week() mischt den zweiten Teilabruf additiv in die
+# bereits geschriebene Zeile derselben ISO-Woche.
+#
+# Die Aufteilung wird BEWUSST abgeleitet statt als zwei feste Listen
+# hinterlegt: Batch 1 sind genau die Ticker, die einen Fremdwaehrungs- oder
+# Krypto-Endpunkt brauchen (alle USD_TICKERS plus BTC-EUR), Batch 2 der Rest.
+# Damit faellt der EUR/USD-Request zwangslaeufig nur in einem der beiden Laeufe
+# an - er wird in fetch() einmal je Aufruf geholt und gilt fuer alle
+# USD-Ticker gemeinsam. Ein kuenftig ergaenztes Instrument landet ausserdem
+# automatisch im richtigen Batch, statt eine hinterlegte Liste stillschweigend
+# unvollstaendig zu lassen.
+#
+# Request-Bilanz aktuell: Batch 1 = 9 USD-Ticker + FX + BTC-EUR = 11 Requests,
+# Batch 2 = 16 EUR/XETRA-Ticker = 16 Requests. Beide klar unter 25; der
+# Spielraum liegt in Batch 2 (siehe tests/test_backfill_history.py).
+FETCH_BATCHES = (1, 2)
+
+
+def batch_tickers(tickers: list[str], batch: int) -> list[str]:
+    """Die Teilmenge von ``tickers``, die im angegebenen Wochen-Batch abgerufen
+    wird. ``batch`` ausserhalb von ``FETCH_BATCHES`` ist ein Programmierfehler."""
+    if batch not in FETCH_BATCHES:
+        raise ValueError(f"Unbekannter Batch {batch!r}, erlaubt sind {FETCH_BATCHES}")
+    fremdwaehrung = [t for t in tickers if t in USD_TICKERS or t == "BTC-EUR"]
+    if batch == 1:
+        return fremdwaehrung
+    return [t for t in tickers if t not in fremdwaehrung]
 
 _REQUEST_INTERVAL_SECONDS = 1.1
 

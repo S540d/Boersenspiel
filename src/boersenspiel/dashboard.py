@@ -113,6 +113,24 @@ def _real_investierbarer_zeitraum(rows: list[PriceRow], strategy: Strategy) -> l
     return rows
 
 
+def _hat_kurshistorie(rows: list[PriceRow], strategy: Strategy) -> bool:
+    """Ob ueberhaupt EIN Zeitpunkt existiert, an dem alle Zielinstrumente einen
+    Kurs haben.
+
+    Ein neu ergaenztes Instrument steht bis zum naechsten Kursabruf bzw. dem
+    naechsten Backfill mit leerer Spalte in price_history.csv. Ohne diese
+    Pruefung liefe seine Strategie ueber die volle Historie mit dauerhaft
+    geparktem Kapital (handelbare_gewichte() findet kein einziges handelbares
+    Ziel) und stuende mit einer flachen Linie und 0% Rendite in der
+    Vergleichstabelle - eine Aussage ueber die Strategie, die die Daten gar
+    nicht hergeben. `_real_investierbarer_zeitraum()` kann diesen Fall nicht
+    abfangen: es gibt schlicht keinen Zeitraum, auf den es zuschneiden koennte.
+    `build_dashboard()` laesst solche Strategien deshalb ganz weg, bis Kurse da
+    sind."""
+    ziel_ticker = set(strategy.alle_ticker_gewichte())
+    return any(ziel_ticker <= set(row.prices) for row in rows)
+
+
 # --- #80: laengerer Betrachtungszeitraum per Ersatzbond-Annahme --------------
 #
 # _real_investierbarer_zeitraum() (F4/#63) schneidet die Historie auf den
@@ -1353,6 +1371,12 @@ def build_dashboard(
     # bewusst auf der vollen, unveraenderten Historie berechnet (betrifft nur die
     # juengsten Wochen).
     rows_ohne_btc_fruehphase = _ohne_btc_fruehphase(rows)
+    # Strategien, deren Instrumente noch gar keinen Kurs haben (frisch ergaenzt,
+    # Backfill/Wochenabruf noch nicht gelaufen), bleiben ganz weg statt mit einer
+    # flachen 0%-Linie in der Vergleichstabelle zu stehen - siehe _hat_kurshistorie().
+    strategies = [s for s in strategies if _hat_kurshistorie(rows_ohne_btc_fruehphase, s)]
+    if not strategies:
+        raise ValueError("Keine Strategie hat Kurse fuer alle ihre Instrumente - kein Dashboard erzeugbar")
     strategie_rows = {s.name: _real_investierbarer_zeitraum(rows_ohne_btc_fruehphase, s) for s in strategies}
 
     views = [

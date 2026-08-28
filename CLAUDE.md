@@ -17,7 +17,7 @@ umgeschrieben, auf Wunsch des Owners aber wieder auf die ausführliche
 technische Fassung zurückgesetzt): Architektur-Diagramm, Engine-
 Modellierungsentscheidungen, volle Steuerlogik, Szenario-Tabellen und
 bekannte Einschränkungen stehen direkt im README, nicht nur verlinkt auf die
-Dashboard-Seiten. Ein `## Portfolio overview`-Abschnitt listet alle 24
+Dashboard-Seiten. Ein `## Portfolio overview`-Abschnitt listet alle 26
 Instrumente mit der Strategie, die sie tatsächlich hält. Die Ableitung aus
 dem ursprünglichen Anforderungsdokument (Pflichtenheft) wurde auf
 Owner-Wunsch aus dem README gestrichen — das Dokument ist ohnehin nicht Teil
@@ -35,8 +35,10 @@ pytest -q                          # gesamte Testsuite
 pytest tests/test_engine.py -q     # einzelne Testdatei
 pytest tests/test_engine.py::test_simple_strategy_end_to_end_exact_values -q  # einzelner Test
 
-python scripts/run_fetch.py                        # Kursabruf via Alpha Vantage (benötigt ALPHAVANTAGE_API_KEY env var)
-python scripts/backfill_history.py --years 20       # einmaliger historischer Backfill (ersetzt price_history.csv, 25 API-Requests = Tageslimit)
+python scripts/run_fetch.py --batch 1               # Kursabruf via Alpha Vantage, Batch 1 (benötigt ALPHAVANTAGE_API_KEY env var)
+python scripts/run_fetch.py --batch 2               # Batch 2, am Folgetag (zusammen decken beide alle Ticker ab, #99)
+python scripts/backfill_history.py --years 20 --batch 1   # historischer Backfill Tag 1 (ersetzt price_history.csv)
+python scripts/backfill_history.py --years 20 --batch 2   # Tag 2, mischt additiv dazu (27 Requests > Tageslimit 25)
 python scripts/build_dashboard.py                  # baut docs/index.html aus data/price_history.csv (Strategien + Szenarien)
 python scripts/build_dashboard.py --strategy "Barbell 20/80"  # nur eine Strategie/ein Szenario rendern
 ```
@@ -63,8 +65,8 @@ inkrementell fortgeschrieben).
 
 ### Trennung der Verantwortlichkeiten (wichtig beim Erweitern)
 
-- `instruments.py` — die 24 Instrumente (7 Barbell-Basisinstrumente + 10
-  Einzelaktien-Satellit + 7 im Zuge von #64 ergänzte Instrumente),
+- `instruments.py` — die 26 Instrumente (7 Barbell-Basisinstrumente + 10
+  Einzelaktien-Satellit + 7 im Zuge von #64 ergänzte Instrumente + 2 aus #99),
   **quellenunabhängig**. Kein Provider-Symbol-Mapping hier.
   **Sieben zusätzliche Instrumente (#64):** `IUSA`, `XEON`, `EXSA`, `IBCL`,
   `IBCI`, `IQQ6`, `EXXY` wurden ergänzt, um das tägliche Alpha-Vantage-Budget
@@ -82,10 +84,29 @@ inkrementell fortgeschrieben).
   waren aber zunächst fälschlich als ausschüttend markiert (relevant, weil
   sie jetzt tatsächlich alloziert sind und die Vorabpauschale-/
   Dividendenmodellierung dadurch beeinflusst wird).
-  **Request-Budget:** Mit 24 Instrumenten brauchen Backfill *und* Wochenabruf
-  je **genau 25** Requests — das volle Alpha-Vantage-Tageslimit, kein Puffer.
-  `tests/test_backfill_history.py` hält das als Test fest, damit ein
-  18. Instrument nicht still beide Workflows unmöglich macht.
+  **Zwei Instrumente für Dividende/Value (#99):** `ISPA` (iShares STOXX
+  Global Select Dividend 100, ausschüttend, Kurse ab 2009-11) und `IS3S`
+  (iShares Edge MSCI World Value Factor, thesaurierend, erst ab 2014-11) —
+  beide wie die #64-Instrumente XETRA/EUR, kein FX-Request. Der im Issue
+  vorgeschlagene Value-Ticker `IUVL` löst bei Alpha Vantage NICHT auf; die
+  XETRA-Notierung desselben Fonds läuft unter `IS3S.DEX` (`IWVL.LON` wäre USD),
+  entsprechend ist auch die ISIN die der real gehandelten Acc-Anteilsklasse
+  (IE00BP3QZB59) statt der im Issue vorgeschlagenen. Beide gehören
+  ausschließlich zu `strategies.DIVIDENDE_UND_VALUE`.
+  **Request-Budget (seit #99 je Batch):** Mit 26 Instrumenten brauchen Backfill
+  *und* Wochenabruf je **27** Requests und passen damit NICHT mehr in das
+  Alpha-Vantage-Tageslimit von 25. Beide laufen deshalb in zwei Batches an zwei
+  aufeinanderfolgenden Tagen (`sources/alphavantage.batch_tickers()`,
+  `--batch`): Batch 1 sind genau die Ticker mit Fremdwährungs-/Krypto-Endpunkt
+  (alle 9 USD-Ticker + BTC-EUR, 11 Requests inkl. des einen EUR/USD-Requests),
+  Batch 2 der Rest (16 EUR/XETRA-Ticker). Die Aufteilung ist bewusst
+  ABGELEITET statt als zwei feste Listen hinterlegt — damit landet ein künftig
+  ergänztes Instrument automatisch im richtigen Batch, und der eine
+  FX-Request fällt zwangsläufig nur in einem Lauf an.
+  `tests/test_backfill_history.py` hält das als Test fest, jetzt mit der neuen
+  Zählweise: nicht mehr „die Gesamtzahl passt in einen Tag", sondern „JEDER
+  EINZELNE Batch passt in einen Tag" (plus: die Batches decken jeden Ticker
+  genau einmal ab, und nur einer braucht den FX-Request).
   **Darstellung nicht allokierter Instrumente (#66):** Weder das Dashboard
   noch die Prämissen-Seite leiten eine Instrumentenzahl mehr aus einer
   hartkodierten Konstante ab. Die README enthält seit der #64-Nachfolgearbeit
@@ -308,7 +329,24 @@ inkrementell fortgeschrieben).
   der erfolgreichen Quotes, bei Gleichstand der frühere) statt aus dem
   Abrufdatum: ein Montagslauf vor Börsenbeginn liefert den Freitagsschluss
   der Vorwoche, der sonst eine ISO-Woche zu spät und damit versetzt zum
-  Backfill einsortiert würde. `read_fetch_log()` liest `fetch_log.csv`
+  Backfill einsortiert würde.
+  **Teilabrufe derselben ISO-Woche sind additiv (#99):** Seit der Wochenabruf
+  in zwei Batches an zwei Tagen läuft, existiert beim zweiten Lauf bereits eine
+  Zeile für die Zielwoche. Für einen Ticker ohne frischen Kurs gilt deshalb
+  ZUERST der bereits in dieser Zeile stehende Wert und erst danach der
+  Carry-Forward aus früheren Wochen — sonst würde der zweite Batch die am
+  Vortag frisch geholten Kurse des ersten auf den Stand der Vorwoche
+  zurücksetzen (`last_known` ist bewusst nur aus Wochen VOR der Zielwoche
+  gespeist). Nur ein Ticker, der auch in der bestehenden Wochenzeile fehlt
+  (Sicherheitsnetz), fällt weiterhin auf den alten Carry-Forward zurück. Der
+  neue Parameter `angefragte_ticker` benennt die Ticker, für die dieser Lauf
+  zuständig war (Default: alle): nur für sie wird ein fehlender Kurs in
+  `fetch_log.csv` protokolliert — ein Ticker aus dem anderen Batch ist nicht
+  „eingefroren", und ein Log-Eintrag dafür würde im Dashboard (#42) eine
+  Kurslücke melden, die es nicht gibt. Das Zeilendatum ist bei einer
+  bestehenden Wochenzeile das FRÜHERE der beiden Daten (vorher gewann das
+  spätere), damit die Historie nicht davon abhängt, welcher der beiden Läufe
+  zuletzt durchlief. `read_fetch_log()` liest `fetch_log.csv`
   zurück (`FetchLogEntry(date, ticker, status, source, note)`) – bislang nur
   geschrieben, seit #42 auch gelesen, um im Dashboard sichtbar zu machen,
   welche Kurse zuletzt fortgeschrieben statt frisch abgerufen wurden.
@@ -755,6 +793,19 @@ inkrementell fortgeschrieben).
   unveränderten Historie berechnet, da es nur die jüngsten Wochen betrifft.
   Die Prämissen-Seite nennt den Stichtag sowie je Strategie den tatsächlichen
   `sim_beginn` in der Handelsregeln-Tabelle.
+  **Strategien ohne Kursdaten (#99):** `_hat_kurshistorie(rows, strategy)`
+  prüft, ob es überhaupt EINEN Zeitpunkt gibt, an dem alle Zielinstrumente
+  einen Kurs haben; `build_dashboard()` lässt Strategien ohne solchen Zeitpunkt
+  komplett weg (kein Tabelleneintrag, keine Detailseite). Ein frisch ergänztes
+  Instrument steht bis zum nächsten Kursabruf/Backfill mit leerer Spalte in
+  `price_history.csv` — ohne diese Prüfung liefe seine Strategie über die volle
+  Historie mit dauerhaft geparktem Kapital (`handelbare_gewichte()` findet kein
+  handelbares Ziel) und stünde mit flacher Linie und 0% Rendite in der
+  Vergleichstabelle, also mit einer Aussage, die die Daten gar nicht hergeben.
+  `_real_investierbarer_zeitraum()` kann das nicht abfangen: es gibt keinen
+  Zeitraum, auf den es zuschneiden könnte. Genau das trifft aktuell
+  `DIVIDENDE_UND_VALUE`, bis der erste Abruf/Backfill Kurse für `ISPA`/`IS3S`
+  geliefert hat.
   **CAGR als Leitkennzahl (#63, F6b/c):** `_cagr_pct(rendite_pct, tage)`
   liefert die annualisierte Rendite aus der Gesamtrendite über die
   tatsächliche Simulationsdauer (`_tage_zwischen()`, Differenz aus erster und
@@ -1082,8 +1133,14 @@ eine aussagekräftige Exception aus. Der FX-Abruf läuft bewusst **vor** den
 Ticker-Abrufen, damit ein Fehlschlag einen statt 17 Requests kostet. Für den Lauf gibt es den manuell startbaren
 Workflow `.github/workflows/backfill.yml` (nutzt das Repo-Secret, verlangt
 `confirm=REPLACE`, schreibt eine Plausibilitätsprüfung in die Job-Summary) -
-nicht am selben Tag wie den wöchentlichen Kursabruf starten (25 + 25
-Requests > Tageslimit 25). `--years` ist nur eine untere Schranke, die
+nicht am selben Tag wie den wöchentlichen Kursabruf starten (beide zusammen
+reißen das Tageslimit 25). Seit #99 hat der Workflow zusätzlich einen
+`batch`-Input (1 / 2 / „alle"): ein vollständiger Backfill aller 26 Ticker
+braucht 27 Requests und läuft deshalb als ZWEI Läufe an zwei
+aufeinanderfolgenden Tagen — Batch 1 setzt `price_history.csv` zurück und baut
+neu auf, Batch 2 mischt seine Ticker über denselben `record_week()`-Merge
+additiv dazu. Die Reihenfolge ist bindend: Batch 2 zuerst ließe die Historie
+der Batch-1-Ticker leer. Nach Tag 1 ist die Historie bewusst unvollständig. `--years` ist nur eine untere Schranke, die
 `AlphaVantageSource.fetch_weekly_history()`/`fetch_crypto_weekly_history()`
 zum Filtern der von Alpha Vantage gelieferten Zeitreihe nutzen - ein Wert,
 der weiter zurückliegt als die tatsächlich verfügbare Historie eines
@@ -1098,10 +1155,20 @@ Werts ein, dieselbe Lücken-Behandlung wie beim laufenden Live-Abruf.
 
 ### GitHub Actions (`.github/workflows/weekly-update.yml`)
 
-Läuft wöchentlich (Montag 06:00 UTC) + `workflow_dispatch`: Tests →
-Kursabruf (Alpha Vantage) → Dashboard-Build → Commit von
-`data/price_history.csv`/`data/fetch_log.csv` zurück ins Repo →
-GitHub-Pages-Deploy. Braucht die Secrets/Settings: Repo-Secret
+Läuft seit #99 an ZWEI aufeinanderfolgenden Tagen (Sonntag und Montag, je
+06:00 UTC) + `workflow_dispatch` (mit Auswahl-Input `batch`): Tests →
+Kursabruf (Alpha Vantage, `run_fetch.py --batch N`) → Dashboard-Build →
+Commit von `data/price_history.csv`/`data/fetch_log.csv` zurück ins Repo →
+GitHub-Pages-Deploy. Welcher Batch läuft, leitet der Workflow aus
+`github.event.schedule` ab (Sonntags-Cron → Batch 1, sonst Batch 2); bei
+manuellem Start entscheidet der Input. **Sonntag+Montag statt Montag+Dienstag
+(wichtig beim Verschieben der Cron-Zeiten):** einsortiert werden die Kurse über
+den von der Quelle gemeldeten HANDELSTAG, nicht über das Abrufdatum
+(`row_date_from_quotes()`). Beide Läufe liegen so vor dem Xetra-Handelsbeginn
+am Montag und sehen denselben letzten Handelstag (Freitag) — und landen damit
+in derselben ISO-Woche, die `record_week()` dann additiv zusammenführt. Ein
+Dienstagslauf sähe bereits den Montagsschluss, also die FOLGEWOCHE, und die
+Ticker seines Batches hingen dauerhaft eine Woche hinterher. Braucht die Secrets/Settings: Repo-Secret
 `ALPHAVANTAGE_API_KEY`; Settings → Actions → Workflow permissions → "Read
 and write permissions"; Settings → Pages → Source → "GitHub Actions".
 **Der Commit-Schritt trägt bewusst `continue-on-error: true`:** ein
@@ -1144,7 +1211,17 @@ ein Test-Paar mit identischem Kursverlauf, das mit gesetztem
 auslöst und mit dem Default (`1`, effektiv deaktiviert) exakt das Verhalten
 vor #63 reproduziert (kein Rebalancing).
 `tests/test_history_store.py` prüft Wochen-Idempotenz, Carry-Forward und
-`read_fetch_log()`.
+`read_fetch_log()`; seit #99 zusätzlich die additiven Teilabrufe: ein zweiter
+Batch derselben Woche darf die Kurse des ersten nicht auf die Vorwoche
+zurückwerfen, protokolliert nur seine eigenen Ticker, hält das frühere
+Zeilendatum — und ein Ticker, der in KEINEM Batch war, fällt weiterhin auf den
+alten Carry-Forward zurück (Sicherheitsnetz).
+`tests/test_dividende_value.py` prüft die #99-Strategie: Registrierung und
+Rubrik, Gewichte summieren zu 1, zwei gleich große Töpfe, 5/25-Regel,
+Symbol-Mapping vorhanden und EUR/XETRA-notiert, die belegten Steuerattribute
+(ISPA ausschüttend mit eigenem Satz, IS3S thesaurierend, beide 30%
+Teilfreistellung), End-to-End-Lauf sowie ein Regressionstest analog zu #64,
+dass keine bestehende Strategie die zwei neuen Instrumente hält.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
 Provider-API vollständig (kein echter Netzwerkzugriff in Tests).
 `tests/test_scenarios.py` verifiziert die generische `gewichte_fn`-Mechanik

@@ -10,7 +10,7 @@ dashboard on GitHub Pages.
 
 ## The portfolio
 
-24 instruments are tracked in `instruments.py`; which of them a given
+26 instruments are tracked in `instruments.py`; which of them a given
 strategy actually holds, and at what weight, is decided separately in
 `strategies.py`. Two buckets recur in most strategies:
 
@@ -46,9 +46,20 @@ Hold)`, is not a barbell at all — a single, never-rebalanced position in an
 S&P 500 ETF, included purely as the "just buy the index" comparison line
 that was otherwise missing from the dashboard.
 
+`Dividend & Value` splits differently again: not across asset classes but
+*within* equities, by a selection criterion — 50% a dividend strategy (`ISPA`,
+STOXX Global Select Dividend 100) and 50% the value factor (`IS3S`, MSCI World
+Value). Dividend and value investing are among the most widely discussed
+approaches there are, and no instrument in the set had a targeted exposure to
+either: `Instrument.dividendenrendite` only models the *payout* of instruments
+held for other reasons. Both instruments are new, which is what forced the
+two-day price fetch described below. Their weights are the obvious equal split,
+not optimized or backtested — `IS3S` only has prices from November 2014, so the
+strategy starts later than the rest.
+
 ### Portfolio overview
 
-All 24 tracked instruments, and which strategy actually holds each one:
+All 26 tracked instruments, and which strategy actually holds each one:
 
 | Ticker | Instrument | Held by |
 |---|---|---|
@@ -76,6 +87,8 @@ All 24 tracked instruments, and which strategy actually holds each one:
 | `IBCI` | Inflation-linked Euro government bonds ETF (iShares) | Barbell 20/80 (diversified) |
 | `IQQ6` | Real estate ETF (iShares Developed Markets Property Yield) | Barbell 20/80 (diversified) |
 | `EXXY` | Broad commodities ETF (iShares Diversified Commodity Swap) | Barbell 20/80 (diversified) |
+| `ISPA` | Global dividend ETF (iShares STOXX Global Select Dividend 100) | Dividend & Value |
+| `IS3S` | Value factor ETF (iShares Edge MSCI World Value Factor) | Dividend & Value |
 
 `engine.simulate()` only ever reads `strategy.alle_ticker_gewichte()` — an
 instrument only moves the numbers of the strategies that actually list it.
@@ -98,14 +111,14 @@ computes analytics from them.
 flowchart TB
     subgraph beschaffung["① Data acquisition — weekly, writing"]
         direction TB
-        cron["GitHub Actions<br/>Mon 06:00 UTC"] --> fetch["run_fetch.py"]
+        cron["GitHub Actions<br/>Sun + Mon 06:00 UTC<br/>(one ticker batch each)"] --> fetch["run_fetch.py --batch"]
         fetch --> av["AlphaVantageSource<br/>symbol mapping · USD→EUR"]
         av --> store
         back["backfill_history.py<br/>one-off, years back"] --> store
         store["history_store.record_week()<br/><b>only write path</b><br/>weekly idempotency · carry-forward"]
     end
 
-    store ==> csv[("<b>data/price_history.csv</b><br/>date × 24 tickers<br/><i>raw prices only, nothing derived</i>")]
+    store ==> csv[("<b>data/price_history.csv</b><br/>date × 26 tickers<br/><i>raw prices only, nothing derived</i>")]
     store -.log.-> log[("data/fetch_log.csv")]
 
     subgraph auswertung["② Analytics — fresh on every build, reading"]
@@ -125,7 +138,7 @@ flowchart TB
 ### Process overview
 
 **① Data acquisition.** Once a week, the workflow fetches a price for each of
-the 24 tickers. Everything source-specific — Alpha Vantage symbols, the
+the 26 tickers. Everything source-specific — Alpha Vantage symbols, the
 USD→EUR conversion of the satellite stocks, the dedicated crypto endpoint —
 stays inside `sources/`. The result is always the same: one `PriceQuote` per
 ticker. Which provider delivered the price is no longer visible, or relevant,
@@ -139,6 +152,17 @@ missing, the last known price is carried forward (carry-forward) and noted in
 to is decided by the **trading day** reported by the source, not the day of
 the fetch: a Monday-morning run before the market opens returns Friday's
 closing price from the previous week, and that belongs in Friday's week.
+
+**Partial fetches of the same week are additive.** Since 26 instruments no
+longer fit into Alpha Vantage's daily free-tier budget, the weekly fetch runs
+on two consecutive days, each covering one ticker batch (see "Two-day price
+fetch" below). When a row for the target week already exists, a ticker without
+a fresh quote keeps **the value already in that row** and only falls back to
+the carry-forward from earlier weeks if it is missing there too — otherwise the
+second run would reset the first run's fresh prices to last week's state. A
+partial run also only logs missing prices for the tickers it was responsible
+for: a ticker from the other batch is not frozen, it simply arrives on the
+other day.
 
 **Only the raw price is persisted.** No position values, no share counts, no
 tax state. That is the project's central design decision: everything derived
@@ -187,9 +211,9 @@ Three properties that are easy to miss:
   runs could happen in any order or in parallel.
 - **Scenarios only use part of the data.** All scenarios in `scenarios.py`
   build on the buckets of `Barbell 20/80` and therefore only touch **7 of the
-  24** tickers; the other 17 (the 10 satellite stocks and the 7 instruments
-  from `Barbell 20/80 (diversified)`/the benchmark) only appear in specific
-  strategies. The price history is deliberately broader than any single
+  26** tickers; the other 19 (the 10 satellite stocks, the 7 instruments from
+  `Barbell 20/80 (diversified)`/the benchmark, and the 2 from `Dividend &
+  Value`) only appear in specific strategies. The price history is deliberately broader than any single
   evaluation.
 - **No lookahead.** Every `gewichte_fn` may only read `rows[:i+1]`. A rule
   deciding in week i must not know week i+1 — otherwise every result would be
@@ -228,7 +252,7 @@ strategy always yields the identical result.
 
 | File | Purpose |
 |---|---|
-| `src/boersenspiel/instruments.py` | The 24 instruments (7 barbell base + 10 single-stock satellite + 7 from the diversified barbell/benchmark; ticker, ISIN) – source-independent |
+| `src/boersenspiel/instruments.py` | The 26 instruments (7 barbell base + 10 single-stock satellite + 7 from the diversified barbell/benchmark + 2 dividend/value; ticker, ISIN) – source-independent |
 | `src/boersenspiel/strategies.py` | Interchangeable strategy definitions (weights, buckets, rebalancing threshold) + cross-strategy tax/fee constants |
 | `src/boersenspiel/history_store.py` | Only write path to `data/price_history.csv` / `data/fetch_log.csv` |
 | `src/boersenspiel/sources/` | Interchangeable price sources (default: `alphavantage.py`) |
@@ -255,6 +279,36 @@ mapping lives exclusively in this file. A manual, non-Actions entry point
 (via Cowork/web search) existed earlier but was removed
 ([#51](https://github.com/S540d/Boersenspiel/issues/51)) in favor of a single,
 consistent GitHub Actions path.
+
+### Two-day price fetch
+
+Alpha Vantage's free tier allows 25 requests per day and API key. Fetching all
+26 tickers needs 27 (26 `GLOBAL_QUOTE`/crypto calls + 1
+`CURRENCY_EXCHANGE_RATE`), so the weekly fetch runs on **two consecutive days**,
+each covering one batch:
+
+| Batch | Tickers | Requests | Cron |
+|---|---|---|---|
+| 1 | the ones needing a foreign-currency or crypto endpoint (all 9 USD tickers + `BTC-EUR`), plus the single EUR/USD request | 11 | Sun 06:00 UTC |
+| 2 | the EUR/Xetra tickers | 16 | Mon 06:00 UTC |
+
+Every ticker is still updated exactly once per week, just no longer all on the
+same weekday. The split is *derived*, not hard-coded
+(`sources/alphavantage.batch_tickers()`): batch 1 is exactly the set that needs
+FX or crypto, batch 2 is the rest. That keeps the one EUR/USD request in a
+single run, and a future instrument lands in the right batch automatically
+instead of silently falling out of a stored list.
+
+**Sunday + Monday, not Monday + Tuesday.** Prices are filed under the *trading
+day* reported by the source, not the fetch date. Both runs sit before Monday's
+Xetra open and therefore see the same last trading day (Friday) and land in
+the same ISO week. A Tuesday run would already see Monday's close — the
+following week — and its batch would end up permanently one week behind.
+
+The merge in `record_week()` is what makes this safe; see "① Fetch price data"
+above. `tests/test_backfill_history.py` guards the budget per batch (each batch
+≤ 25 requests, the batches cover every ticker exactly once, and only one batch
+needs the FX request).
 
 ### Setting up Alpha Vantage
 
@@ -294,13 +348,20 @@ the historical `FX_WEEKLY` rate for the same week (forward-fill if no FX
 rate is available for a given week).
 
 ```bash
-python scripts/backfill_history.py --years 20  # default: 20 years back (lower bound only)
+python scripts/backfill_history.py --years 20 --batch 1  # day 1
+python scripts/backfill_history.py --years 20 --batch 2  # day 2
 ```
 
-Uses exactly 25 requests (23 non-crypto tickers + 1× `FX_WEEKLY` + 1× crypto)
-— the full daily free-tier limit, with no headroom left since the seven
-additional instruments were added. A re-run after a network error, a debug
-call, or the weekly fetch on the same day will all breach it. An unresolvable
+A backfill of all tickers needs 27 requests (25 non-crypto tickers + 1×
+`FX_WEEKLY` + 1× crypto) and therefore no longer fits into the daily
+free-tier limit of 25. A full backfill runs in two batches on two consecutive
+days, in this order: batch 1 (foreign-currency/crypto tickers, 11 requests)
+resets the CSVs and rebuilds the history, batch 2 (EUR/Xetra tickers, 16
+requests) does **not** reset but merges its tickers additively into the rows
+already written, through the same `record_week()` merge as the weekly fetch.
+Running `--batch 2` first would leave the batch-1 tickers empty. Without
+`--batch`, the single-day run over all tickers still exists but needs a
+premium key. An unresolvable
 ticker symbol aborts the run without returning the requests already spent, so
 verify symbols (`SYMBOL_SEARCH`) before adding an instrument;
 `tests/test_backfill_history.py` guards the budget itself. **Replaces** `price_history.csv` completely -
@@ -668,8 +729,9 @@ pytest -q
   its high rather than across the full period — see
   [#56](https://github.com/S540d/Boersenspiel/issues/56).
 - **Alpha Vantage free-tier limit:** 25 requests/day, max. 1 request/second.
-  Still unproblematic for the current 24 tickers fetched once a week, but
-  barely any headroom for additional manual fetches on the same day;
+  The current 26 tickers need 27 requests and therefore no longer fit into a
+  single day — the weekly fetch is split across two consecutive days (see
+  "Two-day price fetch"), leaving headroom only in batch 2;
   `AlphaVantageSource` sleeps between requests. If a price still fails (e.g.
   due to rate limiting or an empty response), the last known price is
   carried forward and noted in `fetch_log.csv` (a row is never left with a

@@ -8,6 +8,12 @@ an Yahoos Crumb/Cookie-Authentifizierung scheiterte) und schreibt das Ergebnis
 Umgebungsvariable ``ALPHAVANTAGE_API_KEY`` (als GitHub-Actions-Secret
 hinterlegt). Läuft ausschließlich über GitHub Actions (siehe #51) - der
 frühere manuelle/Cowork-Weg über ``record_prices.py`` wurde gestrichen.
+
+Seit #99 holt ein Lauf nur noch eine Ticker-Teilmenge (``--batch``): alle
+Ticker zusammen brauchen mehr Requests, als Alpha Vantages Free Tier pro Tag
+erlaubt. Der Workflow startet deshalb zwei Läufe an zwei aufeinanderfolgenden
+Tagen; ``history_store.record_week`` mischt den zweiten additiv in die Zeile
+derselben ISO-Woche.
 """
 
 from __future__ import annotations
@@ -20,7 +26,7 @@ import _bootstrap  # noqa: F401
 
 from boersenspiel.history_store import record_week, row_date_from_quotes
 from boersenspiel.instruments import TICKERS
-from boersenspiel.sources.alphavantage import AlphaVantageSource
+from boersenspiel.sources.alphavantage import FETCH_BATCHES, AlphaVantageSource, batch_tickers
 
 
 def main() -> int:
@@ -36,14 +42,32 @@ def main() -> int:
         ),
     )
     parser.add_argument(
+        "--batch",
+        type=int,
+        choices=FETCH_BATCHES,
+        default=None,
+        help=(
+            "Nur die Ticker dieses Wochen-Batches abrufen (Default: alle). Seit #99 "
+            "braucht ein Abruf aller Ticker mehr als die 25 Requests, die Alpha "
+            "Vantages Free Tier pro Tag erlaubt - der Wochenabruf laeuft deshalb an "
+            "zwei aufeinanderfolgenden Tagen mit je einem Batch. Batch 1 sind die "
+            "Ticker mit Fremdwaehrungs-/Krypto-Endpunkt (inkl. des einen "
+            "EUR/USD-Requests), Batch 2 die EUR/XETRA-Ticker."
+        ),
+    )
+    parser.add_argument(
         "--ignore-handelstag",
         action="store_true",
         help="Kurse stur unter --date ablegen, statt unter ihrem Handelstag",
     )
     args = parser.parse_args()
 
+    tickers = TICKERS if args.batch is None else batch_tickers(TICKERS, args.batch)
+    if args.batch is not None:
+        print(f"Batch {args.batch}: {len(tickers)} von {len(TICKERS)} Tickern ({', '.join(tickers)})")
+
     source = AlphaVantageSource()
-    quotes = source.fetch(TICKERS, args.date)
+    quotes = source.fetch(tickers, args.date)
 
     missing = [t for t, q in quotes.items() if q.status != "ok"]
     if missing:
@@ -71,7 +95,10 @@ def main() -> int:
     if as_of != args.date:
         print(f"Kurse beziehen sich auf den Handelstag {as_of.isoformat()} (Abruf: {args.date.isoformat()})")
 
-    row = record_week(as_of, quotes)
+    # angefragte_ticker: nur fuer die Ticker DIESES Batches darf ein fehlender
+    # Kurs als Luecke protokolliert werden - die des anderen Batches kommen am
+    # anderen Wochentag und sind nicht "eingefroren" (siehe record_week).
+    row = record_week(as_of, quotes, angefragte_ticker=tickers)
     print(f"Kurshistorie aktualisiert fuer {row.date.isoformat()}: {row.prices}")
     return 0
 

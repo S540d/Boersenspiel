@@ -25,7 +25,9 @@ from boersenspiel.dashboard import (
     _build_strategy_view,
     _cagr_pct,
     _ERSATZBOND_TICKER,
+    _cash_anteil_max,
     _gemeinsamer_beginn,
+    _hat_kurshistorie,
     _downside_deviation,
     _f,
     _GELDMARKT_TICKER,
@@ -50,7 +52,7 @@ from boersenspiel.dashboard import (
     _ZINS_MIN_WOCHEN,
     build_dashboard,
 )
-from boersenspiel.engine import simulate
+from boersenspiel.engine import ValuePoint, simulate
 from boersenspiel.history_store import FetchLogEntry, PriceRow
 from boersenspiel.instruments import TICKERS
 from boersenspiel.strategies import (
@@ -818,24 +820,35 @@ def test_praemissen_seite_zeigt_null_prozent_cash_wenn_immer_alles_investiert_is
     assert html.count(">0.0<") >= 2
 
 
-def test_praemissen_seite_zeigt_cash_hoechststand_wenn_kein_zielinstrument_handelbar(tmp_path: Path):
-    # T2 hat in KEINER Zeile einen Kurs -> das Kapital dieses (isolierten)
-    # Topfs bleibt vollstaendig geparkt (pending_cash), da handelbare_gewichte()
-    # nichts zum Umlegen findet.
-    strategie = Strategy(
-        name="Nur T2",
-        startkapital=Decimal("1000"),
-        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={"T2": Decimal("1")})],
-        ziel_topf="Topf",
-        ziel_gewicht=Decimal("1"),
-        rebalancing_schwelle_pp=Decimal("1000"),
-    )
-    build_dashboard(_rows(), [strategie], output_path=tmp_path / "index.html")
-    html = (tmp_path / "praemissen.html").read_text(encoding="utf-8")
+def test_cash_anteil_max_findet_hoechststand_und_datum():
+    """Der Wert, den die Praemissen-Seite je Strategie ausweist: der groesste
+    Anteil technischen ``pending_cash`` (Kapital ohne handelbares Ziel) samt
+    Datum.
 
-    assert "hält aktuell nicht jede" in html
-    assert "100.0" in html
-    assert "2024-01-01" in html.split("Cash und ungenutztes Kapital", 1)[1]
+    Bis #99 lief dieser Test ueber ``build_dashboard()`` mit einer Strategie,
+    deren einziges Instrument in KEINER Kurszeile vorkam. Genau solche
+    Strategien laesst das Dashboard seither weg (siehe ``_hat_kurshistorie``) -
+    "ein Instrument, das es nie gab" ist kein Cash-Fall, sondern eine noch
+    nicht befuellte Datenreihe. Der Cash-Hoechststand wird deshalb direkt
+    geprueft, mit einer Wertreihe, in der ein Teil des Kapitals
+    voruebergehend nicht investiert ist."""
+    punkte = [
+        ValuePoint(date(2024, 1, 1), Decimal("1000"), {"T1": Decimal("400")}, {}, {}, {}),
+        ValuePoint(date(2024, 1, 8), Decimal("1000"), {"T1": Decimal("1000")}, {}, {}, {}),
+    ]
+    pct, datum = _cash_anteil_max(punkte)
+    assert pct == pytest.approx(60.0)
+    assert datum == "2024-01-01"
+
+
+def test_praemissen_seite_weist_den_cash_hoechststand_je_strategie_aus(tmp_path: Path):
+    build_dashboard(_rows(), ZWEI_STRATEGIEN, output_path=tmp_path / "index.html")
+    abschnitt = (tmp_path / "praemissen.html").read_text(encoding="utf-8").split(
+        "Cash und ungenutztes Kapital", 1
+    )[1]
+
+    for strategie in ZWEI_STRATEGIEN:
+        assert strategie.name in abschnitt
 
 
 # --- F6b/c (#63): CAGR als Leitkennzahl -------------------------------------------
@@ -1695,3 +1708,41 @@ def test_ohne_zusaetzliche_historie_kein_schalter(tmp_path: Path):
     # In den Datenzeilen steht kein Zweitwert (die Spaltenkoepfe tragen ihre
     # Zweitbeschriftung dagegen immer - ohne Schalter greift sie nie).
     assert "data-erweitert=" not in _summary_tabelle(tmp_path).split("<tbody>", 1)[1]
+
+
+# --- Strategien ohne Kursdaten (#99) -----------------------------------------
+#
+# Ein frisch ergaenztes Instrument steht bis zum naechsten Kursabruf/Backfill
+# mit leerer Spalte in price_history.csv. Seine Strategie darf dann nicht mit
+# einer flachen 0%-Linie in der Vergleichstabelle stehen.
+
+
+def _strategie_auf(ticker: str, name: str) -> Strategy:
+    return Strategy(
+        name=name,
+        startkapital=Decimal("1000"),
+        toepfe=[Topf(name="Topf", gewicht_gesamt=Decimal("1"), sub_gewichte={ticker: Decimal("1")})],
+        ziel_topf="Topf",
+        ziel_gewicht=Decimal("1"),
+        rebalancing_schwelle_pp=Decimal("1000"),
+    )
+
+
+def test_hat_kurshistorie_erkennt_instrumente_ohne_kurse():
+    assert _hat_kurshistorie(_rows(), _strategie_auf("T1", "vorhanden"))
+    assert not _hat_kurshistorie(_rows(), _strategie_auf("NEU", "frisch ergaenzt"))
+
+
+def test_strategie_ohne_kursdaten_erscheint_nicht_im_dashboard(tmp_path: Path):
+    ohne_daten = _strategie_auf("NEU", "Z: Ohne Kursdaten")
+    build_dashboard(_rows(), [*ZWEI_STRATEGIEN, ohne_daten], tmp_path / "index.html")
+
+    assert "Z: Ohne Kursdaten" not in _summary_tabelle(tmp_path)
+    assert not (tmp_path / f"{_slug(ohne_daten.name)}.html").exists()
+    # Die uebrigen Strategien bleiben unberuehrt.
+    assert "A: Verdoppler" in _summary_tabelle(tmp_path)
+
+
+def test_dashboard_ohne_jede_bewertbare_strategie_bricht_ab(tmp_path: Path):
+    with pytest.raises(ValueError):
+        build_dashboard(_rows(), [_strategie_auf("NEU", "Z: Ohne Kursdaten")], tmp_path / "index.html")

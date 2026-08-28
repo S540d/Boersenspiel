@@ -174,6 +174,7 @@ RUBRIK_CHARTTECHNIK = "Charttechnik"
 RUBRIK_WEITERE_ANALYSEN = "Weitere Analysen"
 RUBRIK_REFERENZ = "Referenz"
 RUBRIK_KLASSISCHE_PORTFOLIOS = "Klassische Portfolios"
+RUBRIK_FAKTOR = "Faktor-Strategien"
 
 # --- Strategie 1: Barbell 20/80 (Pflichtenheft v2.0) -----------------------
 
@@ -552,6 +553,81 @@ PERMANENT_PORTFOLIO = Strategy(
     ),
 )
 
+# --- Strategie 8: Dividende & Value (#99) -----------------------------------
+#
+# Dividenden-Investing und Value/Faktor-Investing gehoeren zu den bekanntesten
+# Boersenstrategien ueberhaupt - im bisherigen Instrumentenset hatte aber kein
+# einziges Instrument eine gezielte Dividenden- oder Value-Ausrichtung.
+# `Instrument.dividendenrendite` (#74) modelliert nur die Ausschuettung der
+# ohnehin gehaltenen Instrumente; das ist etwas anderes als ein Portfolio, das
+# nach genau diesem Merkmal AUSGEWAEHLT wird.
+#
+# Anders als das 60/40- und das Permanent Portfolio (#98) liess sich das nicht
+# aus vorhandenen Instrumenten bauen: ISPA und IS3S sind dafuer neu
+# dazugekommen (siehe instruments.py) - und mit ihnen die Aufteilung des
+# Wochenabrufs auf zwei Tage, weil das Alpha-Vantage-Tagesbudget vorher exakt
+# ausgeschoepft war (siehe sources/alphavantage.py, `batch_tickers`).
+#
+# Umgesetzt ist die im Issue vorgeschlagene KOMBINIERTE Variante (ein
+# Strategie-Eintrag, zwei gleich grosse Toepfe) statt zweier getrennter
+# Strategien - die Vergleichstabelle bleibt damit kompakt. Der isolierte
+# Effekt jedes der beiden Faktoren bleibt trotzdem sichtbar: die Detailseite
+# weist die Topf-Gewichtung Ist/Ziel je Topf aus. Sollen "Dividende" und
+# "Value" spaeter als eigene Zeilen verglichen werden, sind das zwei weitere
+# Eintraege in STRATEGIES ohne jede Aenderung an Engine oder Dashboard.
+#
+# Eigene Rubrik statt RUBRIK_KLASSISCHE_PORTFOLIOS: 60/40 und Permanent
+# Portfolio teilen ueber ANLAGEKLASSEN auf (Aktien/Anleihen/Gold/Cash), diese
+# Strategie dagegen innerhalb derselben Anlageklasse nach einem
+# AUSWAHLMERKMAL der Aktien. Das ist der inhaltlich andere Ansatz, und die
+# Rubrik ist der Platz fuer weitere Faktoren (Quality, Low-Vol, Momentum als
+# eigenes Instrument), die dieses Issue bewusst ausklammert.
+#
+# Erster Ansatz wie bei allen Strategien: die 50/50-Aufteilung ist die
+# naheliegende Gleichgewichtung, nicht fuer dieses Instrumentenset optimiert
+# oder gebacktestet. IS3S hat erst ab November 2014 Kurse - die Strategie
+# startet nach der F4-Regel (#63) entsprechend spaeter als die uebrigen.
+
+DIVIDENDE_UND_VALUE = Strategy(
+    name="Dividende & Value",
+    rubrik=RUBRIK_FAKTOR,
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Dividende",
+            gewicht_gesamt=Decimal("0.50"),
+            sub_gewichte={"ISPA": Decimal("1")},
+        ),
+        Topf(
+            name="Topf B - Value",
+            gewicht_gesamt=Decimal("0.50"),
+            sub_gewichte={"IS3S": Decimal("1")},
+        ),
+    ],
+    ziel_topf="Topf A - Dividende",
+    ziel_gewicht=Decimal("0.50"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
+    beschreibung=(
+        "Zwei der meistdiskutierten Aktien-Stile zu gleichen Teilen: 50% "
+        "Dividendenstrategie (STOXX Global Select Dividend 100 - die 100 "
+        "dividendenstärksten Titel weltweit) und 50% Value-Faktor (MSCI World "
+        "Value - günstig bewertete Titel des Weltindex). Anders als bei 60/40 "
+        "oder dem Permanent Portfolio wird hier nicht zwischen Anlageklassen "
+        "aufgeteilt, sondern innerhalb der Aktien nach einem Auswahlmerkmal. "
+        "Rebalancing nach der 5/25-Regel."
+    ),
+    beschreibung_en=(
+        "Two of the most widely discussed equity styles in equal parts: 50% "
+        "dividend strategy (STOXX Global Select Dividend 100 - the 100 highest "
+        "dividend-paying stocks worldwide) and 50% value factor (MSCI World "
+        "Value - the cheaply valued names in the world index). Unlike 60/40 or "
+        "the Permanent Portfolio, this splits within equities by a selection "
+        "criterion rather than across asset classes. Rebalances using the 5/25 "
+        "rule."
+    ),
+)
+
 STRATEGIES: list[Strategy] = [
     BARBELL_20_80,
     BARBELL_30_70,
@@ -560,6 +636,7 @@ STRATEGIES: list[Strategy] = [
     SP500_BENCHMARK,
     PORTFOLIO_60_40,
     PERMANENT_PORTFOLIO,
+    DIVIDENDE_UND_VALUE,
 ]
 
 STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}

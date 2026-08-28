@@ -28,8 +28,85 @@ def test_record_week_updates_same_iso_week_instead_of_duplicating(tmp_path: Path
 
     rows = read_price_history(tmp_path)
     assert len(rows) == 1
-    assert rows[0].date == date(2024, 1, 3)
+    # Seit #99 gewinnt bei einer bestehenden Wochenzeile das FRUEHERE Datum:
+    # der Wochenabruf laeuft an zwei Tagen, und welcher der beiden Laeufe
+    # zuletzt durchlief, soll die Historie nicht verschieben. Fuer die
+    # ISO-Wochen-Einordnung zaehlt ohnehin nur die Kalenderwoche.
+    assert rows[0].date == date(2024, 1, 1)
     assert rows[0].prices["EUNL"] == Decimal("82.0")
+
+
+# --- Teilabrufe derselben Woche (#99) ---------------------------------------
+#
+# Der Wochenabruf laeuft seit #99 an zwei aufeinanderfolgenden Tagen mit je
+# einer Ticker-Teilmenge (Alpha-Vantage-Tageslimit). Ohne den Merge-Modus in
+# record_week() wuerde der zweite Teilabruf die frisch geholten Kurse des
+# ersten auf den Stand der Vorwoche zurueckwerfen - genau der Fall, den diese
+# Tests festhalten.
+
+
+def test_zweiter_teilabruf_behaelt_die_kurse_des_ersten(tmp_path: Path):
+    # Vorwoche: beide Ticker haben einen (alten) Kurs, an dem ein fehlerhafter
+    # Carry-Forward sichtbar wuerde.
+    record_week(date(2024, 1, 1), _quotes(EUNL=80.0, EUNA=5.0), data_dir=tmp_path)
+
+    # Batch 1 der Folgewoche: nur EUNL.
+    record_week(
+        date(2024, 1, 8), _quotes(EUNL=90.0), data_dir=tmp_path, angefragte_ticker=["EUNL"]
+    )
+    # Batch 2 derselben Woche: nur EUNA - EUNL steckt hier gar nicht in quotes.
+    record_week(
+        date(2024, 1, 9), _quotes(EUNA=6.0), data_dir=tmp_path, angefragte_ticker=["EUNA"]
+    )
+
+    rows = read_price_history(tmp_path)
+    assert len(rows) == 2
+    assert rows[1].prices["EUNL"] == Decimal("90.0")  # nicht auf 80.0 zurueckgefallen
+    assert rows[1].prices["EUNA"] == Decimal("6.0")
+
+
+def test_teilabruf_protokolliert_nur_die_eigenen_ticker(tmp_path: Path):
+    record_week(date(2024, 1, 1), _quotes(EUNL=80.0, EUNA=5.0), data_dir=tmp_path)
+    record_week(
+        date(2024, 1, 8), _quotes(EUNL=90.0), data_dir=tmp_path, angefragte_ticker=["EUNL"]
+    )
+
+    # EUNA ist nicht "eingefroren", sondern kommt am anderen Wochentag - ein
+    # carried_forward-Eintrag dafuer wuerde im Dashboard (#42) eine Kursluecke
+    # melden, die es gar nicht gibt.
+    protokolliert = {e.ticker for e in read_fetch_log(tmp_path) if e.date == date(2024, 1, 8)}
+    assert protokolliert == set()
+
+
+def test_fehlender_ticker_beider_batches_faellt_weiterhin_zurueck(tmp_path: Path):
+    """Sicherheitsnetz: ein Ticker, der auch in der bestehenden Wochenzeile
+    fehlt (in keinem der beiden Batches gewesen), nutzt weiterhin den alten
+    Carry-Forward aus frueheren Wochen."""
+    record_week(date(2024, 1, 1), _quotes(EUNL=80.0, EUNA=5.0), data_dir=tmp_path)
+    record_week(
+        date(2024, 1, 8), _quotes(EUNL=90.0), data_dir=tmp_path, angefragte_ticker=["EUNL", "EUNA"]
+    )
+
+    rows = read_price_history(tmp_path)
+    assert rows[1].prices["EUNA"] == Decimal("5.0")
+    log = [e for e in read_fetch_log(tmp_path) if e.date == date(2024, 1, 8) and e.ticker == "EUNA"]
+    assert [e.status for e in log] == ["carried_forward"]
+
+
+def test_teilabruf_haelt_das_fruehere_zeilendatum(tmp_path: Path):
+    """Beide Teilabrufe legen ihre Kurse unter dem gemeldeten Handelstag ab
+    (row_date_from_quotes) - liegen die beiden Handelstage in derselben Woche,
+    gewinnt der fruehere, unabhaengig von der Reihenfolge der Laeufe."""
+    record_week(
+        date(2024, 1, 11), _quotes(EUNL=90.0), data_dir=tmp_path, angefragte_ticker=["EUNL"]
+    )
+    record_week(
+        date(2024, 1, 12), _quotes(EUNA=6.0), data_dir=tmp_path, angefragte_ticker=["EUNA"]
+    )
+
+    rows = read_price_history(tmp_path)
+    assert len(rows) == 1
+    assert rows[0].date == date(2024, 1, 11)
 
 
 def test_record_week_new_iso_week_appends_second_row(tmp_path: Path):
