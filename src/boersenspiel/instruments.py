@@ -246,6 +246,55 @@ INSTRUMENTS: dict[str, Instrument] = {
             thesaurierend=True,
             ter=Decimal("0.0046"),
         ),
+        # --- Dividende und Value (#99) ------------------------------------------
+        # Zwei Faktor-/Stil-Bausteine, die es im bisherigen Instrumentenset gar
+        # nicht gab: eine gezielte Dividenden- und eine gezielte
+        # Value-Ausrichtung. `Instrument.dividendenrendite` (#74) modelliert nur
+        # die Ausschuettung der ohnehin gehaltenen Instrumente - eine
+        # Dividendenstrategie ist etwas anderes als ein hoch ausschuettendes
+        # Instrument in einem beliebigen Topf.
+        #
+        # Beide bewusst als XETRA-Symbol in EUR (Konvention seit #64): kein
+        # zusaetzlicher FX-Request, und das Waehrungsproblem aus #62 entsteht
+        # fuer sie gar nicht erst. Am 28.08.2026 per SYMBOL_SEARCH/GLOBAL_QUOTE
+        # geprueft - beide loesen auf XETRA in EUR auf.
+        #
+        # Der im Issue vorgeschlagene Value-Ticker `IUVL` existiert bei Alpha
+        # Vantage NICHT (SYMBOL_SEARCH liefert keinen Treffer); die
+        # EUR-/XETRA-Notierung desselben iShares-Fonds laeuft unter `IS3S.DEX`
+        # (die LSE-Notierung `IWVL.LON` waere USD und damit FX-pflichtig).
+        # Entsprechend ist auch die ISIN die der tatsaechlich an der XETRA
+        # gehandelten Acc-Anteilsklasse (IE00BP3QZB59), nicht die im Issue
+        # vorgeschlagene.
+        #
+        # Historie (per TIME_SERIES_MONTHLY geprueft): ISPA ab 2009-11, IS3S ab
+        # 2014-11. Value-Faktor-ETFs sind wie im Issue vermutet juenger als die
+        # uebrigen Instrumente - die Strategie startet nach der F4-Regel
+        # (#63, _real_investierbarer_zeitraum) deshalb fruehestens Ende 2014.
+        Instrument(
+            "ISPA",
+            "Dividenden-ETF global (iShares STOXX Global Select Dividend 100, aussch.)",
+            "DE000A0F5UH1",
+            # Haelt 100 dividendenstarke Aktien -> Aktienfonds-Teilfreistellung.
+            teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
+            ausschuettend=True,
+            # Der ganze Zweck des Fonds: eine deutlich ueber dem Markt liegende
+            # Ausschuettung (justETF/extraETF, Stand 2026 rund 5%). Bei einer
+            # Dividendenstrategie ist das kein Nebeneffekt, sondern der
+            # wesentliche Teil des Gesamtertrags - der Platzhalter aus #74 waere
+            # hier besonders irrefuehrend.
+            dividendenrendite=Decimal("0.050"),
+            ter=Decimal("0.0046"),
+        ),
+        Instrument(
+            "IS3S",
+            "Value-Faktor-ETF (iShares Edge MSCI World Value Factor, thes.)",
+            "IE00BP3QZB59",
+            teilfreistellung=_TEILFREISTELLUNG_AKTIENFONDS,
+            # USD (Acc)-Anteilsklasse, an der XETRA in EUR gehandelt.
+            thesaurierend=True,
+            ter=Decimal("0.0030"),
+        ),
     ]
 }
 

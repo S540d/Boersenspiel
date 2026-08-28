@@ -12,12 +12,26 @@ EUR umgerechnet, damit die Historie waehrungskonsistent zum Rest des
 Portfolios ist - dieselbe Umrechnung, die auch der laufende Live-Abruf
 (``run_fetch.py``) fuer diese Ticker vornimmt.
 
-Verbraucht 25 Requests (23 nicht-Krypto-Ticker + 1x FX_WEEKLY + 1x Krypto) -
-das ist GENAU das taegliche Alpha-Vantage-Free-Tier-Limit, seit #64 die sieben
-zusaetzlichen Datenreihen dazugekommen sind. Es gibt damit keinen Puffer mehr:
-ein Re-Run nach einem Netzwerkfehler, ein Debug-Abruf oder der Wochenabruf am
-selben Tag reissen das Limit (es gilt pro Tag und API-Key, nicht pro
-Skriptlauf). Ein nicht aufloesbares Ticker-Symbol bricht den Lauf ab, ohne die
+Ein Backfill ALLER Ticker braucht 27 Requests (25 nicht-Krypto-Ticker + 1x
+FX_WEEKLY + 1x Krypto) und passt damit seit den beiden Instrumenten aus #99
+NICHT mehr in das taegliche Alpha-Vantage-Free-Tier-Limit von 25 Requests (es
+gilt pro Tag und API-Key, nicht pro Skriptlauf). Ein vollstaendiger Backfill
+laeuft deshalb wie der Wochenabruf in zwei Batches an zwei aufeinanderfolgenden
+Tagen:
+
+    Tag 1:  python scripts/backfill_history.py --years 20 --batch 1
+    Tag 2:  python scripts/backfill_history.py --years 20 --batch 2
+
+Batch 1 (Fremdwaehrungs-/Krypto-Ticker, 11 Requests) setzt die CSVs wie bisher
+zurueck und baut die Historie neu auf; Batch 2 (EUR/XETRA-Ticker, 16 Requests)
+setzt NICHT zurueck, sondern mischt seine Ticker ueber denselben
+``record_week``-Merge additiv in die bereits geschriebenen Wochenzeilen (#99).
+Die Reihenfolge ist deshalb bindend - ein Lauf mit ``--batch 2`` zuerst laesse
+die Historie der Batch-1-Ticker leer. Ohne ``--batch`` laeuft weiterhin ein
+Ein-Tages-Lauf ueber alle Ticker; der ist nur noch mit einem Premium-Key (oder
+einem reduzierten Instrumentenset) moeglich.
+
+Ein nicht aufloesbares Ticker-Symbol bricht den Lauf ab, ohne die
 bereits verbrauchten Requests zurueckzugeben - Symbole deshalb vorher pruefen
 (SYMBOL_SEARCH). Der Regressionstest dazu steht in tests/test_backfill_history.py. BTC-EUR laeuft dabei ueber denselben einen FX_WEEKLY-
 Request wie die USD-Einzelaktien (kein zusaetzlicher Request) - siehe
@@ -54,7 +68,8 @@ waehrend ``manual_prices.csv`` nur fuer Kurse gedacht ist, die Alpha Vantage
 ueberhaupt nicht liefert.
 
 Nutzung:
-    python scripts/backfill_history.py --years 20
+    python scripts/backfill_history.py --years 20 --batch 1   # Tag 1
+    python scripts/backfill_history.py --years 20 --batch 2   # Tag 2
 """
 
 from __future__ import annotations
@@ -71,7 +86,12 @@ import _bootstrap  # noqa: F401
 from boersenspiel.history_store import DEFAULT_DATA_DIR, FETCH_LOG_HEADER, PRICE_HISTORY_HEADER, record_week
 from boersenspiel.instruments import TICKERS
 from boersenspiel.sources import PriceQuote
-from boersenspiel.sources.alphavantage import USD_TICKERS, AlphaVantageSource
+from boersenspiel.sources.alphavantage import (
+    FETCH_BATCHES,
+    USD_TICKERS,
+    AlphaVantageSource,
+    batch_tickers,
+)
 
 _REQUEST_INTERVAL_SECONDS = 1.1
 
@@ -347,11 +367,22 @@ def collect_weekly_series(
     return per_ticker
 
 
-def write_backfilled_history(per_ticker: dict[str, dict[date, float]], data_dir: Path) -> int:
+def write_backfilled_history(
+    per_ticker: dict[str, dict[date, float]],
+    data_dir: Path,
+    reset: bool = True,
+    tickers: list[str] | None = None,
+) -> int:
     """Schreibt die gesammelte Kurshistorie ueber ``history_store.record_week``
     (einziger Schreibzugriff auf die CSVs) und liefert die Anzahl geschriebener
     Wochen. Nutzt fuer fehlende Ticker/Wochen exakt denselben Carry-Forward-
-    Mechanismus wie der Live-Abruf."""
+    Mechanismus wie der Live-Abruf.
+
+    ``reset=False`` haengt einen zweiten Backfill-Batch (#99) an eine bereits
+    geschriebene Historie an, statt sie zu leeren - ``record_week`` mischt die
+    Ticker dieses Batches dann additiv in die bestehenden Wochenzeilen.
+    ``tickers`` benennt die Ticker dieses Batches; nur fuer sie wird eine
+    fehlende Woche protokolliert (Default: alle)."""
     by_week: dict[str, dict[tuple[int, int], float]] = {
         ticker: {_iso_week(d): price for d, price in series.items()} for ticker, series in per_ticker.items()
     }
@@ -363,7 +394,8 @@ def write_backfilled_history(per_ticker: dict[str, dict[date, float]], data_dir:
             if key not in weeks or d > weeks[key]:
                 weeks[key] = d
 
-    _reset_data_files(data_dir)
+    if reset:
+        _reset_data_files(data_dir)
 
     for week_key, week_date in sorted(weeks.items()):
         quotes: dict[str, PriceQuote] = {}
@@ -373,7 +405,7 @@ def write_backfilled_history(per_ticker: dict[str, dict[date, float]], data_dir:
                 quotes[ticker] = PriceQuote(ticker, None, "missing", "alphavantage-backfill")
             else:
                 quotes[ticker] = PriceQuote(ticker, price, "ok", "alphavantage-backfill")
-        record_week(week_date, quotes, data_dir=data_dir)
+        record_week(week_date, quotes, data_dir=data_dir, angefragte_ticker=tickers)
 
     return len(weeks)
 
@@ -387,6 +419,18 @@ def main() -> int:
         help="Wie viele Jahre historischer Daten, nur untere Schranke (Default: 20 = so weit wie verfuegbar)",
     )
     parser.add_argument("--data-dir", type=Path, default=DEFAULT_DATA_DIR, help="Zielverzeichnis (Default: data/)")
+    parser.add_argument(
+        "--batch",
+        type=int,
+        choices=FETCH_BATCHES,
+        default=None,
+        help=(
+            "Nur die Ticker dieses Batches backfillen (Default: alle - passt seit #99 "
+            "nicht mehr in das Alpha-Vantage-Tageslimit). Batch 1 setzt die CSVs "
+            "zurueck und baut neu auf, Batch 2 mischt additiv dazu - in dieser "
+            "Reihenfolge an zwei aufeinanderfolgenden Tagen laufen lassen."
+        ),
+    )
     args = parser.parse_args()
 
     since = date.today() - timedelta(days=365 * args.years)
@@ -395,9 +439,19 @@ def main() -> int:
     manual_fx = read_manual_fx(args.data_dir)
     manual_prices = read_manual_prices(args.data_dir)
 
-    print(f"Backfill ab {since.isoformat()} fuer {len(TICKERS)} Ticker ...", file=sys.stderr)
-    per_ticker = collect_weekly_series(source, TICKERS, since, manual_fx, manual_prices)
-    week_count = write_backfilled_history(per_ticker, args.data_dir)
+    tickers = TICKERS if args.batch is None else batch_tickers(TICKERS, args.batch)
+    # Nur Batch 1 (bzw. der Ein-Tages-Lauf ueber alle Ticker) setzt die CSVs
+    # zurueck - Batch 2 wuerde sonst die Historie des Vortages loeschen.
+    reset = args.batch != 2
+    batch_hinweis = "" if args.batch is None else f"Batch {args.batch}: "
+
+    print(
+        f"{batch_hinweis}Backfill ab {since.isoformat()} fuer {len(tickers)} von "
+        f"{len(TICKERS)} Tickern ...",
+        file=sys.stderr,
+    )
+    per_ticker = collect_weekly_series(source, tickers, since, manual_fx, manual_prices)
+    week_count = write_backfilled_history(per_ticker, args.data_dir, reset=reset, tickers=tickers)
 
     print(f"Fertig: {week_count} Wochen zurueckgeschrieben nach {args.data_dir / 'price_history.csv'}")
     return 0

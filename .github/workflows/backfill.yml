@@ -3,13 +3,25 @@ name: Historischer Backfill (manuell)
 # Einmaliger historischer Backfill von data/price_history.csv, siehe Issue #6.
 #
 # Bewusst ein EIGENER, ausschliesslich manuell startbarer Workflow (kein
-# Cron): der Backfill ERSETZT die Kurshistorie komplett und verbraucht ~18
-# der 25 taeglichen Alpha-Vantage-Free-Tier-Requests. Er laeuft hier statt
+# Cron): der Backfill ERSETZT die Kurshistorie komplett. Er laeuft hier statt
 # lokal, weil der API-Key als Repo-Secret vorliegt und nicht auf jeder
 # Entwicklermaschine verfuegbar ist.
 #
+# Seit #99 braucht ein Backfill aller 26 Ticker 27 Requests und passt damit
+# nicht mehr in das Alpha-Vantage-Tageslimit von 25. Ein vollstaendiger
+# Backfill braucht deshalb ZWEI Laeufe an zwei aufeinanderfolgenden Tagen, in
+# dieser Reihenfolge:
+#
+#   Tag 1: batch=1  (Fremdwaehrungs-/Krypto-Ticker, 11 Requests) - setzt
+#          price_history.csv zurueck und baut die Historie neu auf
+#   Tag 2: batch=2  (EUR/XETRA-Ticker, 16 Requests) - setzt NICHT zurueck,
+#          sondern mischt seine Ticker additiv in die Zeilen von Tag 1
+#
+# Nach Tag 1 ist die Historie also bewusst unvollstaendig (die Batch-2-Ticker
+# stehen leer) - das Dashboard laesst Strategien ohne Kurse solange weg.
+#
 # WICHTIG: nicht am selben Tag wie der woechentliche Kursabruf starten -
-# beide zusammen (18 + 18 Requests) reissen das Tageslimit.
+# beide zusammen reissen das Tageslimit.
 
 on:
   workflow_dispatch:
@@ -18,8 +30,14 @@ on:
         description: "Wie viele Jahre Historie zurueck (nur untere Schranke - laeuft immer bis zur aeltesten verfuegbaren Historie je Ticker)"
         required: true
         default: "20"
+      batch:
+        description: "Ticker-Batch: 1 = Fremdwaehrung/Krypto (setzt die Historie zurueck), 2 = EUR/XETRA (mischt additiv dazu). 'alle' holt alle Ticker auf einmal und braucht 27 Requests, also einen Premium-Key."
+        type: choice
+        required: true
+        default: "1"
+        options: ["1", "2", "alle"]
       confirm:
-        description: "Ersetzt data/price_history.csv KOMPLETT. Zum Bestaetigen 'REPLACE' eintippen."
+        description: "Batch 1 / 'alle' ersetzt data/price_history.csv KOMPLETT (Batch 2 mischt nur dazu). Zum Bestaetigen 'REPLACE' eintippen."
         required: true
         default: ""
 
@@ -57,7 +75,12 @@ jobs:
       - name: Backfill ausführen
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-        run: python scripts/backfill_history.py --years "${{ inputs.years }}"
+        run: |
+          if [ "${{ inputs.batch }}" = "alle" ]; then
+            python scripts/backfill_history.py --years "${{ inputs.years }}"
+          else
+            python scripts/backfill_history.py --years "${{ inputs.years }}" --batch "${{ inputs.batch }}"
+          fi
 
       - name: Ergebnis prüfen
         run: |
@@ -88,7 +111,7 @@ jobs:
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
           git add data/price_history.csv data/fetch_log.csv
-          git diff --cached --quiet || git commit -m "chore: historischer Backfill (${{ inputs.years }} Jahre)"
+          git diff --cached --quiet || git commit -m "chore: historischer Backfill (${{ inputs.years }} Jahre, Batch ${{ inputs.batch }})"
           git push
 
       - name: Pages-Artefakt hochladen

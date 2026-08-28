@@ -2,9 +2,31 @@ name: Wöchentliches Kurs-Update & Dashboard
 
 on:
   schedule:
-    # Montag 06:00 UTC - nach Xetra-Vorwochenschluss, vor Xetra-Handelsbeginn.
+    # Zwei Laeufe an aufeinanderfolgenden Tagen, je 06:00 UTC. Seit #99 braucht
+    # ein Abruf aller 26 Ticker 27 Alpha-Vantage-Requests und passt damit nicht
+    # mehr in das Free-Tier-Tageslimit von 25 (das pro Kalendertag und API-Key
+    # gilt). Jeder Lauf holt deshalb nur seinen Batch - Sonntag die
+    # Fremdwaehrungs-/Krypto-Ticker inkl. des einen EUR/USD-Requests, Montag
+    # die EUR/XETRA-Ticker. Jeder Ticker wird weiterhin genau einmal pro Woche
+    # aktualisiert; record_week() mischt den Montagslauf additiv in die am
+    # Sonntag geschriebene Zeile derselben ISO-Woche (siehe history_store.py).
+    #
+    # SONNTAG + MONTAG, nicht Montag + Dienstag: einsortiert werden die Kurse
+    # ueber den von der Quelle gemeldeten HANDELSTAG (row_date_from_quotes),
+    # nicht ueber das Abrufdatum. Beide Laeufe liegen so vor dem
+    # Xetra-Handelsbeginn am Montag und sehen denselben letzten Handelstag
+    # (Freitag) - und landen damit in derselben ISO-Woche. Ein Dienstagslauf
+    # saehe bereits den Montagsschluss, also die FOLGEWOCHE, und die Ticker
+    # seines Batches haengen dann dauerhaft eine Woche hinterher.
+    - cron: "0 6 * * 0"
     - cron: "0 6 * * 1"
-  workflow_dispatch: {}
+  workflow_dispatch:
+    inputs:
+      batch:
+        description: "Ticker-Batch (1 = Fremdwaehrung/Krypto, sonntags; 2 = EUR/XETRA, montags)"
+        type: choice
+        default: "1"
+        options: ["1", "2"]
 
 permissions:
   contents: write
@@ -33,7 +55,10 @@ jobs:
       - name: Kurse abrufen (Alpha Vantage)
         env:
           ALPHAVANTAGE_API_KEY: ${{ secrets.ALPHAVANTAGE_API_KEY }}
-        run: python scripts/run_fetch.py
+          # Der Sonntags-Cron holt Batch 1, jeder andere Ausloeser (Montags-Cron)
+          # Batch 2; bei manuellem Start entscheidet der Workflow-Input.
+          BATCH: ${{ github.event_name == 'workflow_dispatch' && inputs.batch || (github.event.schedule == '0 6 * * 0' && '1' || '2') }}
+        run: python scripts/run_fetch.py --batch "$BATCH"
 
       - name: Dashboard neu bauen
         run: python scripts/build_dashboard.py
@@ -47,6 +72,8 @@ jobs:
         # verpasster Commit holt sich beim naechsten erfolgreichen Lauf von
         # selbst nach, es geht also keine Kurswoche verloren.
         continue-on-error: true
+        env:
+          BATCH: ${{ github.event_name == 'workflow_dispatch' && inputs.batch || (github.event.schedule == '0 6 * * 0' && '1' || '2') }}
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

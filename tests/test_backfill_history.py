@@ -20,6 +20,11 @@ import backfill_history as bh  # noqa: E402
 
 from boersenspiel.history_store import read_price_history  # noqa: E402
 from boersenspiel.instruments import TICKERS  # noqa: E402
+from boersenspiel.sources.alphavantage import (  # noqa: E402
+    FETCH_BATCHES,
+    USD_TICKERS,
+    batch_tickers,
+)
 
 
 class _FakeSource:
@@ -416,41 +421,75 @@ def test_mitgelieferte_fx_datei_deckt_die_luecke_bis_zum_api_beginn():
     assert fx[date(2010, 7, 9)] == pytest.approx(0.791327, abs=1e-6)
 
 
-# --- Request-Budget (#64) -----------------------------------------------------
+# --- Request-Budget (#64, seit #99 je Batch) ---------------------------------
 #
-# Alpha Vantages Free Tier erlaubt 25 Requests pro Tag und API-Key. Mit den
-# sieben Datenreihen aus #64 sind beide Laeufe bei exakt 25 - es gibt keinen
-# Puffer mehr. Ein weiteres Instrument macht jeden Lauf unmoeglich, und ein
-# nicht aufloesbares Symbol bricht den Backfill ab, ohne dass die bereits
-# verbrauchten Requests zurueckkommen. Deshalb als Test statt als Kommentar.
+# Alpha Vantages Free Tier erlaubt 25 Requests pro Tag und API-Key. Bis #64
+# passten Backfill UND Wochenabruf in je genau 25 Requests - ohne Puffer. Mit
+# den beiden Instrumenten aus #99 sind es 27, ein Ein-Tages-Lauf ist damit
+# nicht mehr moeglich: beide Laeufe holen ihre Ticker seither in zwei Batches
+# an zwei aufeinanderfolgenden Tagen (siehe sources/alphavantage.py
+# `batch_tickers`, scripts/run_fetch.py --batch).
+#
+# Der Regressionsschutz bleibt derselbe wie vorher, nur mit der neuen
+# Zaehlweise: nicht mehr "die Gesamtzahl passt in einen Tag", sondern "JEDER
+# EINZELNE Batch passt in einen Tag". Ein weiteres Instrument darf keinen der
+# beiden Batches ueber das Limit heben - und ein nicht aufloesbares Symbol
+# bricht den Backfill weiterhin ab, ohne die verbrauchten Requests
+# zurueckzugeben.
 
 _ALPHAVANTAGE_TAGESLIMIT = 25
 
 
-def _backfill_requests() -> int:
-    """1x FX_WEEKLY + 1x DIGITAL_CURRENCY_WEEKLY + je 1x TIME_SERIES pro
+def _backfill_requests(tickers: list[str]) -> int:
+    """1x FX_WEEKLY (nur wenn USD-Ticker oder BTC dabei sind) + 1x
+    DIGITAL_CURRENCY_WEEKLY (nur mit BTC) + je 1x TIME_SERIES pro
     nicht-Krypto-Ticker."""
-    return 1 + 1 + len([t for t in TICKERS if t != "BTC-EUR"])
+    braucht_fx = any(t in USD_TICKERS for t in tickers) or "BTC-EUR" in tickers
+    return int(braucht_fx) + int("BTC-EUR" in tickers) + len([t for t in tickers if t != "BTC-EUR"])
 
 
-def _wochenabruf_requests() -> int:
-    """1x CURRENCY_EXCHANGE_RATE (einmal je fetch(), nicht je Ticker) + je 1x
-    GLOBAL_QUOTE bzw. Krypto-Endpunkt pro Ticker."""
-    return 1 + len(TICKERS)
+def _wochenabruf_requests(tickers: list[str]) -> int:
+    """1x CURRENCY_EXCHANGE_RATE (einmal je fetch(), nicht je Ticker, und nur
+    wenn USD-Ticker dabei sind) + je 1x GLOBAL_QUOTE bzw. Krypto-Endpunkt pro
+    Ticker."""
+    return int(any(t in USD_TICKERS for t in tickers)) + len(tickers)
 
 
-def test_backfill_passt_in_das_tageslimit():
-    assert _backfill_requests() <= _ALPHAVANTAGE_TAGESLIMIT, (
-        f"Backfill braucht {_backfill_requests()} Requests, erlaubt sind "
-        f"{_ALPHAVANTAGE_TAGESLIMIT}. Ein Instrument entfernen oder Premium-Key."
-    )
+def test_jeder_backfill_batch_passt_in_das_tageslimit():
+    for batch in FETCH_BATCHES:
+        tickers = batch_tickers(TICKERS, batch)
+        assert _backfill_requests(tickers) <= _ALPHAVANTAGE_TAGESLIMIT, (
+            f"Backfill-Batch {batch} braucht {_backfill_requests(tickers)} Requests, "
+            f"erlaubt sind {_ALPHAVANTAGE_TAGESLIMIT}. Ein Instrument entfernen, "
+            f"die Batch-Aufteilung anpassen oder Premium-Key."
+        )
 
 
-def test_wochenabruf_passt_in_das_tageslimit():
-    assert _wochenabruf_requests() <= _ALPHAVANTAGE_TAGESLIMIT, (
-        f"Wochenabruf braucht {_wochenabruf_requests()} Requests, erlaubt sind "
-        f"{_ALPHAVANTAGE_TAGESLIMIT}."
-    )
+def test_jeder_wochenabruf_batch_passt_in_das_tageslimit():
+    for batch in FETCH_BATCHES:
+        tickers = batch_tickers(TICKERS, batch)
+        assert _wochenabruf_requests(tickers) <= _ALPHAVANTAGE_TAGESLIMIT, (
+            f"Wochenabruf-Batch {batch} braucht {_wochenabruf_requests(tickers)} "
+            f"Requests, erlaubt sind {_ALPHAVANTAGE_TAGESLIMIT}."
+        )
+
+
+def test_die_batches_decken_jeden_ticker_genau_einmal_ab():
+    """Sonst wuerde ein Ticker entweder nie aktualisiert oder doppelt abgerufen
+    - Letzteres kostet einen Request aus dem knappen Tagesbudget."""
+    zusammen = [t for batch in FETCH_BATCHES for t in batch_tickers(TICKERS, batch)]
+    assert sorted(zusammen) == sorted(TICKERS)
+    assert len(zusammen) == len(set(zusammen))
+
+
+def test_nur_ein_batch_braucht_den_fx_request():
+    """Der EUR/USD-Kurs wird einmal je fetch()-Aufruf geholt und gilt fuer alle
+    USD-Ticker gemeinsam. Verteilten sich die USD-Ticker ueber beide Batches,
+    kostete derselbe Kurs zweimal einen Request."""
+    mit_usd = [
+        batch for batch in FETCH_BATCHES if any(t in USD_TICKERS for t in batch_tickers(TICKERS, batch))
+    ]
+    assert len(mit_usd) == 1
 
 
 def test_neue_datenreihen_sind_in_euro_notiert():
