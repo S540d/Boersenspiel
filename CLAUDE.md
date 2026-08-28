@@ -202,6 +202,33 @@ inkrementell fortgeschrieben).
   worden, ein hartes `max` schneidet die Linie stattdessen oben am
   Chart-Rand ab. Reine Darstellungsschicht, keine neue Instrumentenzuordnung
   und kein Eingriff in `engine.py`.
+  **`PORTFOLIO_60_40` und `PERMANENT_PORTFOLIO` (verbreitete klassische
+  Portfolios):** zwei weitere, zusätzliche Strategien neben den bestehenden
+  Barbell-Varianten und `SP500_BENCHMARK` - eigene Rubrik
+  `RUBRIK_KLASSISCHE_PORTFOLIOS` statt `RUBRIK_BARBELL`/`RUBRIK_REFERENZ`,
+  da beide strukturell weder Barbell-Extreme (sicherer Sockel + volatile
+  Beimischung) noch eine reine "einfach den Index kaufen"-Vergleichslinie
+  sind, sondern eigenständige, verbreitete Allokationsregeln. Beide nutzen
+  ausschließlich bereits vorhandene Instrumente (`EUNL`/`EUNA`/`4GLD`/
+  `XEON`/`IBCL`), kein 25. Instrument, keine Änderung am
+  Alpha-Vantage-Request-Budget. `PORTFOLIO_60_40` ist das meistzitierte
+  Referenzportfolio überhaupt: zwei Töpfe, 60% `EUNL` (breiter
+  Aktienmarkt), 40% `EUNA` (breite Anleihen) - eine einzige glatte
+  Aufteilung zwischen zwei Anlageklassen statt eines Extrem-Ansatzes.
+  `PERMANENT_PORTFOLIO` (Harry Browne) hält stattdessen vier gleich große
+  Töpfe zu je 25%: `EUNL` (Aktien), `IBCL` (lange Anleihen), `4GLD`
+  (Gold), `XEON` (Cash) - konzipiert, um in jedem der vier
+  Wirtschaftsklimata (Wachstum, Rezession, Inflation, Deflation)
+  mindestens einen gut laufenden Baustein zu halten, und damit inhaltlich
+  der interessanteste Kontrast zur Barbell-Idee. Beide setzen wie alle
+  neueren Strategien explizit `rebalancing_schwelle_pp=5` und
+  `rebalancing_schwelle_relativ=Decimal("0.25")` (die 5/25-Regel, siehe
+  unten) und verwenden je Topf genau ein Instrument mit `sub_gewichte={
+  ticker: Decimal("1")}` - anders als die Barbell-Strategien, deren Töpfe
+  mehrere Instrumente mischen. Erster Ansatz wie alle Strategien/Szenarien:
+  die 60/40- und 25/25/25/25-Gewichte sind die literarisch bzw. historisch
+  überlieferten Werte, nicht für dieses Instrumentenset optimiert oder
+  gebacktestet.
   **Rebalancing-Trigger, "5/25-Regel je Topf" (#63, F5):** Optionales Feld
   `Strategy.rebalancing_schwelle_relativ` (Decimal, Default `1` = 100%)
   ergänzt `rebalancing_schwelle_pp` um eine relative Zusatzschwelle. Die

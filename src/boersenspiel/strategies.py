@@ -173,6 +173,7 @@ RUBRIK_BOERSENWEISHEITEN = "Börsenweisheiten"
 RUBRIK_CHARTTECHNIK = "Charttechnik"
 RUBRIK_WEITERE_ANALYSEN = "Weitere Analysen"
 RUBRIK_REFERENZ = "Referenz"
+RUBRIK_KLASSISCHE_PORTFOLIOS = "Klassische Portfolios"
 
 # --- Strategie 1: Barbell 20/80 (Pflichtenheft v2.0) -----------------------
 
@@ -451,12 +452,114 @@ SP500_BENCHMARK = Strategy(
     eigene_chart_skala=True,
 )
 
+# --- Strategie 6: Klassisches 60/40-Portfolio -------------------------------
+#
+# Das meistzitierte Referenzportfolio überhaupt: 60% breiter Aktienmarkt,
+# 40% Anleihen. Anders als die Barbell-Strategien kein Extrem-Ansatz
+# (sicherer Sockel + volatile Beimischung), sondern eine einzige, glatte
+# Aufteilung zwischen den beiden Anlageklassen - die naheliegendste
+# Vergleichslinie neben "einfach den Index kaufen" (SP500_BENCHMARK). Nutzt
+# ausschließlich bereits vorhandene Instrumente (EUNL/EUNA), kein
+# zusätzlicher API-Request.
+
+PORTFOLIO_60_40 = Strategy(
+    name="60/40-Portfolio",
+    rubrik=RUBRIK_KLASSISCHE_PORTFOLIOS,
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Aktien",
+            gewicht_gesamt=Decimal("0.60"),
+            sub_gewichte={"EUNL": Decimal("1")},
+        ),
+        Topf(
+            name="Topf B - Anleihen",
+            gewicht_gesamt=Decimal("0.40"),
+            sub_gewichte={"EUNA": Decimal("1")},
+        ),
+    ],
+    ziel_topf="Topf A - Aktien",
+    ziel_gewicht=Decimal("0.60"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
+    beschreibung=(
+        "Das klassische 60/40-Depot: 60% breiter Aktienmarkt (MSCI World), 40% "
+        "breite Anleihen. Kein Extrem-Ansatz wie die Barbell-Strategien, sondern "
+        "eine einzige glatte Aufteilung zwischen den beiden Anlageklassen. "
+        "Rebalancing nach der 5/25-Regel wie bei den übrigen Strategien."
+    ),
+    beschreibung_en=(
+        "The classic 60/40 portfolio: 60% broad equities (MSCI World), 40% broad "
+        "bonds. Unlike the barbell strategies, not an extreme-allocation approach "
+        "but a single smooth split between the two asset classes. Rebalances "
+        "using the same 5/25 rule as the other strategies."
+    ),
+)
+
+# --- Strategie 7: Permanent Portfolio (Harry Browne) ------------------------
+#
+# Vier gleich große Töpfe (je 25%) über Aktien, lange Anleihen, Gold und
+# Cash - konzipiert, um in jedem der vier Wirtschaftsklimata (Wachstum,
+# Rezession, Inflation, Deflation) mindestens einen gut laufenden Baustein zu
+# halten. Inhaltlich der interessanteste Kontrast zur Barbell-Idee: statt
+# zwei Extremen (sicher/riskant) vier gleichgewichtete, unterschiedlich auf
+# Marktphasen reagierende Bausteine. Nutzt ausschließlich bereits vorhandene
+# Instrumente (EUNL/IBCL/4GLD/XEON), kein zusätzlicher API-Request.
+
+PERMANENT_PORTFOLIO = Strategy(
+    name="Permanent Portfolio",
+    rubrik=RUBRIK_KLASSISCHE_PORTFOLIOS,
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Aktien",
+            gewicht_gesamt=Decimal("0.25"),
+            sub_gewichte={"EUNL": Decimal("1")},
+        ),
+        Topf(
+            name="Topf B - Lange Anleihen",
+            gewicht_gesamt=Decimal("0.25"),
+            sub_gewichte={"IBCL": Decimal("1")},
+        ),
+        Topf(
+            name="Topf C - Gold",
+            gewicht_gesamt=Decimal("0.25"),
+            sub_gewichte={"4GLD": Decimal("1")},
+        ),
+        Topf(
+            name="Topf D - Cash",
+            gewicht_gesamt=Decimal("0.25"),
+            sub_gewichte={"XEON": Decimal("1")},
+        ),
+    ],
+    ziel_topf="Topf A - Aktien",
+    ziel_gewicht=Decimal("0.25"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
+    beschreibung=(
+        "Harry Brownes Permanent Portfolio: je 25% Aktien (MSCI World), lange "
+        "Staatsanleihen, Gold und Cash - ein Baustein je Wirtschaftsklima "
+        "(Wachstum, Rezession, Inflation, Deflation). Vier gleichgewichtete Töpfe "
+        "statt zweier Extreme wie bei den Barbell-Strategien. Rebalancing nach "
+        "der 5/25-Regel."
+    ),
+    beschreibung_en=(
+        "Harry Browne's Permanent Portfolio: 25% each in equities (MSCI World), "
+        "long-term government bonds, gold and cash - one building block for each "
+        "economic climate (growth, recession, inflation, deflation). Four "
+        "equally weighted buckets instead of the two extremes used by the "
+        "barbell strategies. Rebalances using the 5/25 rule."
+    ),
+)
+
 STRATEGIES: list[Strategy] = [
     BARBELL_20_80,
     BARBELL_30_70,
     BARBELL_20_60_20_SATELLIT,
     BARBELL_20_80_DIVERSIFIZIERT,
     SP500_BENCHMARK,
+    PORTFOLIO_60_40,
+    PERMANENT_PORTFOLIO,
 ]
 
 STRATEGIES_BY_NAME: dict[str, Strategy] = {s.name: s for s in STRATEGIES}
