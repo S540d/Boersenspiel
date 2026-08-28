@@ -52,9 +52,9 @@ All 24 tracked instruments, and which strategy actually holds each one:
 
 | Ticker | Instrument | Held by |
 |---|---|---|
-| `EUNL` | MSCI World ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
-| `EUNA` | Global Aggregate Bond ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
-| `4GLD` | Xetra-Gold | Barbell 20/80, 30/70, Satellite, Diversified |
+| `EUNL` | MSCI World ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified, 60/40, Permanent Portfolio |
+| `EUNA` | Global Aggregate Bond ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified, 60/40 |
+| `4GLD` | Xetra-Gold | Barbell 20/80, 30/70, Satellite, Diversified, Permanent Portfolio |
 | `LYMS` | Nasdaq-100 ETF (Amundi Core) | Barbell 20/80, 30/70, Satellite, Diversified |
 | `SEMI` | Global Semiconductors ETF (iShares) | Barbell 20/80, 30/70, Satellite, Diversified |
 | `EIMI` | Emerging Markets IMI ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
@@ -70,9 +70,9 @@ All 24 tracked instruments, and which strategy actually holds each one:
 | `KO` | Coca-Cola | Barbell 20/60/20 + Single-Stock Satellite |
 | `RHHBY` | Roche Holding (ADR) | Barbell 20/60/20 + Single-Stock Satellite |
 | `IUSA` | S&P 500 ETF (iShares Core) | Benchmark only |
-| `XEON` | EUR money-market ETF (Xtrackers Overnight Rate) | Barbell 20/80 (diversified) |
+| `XEON` | EUR money-market ETF (Xtrackers Overnight Rate) | Barbell 20/80 (diversified), Permanent Portfolio |
 | `EXSA` | STOXX Europe 600 ETF (iShares) | Barbell 20/80 (diversified) |
-| `IBCL` | Euro government bonds 15–30y ETF (iShares) | Barbell 20/80 (diversified) |
+| `IBCL` | Euro government bonds 15–30y ETF (iShares) | Barbell 20/80 (diversified), Permanent Portfolio |
 | `IBCI` | Inflation-linked Euro government bonds ETF (iShares) | Barbell 20/80 (diversified) |
 | `IQQ6` | Real estate ETF (iShares Developed Markets Property Yield) | Barbell 20/80 (diversified) |
 | `EXXY` | Broad commodities ETF (iShares Diversified Commodity Swap) | Barbell 20/80 (diversified) |
