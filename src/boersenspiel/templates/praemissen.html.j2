@@ -22,7 +22,7 @@
       schwerer als jede Renditezahl auf der Übersichtsseite:
     </p>
     <ul class="hint">
-      <li data-i18n-en="Look-ahead bias in instrument selection. The {{ instrumente|length }} instruments were chosen once their price development was already known. A back-calculated return therefore doesn't answer &quot;what would I have earned?&quot;, but at best &quot;how would these rules have performed on these instruments, selected in hindsight?&quot;. Two effects are therefore deliberately kept out of the simulation (owner decision on #63, F4): Bitcoin is treated as untradable before {{ btc_fruehphase_ende }}, because a German retail investor had no realistic EUR access to Bitcoin before that; and every strategy/scenario only starts its simulation at the point where its complete instrument set was actually tradable - see &quot;simulation start&quot; in the strategy table below - instead of letting the proportional reallocation onto early-existing instruments (next section) also affect the published metrics. Both remain a simplification, not proof of investability at every point in time. The look-ahead bias applies exclusively to these {{ instrumente|length }} instruments actually assigned to a strategy. {% if nicht_allokierte_instrumente %}The {{ nicht_allokierte_instrumente|length }} additionally captured data series (section &quot;Data series without allocation&quot; below) are not a look-ahead bias, because they were added as a neutral benchmark independent of their price development, not selected into a strategy.{% endif %}">
+      <li data-i18n-en="Look-ahead bias in instrument selection. The {{ instrumente|length }} instruments were chosen once their price development was already known. A back-calculated return therefore doesn't answer &quot;what would I have earned?&quot;, but at best &quot;how would these rules have performed on these instruments, selected in hindsight?&quot;. Two effects are therefore deliberately kept out of the simulation (owner decision on #63, F4): Bitcoin is treated as untradable before {{ btc_fruehphase_ende }}, because a German retail investor had no realistic EUR access to Bitcoin before that; and every strategy/scenario only starts its simulation at the point where its complete instrument set was actually tradable - see &quot;simulation start&quot; in the strategy table below - instead of letting the proportional reallocation onto early-existing instruments (next section) also affect the published metrics. Both remain a simplification, not proof of investability at every point in time. The look-ahead bias applies exclusively to these {{ instrumente|length }} instruments actually assigned to a strategy. {% if nicht_allokierte_instrumente %}The {{ nicht_allokierte_instrumente|length }} additionally captured data series (section &quot;Data series without allocation&quot; below) are not a look-ahead bias, because they were added as a neutral benchmark independent of their price development, not selected into a strategy.{% endif %} {% if satellit_rueckschau_vergleich %}The look-ahead bias isn't just about WHICH instruments show up, but also how heavily individual ones are weighted within a strategy: the single-stock satellite weights two names whose price history stood out in hindsight ({{ satellit_rueckschau_vergleich.original_label }}% CAGR) the same as all the others. A more defensive counter-check with the same instruments, but a lower weight on exactly those two names, comes to {{ satellit_rueckschau_vergleich.defensiv_label }}% CAGR - a {{ satellit_rueckschau_vergleich.differenz_label }} percentage point difference from weighting alone, without swapping a single instrument.{% endif %}">
         <strong>Rückschaufehler bei der Instrumentenauswahl.</strong> Die
         {{ instrumente|length }} Instrumente wurden ausgewählt, als ihre
         Kursentwicklung bereits bekannt war. Eine rückgerechnete Rendite
@@ -48,6 +48,20 @@
         Rückschaufehler, weil sie unabhängig von ihrer Kursentwicklung als
         neutraler Vergleichsmaßstab ergänzt wurden, nicht in eine Strategie
         hinein ausgewählt.
+        {% endif %}
+        {% if satellit_rueckschau_vergleich %}
+        Der Rückschaufehler betrifft nicht nur, WELCHE Instrumente überhaupt
+        auftauchen, sondern auch, wie stark einzelne davon innerhalb einer
+        Strategie gewichtet sind: der Einzelaktien-Satellit gewichtet zwei
+        Werte, deren Kursverlauf im Rückblick besonders auffällig war
+        ({{ satellit_rueckschau_vergleich.original_label }}% CAGR), gleich wie
+        alle übrigen. Eine <a href="{{ satellit_rueckschau_vergleich.defensiv_id }}.html">defensivere
+        Gegenprobe</a> mit denselben Instrumenten, aber geringerem Gewicht auf
+        genau diesen beiden Werten, kommt auf
+        {{ satellit_rueckschau_vergleich.defensiv_label }}% CAGR – ein
+        Unterschied von {{ satellit_rueckschau_vergleich.differenz_label }}
+        Prozentpunkten allein durch die Gewichtung, ohne ein einziges
+        Instrument auszutauschen.
         {% endif %}
       </li>
       <li data-i18n-en="The rules are not optimized and not backtested. Thresholds, time windows and quotas of the scenarios are a first approach, not parameters fitted to data. The &quot;Robustness across sub-periods&quot; section on every detail page shows how much a return varies between periods.">

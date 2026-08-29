@@ -1305,6 +1305,36 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
     cash_werte = [s["cash_max_label"] for s in strategie_liste]
     cash_ueberall_null = all(float(v.replace(",", ".")) == 0.0 for v in cash_werte)
 
+    # Konkrete, selbst-aktualisierende Illustration des Rueckschaufehlers oben:
+    # der direkte CAGR-Vergleich zwischen dem Einzelaktien-Satelliten und seiner
+    # defensiveren Gegenprobe (BARBELL_20_60_20_SATELLIT_DEFENSIV, siehe
+    # strategies.py) - macht die abstrakte Warnung an einer konkreten Zahl fest,
+    # ohne einen Wert hart ins Template zu schreiben, der gegenueber einer
+    # kuenftig verschobenen Aktienauswahl veralten koennte. Nutzt den
+    # Vergleichszeitraum-CAGR (#73/#78), wenn verfuegbar, sonst den eigenen
+    # Zeitraum der Strategie - dieselbe Rueckfalllogik wie die Uebersichtstabelle.
+    # None, wenn eine der beiden Strategien in dieser Ansicht fehlt (z. B. in
+    # Tests mit einer eigenen Ad-hoc-Strategieliste) - der Hinweis im Template
+    # entfaellt dann einfach, statt eine tote Referenz zu zeigen.
+    satellit_original = views_by_id.get(_slug("Barbell 20/60/20 + Einzelaktien-Satellit"))
+    satellit_defensiv = views_by_id.get(
+        _slug("Barbell 20/60/20 + Einzelaktien-Satellit (defensiver Tilt)")
+    )
+    satellit_rueckschau_vergleich = None
+    if satellit_original and satellit_defensiv:
+        original_cagr = satellit_original.get("vergleich_cagr_pct")
+        if original_cagr is None:
+            original_cagr = satellit_original["cagr_pct"]
+        defensiv_cagr = satellit_defensiv.get("vergleich_cagr_pct")
+        if defensiv_cagr is None:
+            defensiv_cagr = satellit_defensiv["cagr_pct"]
+        satellit_rueckschau_vergleich = {
+            "original_label": f"{original_cagr:+.2f}",
+            "defensiv_label": f"{defensiv_cagr:+.2f}",
+            "differenz_label": f"{original_cagr - defensiv_cagr:+.2f}",
+            "defensiv_id": satellit_defensiv["id"],
+        }
+
     return {
         "instrumente": instrumente,
         "nicht_allokierte_instrumente": nicht_allokierte_instrumente,
@@ -1343,6 +1373,7 @@ def _praemissen_kontext(rows: list[PriceRow], strategies: list[Strategy], views:
             for s_ in strategies
             if s_.beitraege
         ],
+        "satellit_rueckschau_vergleich": satellit_rueckschau_vergleich,
     }
 
 
