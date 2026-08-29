@@ -111,7 +111,7 @@ inkrementell fortgeschrieben).
   noch die Prämissen-Seite leiten eine Instrumentenzahl mehr aus einer
   hartkodierten Konstante ab. Die README enthält seit der #64-Nachfolgearbeit
   einen `## Portfolio overview`-Abschnitt mit einer statischen Tabelle aller
-  24 Ticker samt der Strategie, die sie hält — bewusst als lesbare Übersicht
+  26 Ticker samt der Strategie, die sie hält — bewusst als lesbare Übersicht
   für Menschen, aber dadurch eine hartkodierte Momentaufnahme, die bei einer
   künftigen Strategie-Änderung von Hand nachgezogen werden muss (anders als
   Dashboard/Prämissen-Seite, die sich bei jedem Build automatisch aus
