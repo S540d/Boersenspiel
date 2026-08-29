@@ -793,8 +793,19 @@ inkrementell fortgeschrieben).
   denen alle Zahlen beruhen — seit #93 auch das Kombinationsverfahren
   zusammengesetzter Strategien (`id="kombination"`, Regelliste aus
   `Strategy.beitraege` abgeleitet) und seit #91 die Ersatzbond-Annahme hinter
-  dem verlängerten Auswertezeitraum (`id="erweiterter-zeitraum"`) —
-  Datenbasis und Zeitraum, Instrumententabelle
+  dem verlängerten Auswertezeitraum (`id="erweiterter-zeitraum"`) — sowie
+  (Reaktion auf eine Projektprüfung) im Bullet „Rückschaufehler bei der
+  Instrumentenauswahl" einen zusätzlichen, konkreten Satz: der direkte
+  CAGR-Vergleich zwischen `BARBELL_20_60_20_SATELLIT` und
+  `BARBELL_20_60_20_SATELLIT_DEFENSIV`
+  (`dashboard._praemissen_kontext()`, Feld `satellit_rueckschau_vergleich`,
+  `None` wenn eine der beiden Strategien in der aktuellen Ansicht fehlt —
+  z. B. in Tests mit eigener Ad-hoc-Strategieliste). Macht die sonst
+  abstrakte Rückschaufehler-Warnung an einer konkreten, bei jedem Build neu
+  berechneten Zahl fest (Vergleichszeitraum-CAGR, Rückfall auf den eigenen
+  Zeitraum), statt einen Wert hart ins Template zu schreiben, der gegenüber
+  einer künftig verschobenen Aktienauswahl veralten könnte — dasselbe Prinzip
+  wie der Rest der Seite. Datenbasis und Zeitraum, Instrumententabelle
   mit **erstem Kurstag je Ticker** (⚠ bei später verfügbaren), Handels- und
   Steuerregeln, die Kennzahl-Definitionen sowie eine explizite Liste des
   nicht Modellierten (jahresgenaue Dividendenhistorien — je Instrument gilt
