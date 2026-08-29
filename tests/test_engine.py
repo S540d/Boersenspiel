@@ -830,6 +830,62 @@ def test_5_25_regel_relativ_default_aendert_altverhalten_nicht():
     assert result.last_rebalance_date is None
 
 
+# --- Zielgewicht-Aenderungs-Trigger fuer gewichte_fn-Szenarien --------------
+#
+# Der Topf-Trigger oben prueft Ist- gegen Ziel-Gewicht je Topf. Eine
+# gewichte_fn, die nur INNERHALB eines Topfs umschichtet (Topf-Summe bleibt
+# gleich), loeste vor dieser Ergaenzung nie ein Rebalancing aus: Ist- und
+# Ziel-Topfgewicht stimmten immer ueberein, weil "Ziel" pro Zeile direkt aus
+# der (bereits verschobenen) current_weights abgeleitet wird. Betroffen waren
+# u. a. das Momentum-Szenario, dessen Wertverlauf dadurch ueber weite Strecken
+# bit-identisch mit dem zugrundeliegenden Barbell-Portfolio war.
+
+
+def _rotations_gewichte(rows: list[PriceRow], i: int) -> dict[str, Decimal]:
+    if i == 0:
+        return {"A": Decimal("0.5"), "X": Decimal("0.25"), "Y": Decimal("0.25")}
+    # Ab Zeile 1 dreht sich die Zusammensetzung von TopfB komplett (X/Y
+    # tauschen ihre Gewichte), TopfB bleibt aber unveraendert bei 50%.
+    return {"A": Decimal("0.5"), "X": Decimal("0.4"), "Y": Decimal("0.1")}
+
+
+ROTATIONS_STRATEGY = Strategy(
+    name="Test-Rotation-Innerhalb-Topf",
+    startkapital=Decimal("1000"),
+    toepfe=[
+        Topf(name="TopfA", gewicht_gesamt=Decimal("0.5"), sub_gewichte={"A": Decimal("1")}),
+        Topf(
+            name="TopfB",
+            gewicht_gesamt=Decimal("0.5"),
+            sub_gewichte={"X": Decimal("0.5"), "Y": Decimal("0.5")},
+        ),
+    ],
+    ziel_topf="TopfA",
+    ziel_gewicht=Decimal("0.5"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    gewichte_fn=_rotations_gewichte,
+)
+
+
+def test_zielgewicht_aenderung_innerhalb_eines_topfs_loest_rebalancing_aus():
+    rows = [
+        # Initialkauf 1000 EUR (gebuehrenfrei) auf 50/25/25 -> A=500, X=250, Y=250.
+        PriceRow(date(2024, 1, 1), {"A": Decimal("100"), "X": Decimal("100"), "Y": Decimal("100")}),
+        # Kurse UNVERAENDERT - TopfB-Ist bleibt exakt bei 50% (X=250+Y=250),
+        # ein reiner Topf-Trigger saehe hier ueberhaupt keine Abweichung. Das
+        # ZIEL innerhalb TopfB hat sich aber von 25/25 auf 40/10 verschoben
+        # (15pp je Instrument, klar ueber der 5pp-Schwelle).
+        PriceRow(date(2024, 1, 8), {"A": Decimal("100"), "X": Decimal("100"), "Y": Decimal("100")}),
+    ]
+    result = simulate(rows, ROTATIONS_STRATEGY, Optimierungen(**_OHNE_REIBUNG))
+
+    assert result.last_rebalance_date == date(2024, 1, 8)
+    last = result.value_history[-1]
+    assert last.ticker_values["A"] == Decimal("500")
+    assert last.ticker_values["X"] == Decimal("400")
+    assert last.ticker_values["Y"] == Decimal("100")
+
+
 # --- Ausschuettungsrendite je Instrument (#74) ------------------------------
 
 

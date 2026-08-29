@@ -238,6 +238,9 @@ def simulate(
     trades: list[Trade] = []
     last_rebalance_date: date | None = None
     last_harvest_date: date | None = None
+    # Zielgewichte zum Zeitpunkt des letzten vollstaendigen Rebalancings (bzw. des
+    # Initialkaufs) - Basis fuer den Zielgewicht-Aenderungs-Trigger weiter unten.
+    letzte_ziel_gewichte: dict[str, Decimal] = {}
 
     # Steuerledger-Zustand (lokal, kein persistenter Zustand außerhalb dieses Aufrufs)
     current_tax_year = rows[0].date.year
@@ -708,6 +711,7 @@ def simulate(
                 positions[t].cost_total = buy_value
                 positions[t].kauf_tage_gewichtet = units * Decimal(row.date.toordinal())
                 trades.append(Trade(row.date, t, "buy", units, price, gebuehr, None, "initial_buy"))
+            letzte_ziel_gewichte = initial_weights
         else:
             for t in tickers:
                 if pending_cash[t] > 0 and t in prices:
@@ -756,6 +760,8 @@ def simulate(
                     )
                     if rebalance_to_targets(prices, row.date, grund, einsatz_weights):
                         last_rebalance_date = row.date
+                        if opt.rebalancing:
+                            letzte_ziel_gewichte = current_weights
                     values = current_values(prices)
                     total_value = sum(values.values(), Decimal(0)) + total_cash()
                 # Rebalancing-Trigger (#63, F5): "5/25-Regel" je Topf statt nur fuer
@@ -769,22 +775,51 @@ def simulate(
                 # exakt die von B, bei drei oder mehr Toepfen (z. B. dem
                 # Einzelaktien-Satellit) kann ein einzelner Topf aber unbemerkt driften,
                 # waehrend Topf A zufaellig im Band bleibt.
+                #
+                # Zielgewicht-Aenderungs-Trigger: greift zusaetzlich, sobald sich das
+                # ZIEL selbst je Instrument seit dem letzten Rebalancing um mehr als die
+                # 5/25-Schwelle verschoben hat - unabhaengig davon, ob der (umgelegte)
+                # Topf-Zielanteil dabei gleich bleibt. Ohne diesen Trigger loesten
+                # gewichte_fn-Szenarien, die nur INNERHALB eines Topfs umschichten (z. B.
+                # Momentum-Rotation zwischen den Wachstums-Instrumenten), nie ein
+                # Rebalancing aus: der Topf-Ist-/Zielanteil blieb unveraendert, obwohl
+                # sich die gewuenschte Zusammensetzung komplett gedreht hatte - die
+                # betroffenen Szenarien liefen dadurch faktisch bit-identisch zum
+                # zugrundeliegenden Barbell-Portfolio.
                 if opt.rebalancing:
-                    for topf in strategy.toepfe:
-                        topf_ziel_effektiv = sum(
-                            (current_weights.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0)
-                        )
-                        topf_ist_wert = sum((values.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0))
-                        topf_ist_gewicht = topf_ist_wert / total_value
-                        abweichung_pp = abs(topf_ist_gewicht - topf_ziel_effektiv) * 100
+                    rebalanciert = False
+                    for t in tickers:
+                        ziel_t = current_weights.get(t, Decimal(0))
+                        vorheriges_ziel_t = letzte_ziel_gewichte.get(t, Decimal(0))
+                        aenderung_pp = abs(ziel_t - vorheriges_ziel_t) * 100
                         schwelle_pp = strategy.rebalancing_schwelle_pp
-                        if topf_ziel_effektiv > 0:
-                            relativ_schwelle_pp = topf_ziel_effektiv * 100 * strategy.rebalancing_schwelle_relativ
+                        if ziel_t > 0:
+                            relativ_schwelle_pp = ziel_t * 100 * strategy.rebalancing_schwelle_relativ
                             schwelle_pp = min(schwelle_pp, relativ_schwelle_pp)
-                        if abweichung_pp > schwelle_pp:
+                        if aenderung_pp > schwelle_pp:
                             if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
                                 last_rebalance_date = row.date
+                            rebalanciert = True
                             break
+                    if not rebalanciert:
+                        for topf in strategy.toepfe:
+                            topf_ziel_effektiv = sum(
+                                (current_weights.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0)
+                            )
+                            topf_ist_wert = sum((values.get(t, Decimal(0)) for t in topf.sub_gewichte), Decimal(0))
+                            topf_ist_gewicht = topf_ist_wert / total_value
+                            abweichung_pp = abs(topf_ist_gewicht - topf_ziel_effektiv) * 100
+                            schwelle_pp = strategy.rebalancing_schwelle_pp
+                            if topf_ziel_effektiv > 0:
+                                relativ_schwelle_pp = topf_ziel_effektiv * 100 * strategy.rebalancing_schwelle_relativ
+                                schwelle_pp = min(schwelle_pp, relativ_schwelle_pp)
+                            if abweichung_pp > schwelle_pp:
+                                if rebalance_to_targets(prices, row.date, "rebalance", current_weights):
+                                    last_rebalance_date = row.date
+                                rebalanciert = True
+                                break
+                    if rebalanciert:
+                        letzte_ziel_gewichte = current_weights
 
         # Laufende Fondskosten fuer diese Woche (#76) - vor Dividende/Vorabpauschale/
         # Harvest, damit alle nachfolgenden Schritte auf dem bereits um die Kosten

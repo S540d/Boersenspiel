@@ -34,7 +34,24 @@ the growth side becomes more concentrated. The 10 stocks deliberately mix
 highly volatile growth/thematic names (Lumentum, BYD, SolarEdge, SMA Solar,
 Tesla, Palantir, Strategy/formerly MicroStrategy, Rivian) with two defensive
 blue chips (Coca-Cola, Roche) as a counterexample — a first pass, not an
-optimized or backtested selection.
+optimized or backtested selection, and one made with full hindsight of how
+those 10 stocks actually performed since. Over the comparison window two of
+them, Lumentum and Palantir, gained +897% and +703% respectively — almost
+entirely since the AI-driven re-rating that started in 2023 — and account for
+practically the entire return advantage this strategy shows over plain
+`Barbell 20/80`. Leaving both out and redistributing their weight evenly
+across the other eight drops the strategy from +145.8% to +97.3% over the
+same period, *below* `Barbell 20/80`'s +118.9%.
+
+A sibling scenario, `Barbell 20/60/20 + Single-Stock Satellite (defensive
+tilt)`, is a check on that dependency rather than a fix for it: same 10
+stocks, same instruments (no new tickers, no extra Alpha Vantage request),
+but Lumentum and Palantir drop from 10% each to 5% each and the freed 10
+points move evenly to Coca-Cola and Roche (15% each) — the two names that
+already didn't need 2023's AI cycle to make sense as 2021-era picks. It
+makes no claim to reconstruct what would actually have been selected in
+2021; it exists to show how much of the original selection's edge rides on
+two names whose outperformance only looks obvious in retrospect.
 
 A fourth strategy, `Barbell 20/80 (diversified)`, keeps the same 20/80 risk
 profile but broadens both buckets: Bucket A trades half its bond-ETF slice
@@ -70,16 +87,16 @@ All 26 tracked instruments, and which strategy actually holds each one:
 | `SEMI` | Global Semiconductors ETF (iShares) | Barbell 20/80, 30/70, Satellite, Diversified |
 | `EIMI` | Emerging Markets IMI ETF (iShares Core) | Barbell 20/80, 30/70, Satellite, Diversified |
 | `BTC-EUR` | Bitcoin | Barbell 20/80, 30/70, Satellite, Diversified |
-| `LITE` | Lumentum Holdings | Barbell 20/60/20 + Single-Stock Satellite |
-| `BYDDY` | BYD Company (ADR) | Barbell 20/60/20 + Single-Stock Satellite |
-| `SEDG` | SolarEdge Technologies | Barbell 20/60/20 + Single-Stock Satellite |
-| `S92` | SMA Solar Technology | Barbell 20/60/20 + Single-Stock Satellite |
-| `TSLA` | Tesla | Barbell 20/60/20 + Single-Stock Satellite |
-| `PLTR` | Palantir Technologies | Barbell 20/60/20 + Single-Stock Satellite |
-| `MSTR` | Strategy Inc. (formerly MicroStrategy) | Barbell 20/60/20 + Single-Stock Satellite |
-| `RIVN` | Rivian Automotive | Barbell 20/60/20 + Single-Stock Satellite |
-| `KO` | Coca-Cola | Barbell 20/60/20 + Single-Stock Satellite |
-| `RHHBY` | Roche Holding (ADR) | Barbell 20/60/20 + Single-Stock Satellite |
+| `LITE` | Lumentum Holdings | Satellite, Satellite (defensive tilt) |
+| `BYDDY` | BYD Company (ADR) | Satellite, Satellite (defensive tilt) |
+| `SEDG` | SolarEdge Technologies | Satellite, Satellite (defensive tilt) |
+| `S92` | SMA Solar Technology | Satellite, Satellite (defensive tilt) |
+| `TSLA` | Tesla | Satellite, Satellite (defensive tilt) |
+| `PLTR` | Palantir Technologies | Satellite, Satellite (defensive tilt) |
+| `MSTR` | Strategy Inc. (formerly MicroStrategy) | Satellite, Satellite (defensive tilt) |
+| `RIVN` | Rivian Automotive | Satellite, Satellite (defensive tilt) |
+| `KO` | Coca-Cola | Satellite, Satellite (defensive tilt) |
+| `RHHBY` | Roche Holding (ADR) | Satellite, Satellite (defensive tilt) |
 | `IUSA` | S&P 500 ETF (iShares Core) | Benchmark only |
 | `XEON` | EUR money-market ETF (Xtrackers Overnight Rate) | Barbell 20/80 (diversified), Permanent Portfolio |
 | `EXSA` | STOXX Europe 600 ETF (iShares) | Barbell 20/80 (diversified) |

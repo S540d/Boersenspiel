@@ -325,12 +325,127 @@ BARBELL_20_60_20_SATELLIT = Strategy(
     beschreibung=(
         "Wie Barbell 20/80, aber der Wachstums-Topf sinkt von 80% auf 60% zugunsten "
         "eines dritten, gleichgewichteten Topfs aus 10 Einzelaktien (20%) - das "
-        "80/20-Risikoprofil bleibt erhalten, nur granularer gestreut."
+        "80/20-Risikoprofil bleibt erhalten, nur granularer gestreut. Die "
+        "Aktienauswahl selbst ist eine heutige (2026er) Zusammenstellung, kein "
+        "1:1-Nachbau einer 2021 tatsaechlich getroffenen Entscheidung - siehe die "
+        "Variante mit defensiverem Tilt daneben fuer eine Gegenprobe, wie stark "
+        "das Ergebnis von zwei rueckblickend dominanten Einzelwerten abhaengt."
     ),
     beschreibung_en=(
         "Like Barbell 20/80, but the growth bucket shrinks from 80% to 60% in "
         "favor of a third, equally weighted bucket of 10 individual stocks (20%) - "
-        "the 80/20 risk profile stays the same, just spread more granularly."
+        "the 80/20 risk profile stays the same, just spread more granularly. The "
+        "stock selection itself reflects today's (2026) vantage point, not a "
+        "faithful reconstruction of a decision actually made in 2021 - see the "
+        "defensive-tilt variant alongside it for a check on how much the result "
+        "depends on two names that only look obviously dominant in hindsight."
+    ),
+)
+
+# --- Strategie 3b: Einzelaktien-Satellit mit defensiverem Tilt -------------
+#
+# Reaktion auf den in einer Projektpruefung festgestellten Rueckschaufehler bei
+# der Aktienauswahl: die zehn Einzelaktien in BARBELL_20_60_20_SATELLIT sind zu
+# gleichen Teilen (je 10%) gewichtet, darunter LITE (Lumentum) und PLTR
+# (Palantir) - beide legten ueber den Vergleichszeitraum ganz ueberwiegend seit
+# dem KI-Boom ab 2023 um mehrere hundert Prozent zu (+897%/+703%), eine
+# Groessenordnung, die 2021 kein plausibler Anlagethesen-Bestandteil war,
+# sondern erst im Rueckblick so aussieht. Nimmt man beide aus dem Topf heraus
+# und verteilt ihr Gewicht gleichmaessig auf die uebrigen acht, faellt die
+# Strategie ueber denselben Zeitraum von +145,8% auf +97,3% CAGR-Basis und
+# damit UNTER das einfache Barbell 20/80 (+118,9%) - der Renditevorsprung des
+# Satelliten-Topfs steht und faellt praktisch komplett mit diesen zwei Werten.
+#
+# Diese Variante ersetzt NICHT die Instrumente (keine neuen Ticker, kein
+# zusaetzlicher Alpha-Vantage-Request - das Tagesbudget ist mit 24 Instrumenten
+# bereits voll ausgeschoepft, siehe instruments.py), sondern gewichtet um:
+# LITE und PLTR sinken von je 10% auf je 5%, die freiwerdenden 10 Prozentpunkte
+# wandern zu gleichen Teilen auf die beiden bereits vorhandenen defensiven Blue
+# Chips Coca-Cola und Roche (von je 10% auf je 15%) - die beiden "langlaufenden,
+# stabilen Werte", die eine 2021 zusammengestellte Auswahl eher getragen haette
+# als eine Wette auf eine damals noch nicht abzusehende KI-Rally. Die uebrigen
+# sechs Positionen (BYDDY, SEDG, S92, TSLA, MSTR, RIVN) bleiben bei je 10% -
+# das waren 2021 bereits grosse, oeffentlich bekannte Werte (Tesla als
+# wertvollster Autohersteller, BYD als Chinas fuehrender NEV-Hersteller,
+# MicroStrategy/Strategy fuer seine seit 2020 bekannte Bitcoin-Treasury-
+# Strategie), keine erst im Rueckblick auffaelligen Ausreisser wie LITE/PLTR.
+#
+# Ausdruecklich KEIN Anspruch, tatsaechlich zu rekonstruieren, was 2021 gewaehlt
+# worden waere (das laesst sich nicht nachpruefen) - wie jedes Szenario in
+# diesem Projekt ein erster, nicht optimierter/gebacktesteter Ansatz, hier
+# gezielt als Gegenprobe zur rueckschaufehler-anfaelligen Originalauswahl.
+
+BARBELL_20_60_20_SATELLIT_DEFENSIV = Strategy(
+    name="Barbell 20/60/20 + Einzelaktien-Satellit (defensiver Tilt)",
+    rubrik=RUBRIK_BARBELL,
+    im_startseiten_chart=False,
+    startkapital=Decimal("10000"),
+    toepfe=[
+        Topf(
+            name="Topf A - Sicherheit",
+            gewicht_gesamt=Decimal("0.20"),
+            sub_gewichte={
+                "EUNL": Decimal("0.50"),
+                "EUNA": Decimal("0.35"),
+                "4GLD": Decimal("0.15"),
+            },
+        ),
+        Topf(
+            name="Topf B - Wachstum",
+            gewicht_gesamt=Decimal("0.60"),
+            sub_gewichte={
+                "LYMS": Decimal("0.40"),
+                "SEMI": Decimal("0.30"),
+                "EIMI": Decimal("0.20"),
+                "BTC-EUR": Decimal("0.10"),
+            },
+        ),
+        Topf(
+            name="Topf C - Einzelaktien-Satellit (defensiver Tilt)",
+            gewicht_gesamt=Decimal("0.20"),
+            sub_gewichte={
+                "LITE": Decimal("0.05"),
+                "BYDDY": Decimal("0.10"),
+                "SEDG": Decimal("0.10"),
+                "S92": Decimal("0.10"),
+                "TSLA": Decimal("0.10"),
+                "PLTR": Decimal("0.05"),
+                "MSTR": Decimal("0.10"),
+                "RIVN": Decimal("0.10"),
+                "KO": Decimal("0.15"),
+                "RHHBY": Decimal("0.15"),
+            },
+        ),
+    ],
+    ziel_topf="Topf A - Sicherheit",
+    ziel_gewicht=Decimal("0.20"),
+    rebalancing_schwelle_pp=Decimal("5"),
+    rebalancing_schwelle_relativ=Decimal("0.25"),
+    beschreibung=(
+        "Wie Barbell 20/60/20 + Einzelaktien-Satellit, aber mit einem defensiveren "
+        "Tilt innerhalb des Aktien-Topfs: LITE und PLTR sinken von je 10% auf je "
+        "5%, die freiwerdenden 10 Prozentpunkte gehen zu gleichen Teilen an die "
+        "beiden defensiven Blue Chips Coca-Cola und Roche (je 15% statt 10%). "
+        "Hintergrund: LITE (+897%) und PLTR (+703%) tragen im Vergleichszeitraum "
+        "praktisch den gesamten Renditevorsprung der Originalauswahl gegenueber "
+        "Barbell 20/80 - eine Groessenordnung, die erst seit dem KI-Boom ab 2023 "
+        "sichtbar wurde und 2021 kein plausibler Bestandteil einer Anlagethese "
+        "gewesen waere. Kein Rekonstruktionsversuch einer tatsaechlich 2021 "
+        "getroffenen Wahl, sondern eine Gegenprobe, wie stark das Ergebnis der "
+        "Originalauswahl von diesen zwei Werten abhaengt."
+    ),
+    beschreibung_en=(
+        "Like the Barbell 20/60/20 + individual-stock satellite, but with a more "
+        "defensive tilt within the stock bucket: LITE and PLTR drop from 10% each "
+        "to 5% each, and the freed 10 percentage points go equally to the two "
+        "defensive blue chips Coca-Cola and Roche (15% each instead of 10%). "
+        "Rationale: LITE (+897%) and PLTR (+703%) account for practically all of "
+        "the original selection's outperformance over Barbell 20/80 in the "
+        "comparison window - a magnitude that only became visible from the 2023 "
+        "AI boom onward and would not have been a plausible investment thesis in "
+        "2021. Not an attempt to reconstruct what was actually chosen in 2021, "
+        "but a check on how much the original selection's result depends on "
+        "these two names."
     ),
 )
 
@@ -632,6 +747,7 @@ STRATEGIES: list[Strategy] = [
     BARBELL_20_80,
     BARBELL_30_70,
     BARBELL_20_60_20_SATELLIT,
+    BARBELL_20_60_20_SATELLIT_DEFENSIV,
     BARBELL_20_80_DIVERSIFIZIERT,
     SP500_BENCHMARK,
     PORTFOLIO_60_40,
