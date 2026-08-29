@@ -127,7 +127,35 @@ inkrementell fortgeschrieben).
   hoch-volatile Wachstums-/Themenwerte (Lumentum, BYD, SolarEdge, SMA Solar,
   Tesla, Palantir, Strategy/vorm. MicroStrategy, Rivian) mit zwei defensiven
   Blue Chips (Coca-Cola, Roche) als Gegenbeispiel — erster Ansatz, keine
-  Optimierung/Backtesting der Auswahl oder Gewichtung. Optionales Feld
+  Optimierung/Backtesting der Auswahl oder Gewichtung.
+  **`BARBELL_20_60_20_SATELLIT_DEFENSIV` (Reaktion auf eine Projektprüfung):**
+  zusätzliche, additive Strategie neben `BARBELL_20_60_20_SATELLIT` (verändert
+  deren veröffentlichte Zahlen nicht) — eine Gegenprobe zum Rückschaufehler bei
+  der Aktienauswahl selbst, nicht nur beim Zeitraum (siehe `_real_
+  investierbarer_zeitraum()`/F4 weiter unten, der denselben Fehlertyp bei
+  ganzen Instrumenten adressiert, aber die Auswahl INNERHALB des bereits
+  investierbaren Satellit-Topfs unberührt lässt). Befund: `LITE` (+897%) und
+  `PLTR` (+703%) tragen über den Vergleichszeitraum praktisch den gesamten
+  Renditevorsprung von `BARBELL_20_60_20_SATELLIT` gegenüber `BARBELL_20_80` —
+  eine Größenordnung, die erst seit dem KI-Boom ab 2023 entstand und 2021 kein
+  plausibler Bestandteil einer Anlagethese gewesen wäre; nimmt man beide
+  Ticker heraus und verteilt ihr Gewicht gleichmäßig auf die übrigen acht,
+  fällt die Strategie von +145,8% auf +97,3% CAGR-Basis und damit UNTER
+  `BARBELL_20_80` (+118,9%). Die neue Variante nutzt bewusst dieselben zehn
+  Ticker (kein neues Instrument, kein zusätzlicher Alpha-Vantage-Request —
+  siehe Request-Budget oben), sondern gewichtet um: `LITE`/`PLTR` sinken von
+  je 10% auf je 5% des Topfs, die freiwerdenden 10 Prozentpunkte gehen zu
+  gleichen Teilen an die beiden bereits vorhandenen defensiven Blue Chips
+  `KO`/`RHHBY` (von je 10% auf je 15%) — die beiden Namen, die 2021 auch ohne
+  die spätere KI-Rally eine plausible Anlagethese hatten. Ausdrücklich KEIN
+  Anspruch, tatsächlich zu rekonstruieren, was 2021 gewählt worden wäre (nicht
+  nachprüfbar) — wie jedes Szenario in diesem Projekt ein erster, nicht
+  optimierter/gebacktesteter Ansatz, hier gezielt als Sensitivitätsprobe.
+  `rubrik=RUBRIK_BARBELL` (erscheint im selben Rubrik-Chart wie die übrigen
+  Barbell-Varianten), `im_startseiten_chart=False` (analog zu
+  `BARBELL_20_80_DIVERSIFIZIERT`, um das CAGR-Balkendiagramm nicht weiter zu
+  verdichten, siehe #92 weiter unten) — bleibt aber in Vergleichstabelle,
+  Rubrik-Chart und eigener Detailseite sichtbar. Optionales Feld
   `Strategy.beschreibung` liefert die Kurzbeschreibung, die das Dashboard je
   Strategie/Szenario anzeigt (leer = keine Beschreibung). Optionales Feld
   `Strategy.optimierungen` (Instanz von `Optimierungen`, fünf Bool-Schalter
@@ -347,6 +375,40 @@ inkrementell fortgeschrieben).
   ausschließlich in der Darstellungsschicht, bevor `rows` an `simulate()`
   übergeben werden — `engine.py` bleibt dadurch unverändert gegenüber den
   bestehenden, gegen die volle Testhistorie hand-gerechneten Engine-Tests.
+  **Zielgewicht-Änderungs-Trigger (Reaktion auf eine Projektprüfung, ergänzt
+  #63):** der Topf-Trigger oben vergleicht Ist- gegen Ziel-Gewicht je Topf —
+  eine `gewichte_fn` (siehe `scenarios.py`), die nur INNERHALB eines Topfs
+  umschichtet (Topf-Summe bleibt gleich), löste dadurch NIE ein Rebalancing
+  aus: das "Ziel" wird pro Zeile direkt aus der bereits verschobenen
+  `current_weights` abgeleitet, Topf-Ist und Topf-Ziel stimmten also immer
+  überein. Betroffen war vor allem das Momentum-Szenario (`scenarios.py`,
+  Top-2-Rotation der Wachstums-Instrumente): über den vollen
+  Vergleichszeitraum löste NUR der initiale Erstkauf ein einziges Mal aus,
+  danach folgte der simulierte Wertverlauf bis auf einen einzigen Handelstag
+  am Ende exakt dem zugrundeliegenden Barbell-Portfolio, obwohl die Regel
+  wöchentlich sieben verschiedene Ziel-Gewichtsvektoren berechnete (u. a.
+  40% Bitcoin + 40% Halbleiter-ETF) — die Rotation fand in den ausgewiesenen
+  Zahlen schlicht nie statt. `simulate()` führt seither zusätzlich
+  `letzte_ziel_gewichte` (die Ziel-Gewichte zum Zeitpunkt des letzten
+  vollständigen Rebalancings bzw. Initialkaufs) und prüft VOR dem
+  bestehenden Topf-Trigger für jedes Instrument dieselbe 5/25-Schwelle gegen
+  die Differenz aus `current_weights` und `letzte_ziel_gewichte` — sobald
+  sich das Ziel eines einzelnen Instruments seit dem letzten Rebalancing
+  ausreichend verschoben hat, löst das ein vollständiges
+  `rebalance_to_targets()` aus, unabhängig vom (unveränderten) Topf-Anteil.
+  `letzte_ziel_gewichte` wird nur bei tatsächlich vollständig erreichtem
+  Ziel aktualisiert (`opt.rebalancing=True`), nie bei der nur teilweisen
+  Neuinstrument-Finanzierung (`erstkauf_gewichte()`). Für Strategien ohne
+  `gewichte_fn` (alle Barbell-Strategien, deren Ziel-Gewichte konstant
+  bleiben) ändert sich dadurch nichts: `current_weights` weicht dort nach
+  vollständiger Instrumentenverfügbarkeit nie mehr von
+  `letzte_ziel_gewichte` ab, der neue Trigger feuert folglich nie zusätzlich
+  — bestätigt durch die unveränderte Test-Suite (alle handgerechneten
+  Engine-Tests bleiben bit-identisch). Regressionstest:
+  `tests/test_engine.py::test_zielgewicht_aenderung_innerhalb_eines_topfs_
+  loest_rebalancing_aus` (zwei Instrumente innerhalb eines Topfs tauschen bei
+  unveränderten Kursen ihre Zielgewichte, ein reiner Topf-Trigger sähe keine
+  Abweichung).
   **Werterhaltung beim Rebalancing (wichtig beim Ändern):**
   `rebalance_to_targets()` führt kein Cash-Konto — Verkaufserlöse werden
   nirgends gutgeschrieben, Kaufbeträge nirgends entnommen. Die Umschichtung
@@ -1142,7 +1204,13 @@ auslöst (der alte, nur-ziel_topf-Trigger hätte hier nicht ausgelöst), sowie
 ein Test-Paar mit identischem Kursverlauf, das mit gesetztem
 `rebalancing_schwelle_relativ=0.25` ein Rebalancing über die relative Schwelle
 auslöst und mit dem Default (`1`, effektiv deaktiviert) exakt das Verhalten
-vor #63 reproduziert (kein Rebalancing).
+vor #63 reproduziert (kein Rebalancing). Ergänzt um den
+Zielgewicht-Änderungs-Trigger: `test_zielgewicht_aenderung_innerhalb_eines_
+topfs_loest_rebalancing_aus` — zwei Instrumente innerhalb desselben Topfs
+tauschen bei UNVERÄNDERTEN Kursen ihre Zielgewichte (Topf-Ist und
+Topf-Ziel-effektiv bleiben beide exakt bei 50%, ein reiner Topf-Trigger sähe
+also keine Abweichung), trotzdem löst die Verschiebung des Ziels je
+Instrument (15pp) das Rebalancing aus.
 `tests/test_history_store.py` prüft Wochen-Idempotenz, Carry-Forward und
 `read_fetch_log()`.
 `tests/test_sources.py` / `tests/test_alphavantage.py` mocken die jeweilige
@@ -1246,7 +1314,12 @@ Rangfolge) sowie dass nicht beantwortbare Regeln still wegfallen.
 `tests/test_satellit_strategy.py` prüft den Einzelaktien-Satellit
 (`BARBELL_20_60_20_SATELLIT`): Symbol-Mapping-Vollständigkeit, Ziel-Gewichte
 summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-Smoke-Test
-mit allen 17 Instrumenten. `tests/test_backfill_history.py` prüft
+mit allen 17 Instrumenten. Analog für `BARBELL_20_60_20_SATELLIT_DEFENSIV`:
+Ziel-Gewichte summieren zu 1, 80/20-Risikoprofil bleibt erhalten, End-to-End-
+Smoke-Test, sowie ein Test, der die Gewichtsverschiebung gegen die
+Originalstrategie exakt nachrechnet (`LITE`/`PLTR` halbiert,
+`KO`/`RHHBY` um denselben Betrag angehoben, die übrigen sechs Ticker
+unverändert). `tests/test_backfill_history.py` prüft
 `scripts/backfill_history.py` (USD/EUR-Umrechnung inkl. Forward-Fill,
 ISO-Wochen-Gruppierung, Carry-Forward fehlender Ticker) gegen ein
 Fake-`AlphaVantageSource`-Objekt; seit #62 zusätzlich, dass
