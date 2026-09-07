@@ -1,0 +1,41 @@
+# Dependabot – kostenlose Dependency-Updates + Security-Alerts (Issue #60).
+#
+# Drosselung siehe project-templates Issue #144:
+#   - interval: monthly statt weekly
+#   - EIN Gruppen-Block ohne update-types-Filter, damit auch Major-Updates
+#     gebündelt werden statt je einen eigenen PR zu öffnen.
+#
+# Abweichungen von automation-templates/dependabot.yml:
+#   - "pip" statt "npm": dieses Repo ist Python (requirements.txt).
+#   - KEIN target-branch: dieses Repo hat keinen testing-Branch. Ein
+#     target-branch auf einen nicht existierenden Branch würde dazu führen,
+#     dass Dependabot gar keine PRs mehr anlegt.
+
+version: 2
+updates:
+  # GitHub-Actions-Versionen.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "ci"
+    groups:
+      # Kein update-types-Filter → Major landet mit im Sammel-PR.
+      actions-all:
+        patterns:
+          - "*"
+
+  # Python-Abhängigkeiten (requirements.txt).
+  - package-ecosystem: "pip"
+    directory: "/"
+    schedule:
+      interval: "monthly"
+    open-pull-requests-limit: 5
+    commit-message:
+      prefix: "chore"
+    groups:
+      pip-all:
+        patterns:
+          - "*"
