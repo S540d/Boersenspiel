@@ -903,6 +903,53 @@ def _erweiterte_rows(rows: list[PriceRow]) -> list[PriceRow]:
     return [r for r in rows if _ERSATZBOND_TICKER in r.prices]
 
 
+def _kennzahlen_basis(strategy: Strategy, result: SimulationResult, rows: list[PriceRow]) -> dict:
+    """Gemeinsamer Kern der aus einem ``SimulationResult`` abgeleiteten Rendite-/
+    Risikokennzahlen (Rendite, CAGR, geschätzte Nettorendite, Liquidationswert-
+    Rendite, Volatilität, Max Drawdown, Sharpe, Sortino) - vorher fast identisch
+    sowohl in ``_build_strategy_view()`` als auch in ``_erweiterte_kennzahlen()``
+    (#91) berechnet, mit dem Risiko, dass beide Pfade bei künftigen Änderungen
+    auseinanderlaufen (#114). Nimmt ``result.value_history`` als nicht-leer an -
+    das prüfen beide Aufrufer vorher selbst (unterschiedliche Rückgabewerte bei
+    leerer Historie: ``None`` bzw. eine leere Kennzahl-Tabelle)."""
+    points = result.value_history
+    last = points[-1]
+    total_values = [_f(vp.total_value) for vp in points]
+    gewinn = last.total_value - strategy.startkapital
+    rendite_pct = _rendite_pct(result, strategy)
+    tage = _tage_zwischen(result)
+    cagr_pct = _cagr_pct(_f(rendite_pct), tage)
+    # F6a (#63): geschaetzte Nettorendite neben der Bruttorendite - siehe die
+    # ausfuehrliche Begruendung an der Aufrufstelle in _build_strategy_view().
+    if strategy.startkapital > 0:
+        netto_endwert = last.total_value - result.tax_status.kumulierte_steuer
+        netto_rendite_pct = (netto_endwert - strategy.startkapital) / strategy.startkapital * 100
+        liquidations_rendite_pct = (
+            (result.liquidationswert_nach_steuer - strategy.startkapital) / strategy.startkapital * 100
+        )
+    else:
+        netto_rendite_pct = Decimal(0)
+        liquidations_rendite_pct = Decimal(0)
+    netto_cagr_pct = _cagr_pct(_f(netto_rendite_pct), tage)
+    risikofreier_zins_pct = _risikofreier_zins_pct(rows)
+    return {
+        "points": points,
+        "total_values": total_values,
+        "gewinn": gewinn,
+        "rendite_pct": rendite_pct,
+        "tage": tage,
+        "cagr_pct": cagr_pct,
+        "netto_rendite_pct": netto_rendite_pct,
+        "netto_cagr_pct": netto_cagr_pct,
+        "liquidations_rendite_pct": liquidations_rendite_pct,
+        "volatilitaet_pct": _volatilitaet_pct(total_values),
+        "max_drawdown_pct": _max_drawdown_pct(total_values),
+        "risikofreier_zins_pct": risikofreier_zins_pct,
+        "sharpe_ratio": _sharpe_ratio(total_values, risikofreier_zins_pct),
+        "sortino_ratio": _sortino_ratio(total_values, risikofreier_zins_pct),
+    }
+
+
 def _erweiterte_kennzahlen(strategy: Strategy, rows: list[PriceRow]) -> dict | None:
     """Dieselbe Strategie über den verlängerten Zeitraum (#91), als fertige
     Anzeige-Labels.
@@ -917,44 +964,25 @@ def _erweiterte_kennzahlen(strategy: Strategy, rows: list[PriceRow]) -> dict | N
         return None
     erweiterte_strategie = _mit_ersatzbond(strategy)
     result = simulate(rows, erweiterte_strategie)
-    points = result.value_history
-    if not points:
+    if not result.value_history:
         return None
-    total_values = [_f(vp.total_value) for vp in points]
-    tage = _tage_zwischen(result)
-    rendite_pct = _rendite_pct(result, erweiterte_strategie)
-    cagr_pct = _cagr_pct(_f(rendite_pct), tage)
-    gewinn = points[-1].total_value - erweiterte_strategie.startkapital
-    zins_pct = _risikofreier_zins_pct(rows)
-    if erweiterte_strategie.startkapital > 0:
-        netto_endwert = points[-1].total_value - result.tax_status.kumulierte_steuer
-        netto_rendite_pct = (
-            (netto_endwert - erweiterte_strategie.startkapital)
-            / erweiterte_strategie.startkapital
-            * 100
-        )
-        liquidations_rendite_pct = (
-            (result.liquidationswert_nach_steuer - erweiterte_strategie.startkapital)
-            / erweiterte_strategie.startkapital
-            * 100
-        )
-    else:
-        netto_rendite_pct = Decimal(0)
-        liquidations_rendite_pct = Decimal(0)
-    max_drawdown_pct = _max_drawdown_pct(total_values)
+    k = _kennzahlen_basis(erweiterte_strategie, result, rows)
+    points = k["points"]
+    total_values = k["total_values"]
+    tage = k["tage"]
     return {
-        "cagr_pct": cagr_pct,
-        "cagr_label": f"{cagr_pct:+.2f}",
-        "rendite_pct_label": f"{rendite_pct:+.2f}",
-        "netto_cagr_label": f"{_cagr_pct(_f(netto_rendite_pct), tage):+.2f}",
-        "gewinn_label": f"{gewinn:+.2f}",
+        "cagr_pct": k["cagr_pct"],
+        "cagr_label": f"{k['cagr_pct']:+.2f}",
+        "rendite_pct_label": f"{k['rendite_pct']:+.2f}",
+        "netto_cagr_label": f"{k['netto_cagr_pct']:+.2f}",
+        "gewinn_label": f"{k['gewinn']:+.2f}",
         "total_value": f"{points[-1].total_value:.2f}",
-        "volatilitaet_label": f"{_volatilitaet_pct(total_values):.2f}",
-        "max_drawdown_label": f"{-max_drawdown_pct:.2f}" if max_drawdown_pct else "0.00",
-        "max_drawdown_pct": max_drawdown_pct,
-        "sharpe_label": f"{_sharpe_ratio(total_values, zins_pct):.2f}",
-        "sortino_label": f"{_sortino_ratio(total_values, zins_pct):.2f}",
-        "risikofreier_zins_label": f"{zins_pct:.2f}".replace(".", ","),
+        "volatilitaet_label": f"{k['volatilitaet_pct']:.2f}",
+        "max_drawdown_label": f"{-k['max_drawdown_pct']:.2f}" if k["max_drawdown_pct"] else "0.00",
+        "max_drawdown_pct": k["max_drawdown_pct"],
+        "sharpe_label": f"{k['sharpe_ratio']:.2f}",
+        "sortino_label": f"{k['sortino_ratio']:.2f}",
+        "risikofreier_zins_label": f"{k['risikofreier_zins_pct']:.2f}".replace(".", ","),
         "trade_count": len(result.trades),
         "last_rebalance_date": (
             result.last_rebalance_date.isoformat() if result.last_rebalance_date else "-"
@@ -971,7 +999,7 @@ def _erweiterte_kennzahlen(strategy: Strategy, rows: list[PriceRow]) -> dict | N
         "liquidationswert_label": f"{result.liquidationswert_nach_steuer:.2f}",
         "liquidationssteuer_label": f"{result.liquidationssteuer:.2f}",
         "liquidationsgebuehren_label": f"{result.liquidationsgebuehren:.2f}",
-        "liquidations_rendite_pct_label": f"{liquidations_rendite_pct:+.2f}",
+        "liquidations_rendite_pct_label": f"{k['liquidations_rendite_pct']:+.2f}",
         "sim_beginn": points[0].date.isoformat(),
         "sim_ende": points[-1].date.isoformat(),
         "sim_jahre_label": f"{tage / 365.25:.1f}".replace(".", ","),
@@ -1039,40 +1067,36 @@ def _build_strategy_view(
             }
         )
 
-    gewinn = last.total_value - strategy.startkapital
-    rendite_pct = _rendite_pct(result, strategy)
-    tage = _tage_zwischen(result)
-    cagr_pct = _cagr_pct(_f(rendite_pct), tage)
     # F6a (#63): geschaetzte Nettorendite neben der Bruttorendite. engine.py fuehrt
     # kumulierte_steuer bewusst nur als Tracking-Groesse (siehe engine.py-Kommentar
     # "reines Tracking") und zieht sie NICHT vom simulierten Depotwert ab - die
-    # Bruttorendite oben ist deshalb eine Vor-Steuer-Zahl. Diese Naeherung zieht die
+    # Bruttorendite ist deshalb eine Vor-Steuer-Zahl. Diese Naeherung zieht die
     # kumulierte Steuer einmalig am Ende vom Endwert ab, statt die Engine
     # umzubauen: eine Vereinfachung, weil tatsaechliche Steuerzahlungen unterjaehrig
     # und nicht als einmaliger Abzug am Simulationsende faellig werden.
-    if strategy.startkapital > 0:
-        netto_endwert = last.total_value - result.tax_status.kumulierte_steuer
-        netto_rendite_pct = (netto_endwert - strategy.startkapital) / strategy.startkapital * 100
-    else:
-        netto_rendite_pct = Decimal(0)
-    netto_cagr_pct = _cagr_pct(_f(netto_rendite_pct), tage)
     # Sofortverkauf zum Stichtag der letzten Kurszeile: anders als die "geschätzte
-    # Nettorendite" oben (die nur die bereits TATSÄCHLICH realisierte Steuer vom
+    # Nettorendite" (die nur die bereits TATSÄCHLICH realisierte Steuer vom
     # Bruttoendwert abzieht) zieht result.liquidationswert_nach_steuer zusätzlich
     # Ordergebühren und Steuer auf die bislang UNREALISIERTEN Gewinne jeder noch
     # gehaltenen Position ab (engine.simulate(), berechnet auf Kopien des
     # Steuerledgers - siehe Kommentar dort) - die realistischere Antwort auf "was
-    # bleibt vom eingesetzten Kapital, wenn ich heute alles verkaufe".
+    # bleibt vom eingesetzten Kapital, wenn ich heute alles verkaufe". Beide Werte
+    # sowie Rendite/CAGR/Risikokennzahlen kommen aus _kennzahlen_basis() - demselben
+    # Kern, den auch _erweiterte_kennzahlen() (#91) nutzt (#114).
+    k = _kennzahlen_basis(strategy, result, rows)
+    gewinn = k["gewinn"]
+    rendite_pct = k["rendite_pct"]
+    tage = k["tage"]
+    cagr_pct = k["cagr_pct"]
+    netto_rendite_pct = k["netto_rendite_pct"]
+    netto_cagr_pct = k["netto_cagr_pct"]
     liquidationswert = result.liquidationswert_nach_steuer
-    if strategy.startkapital > 0:
-        liquidations_rendite_pct = (liquidationswert - strategy.startkapital) / strategy.startkapital * 100
-    else:
-        liquidations_rendite_pct = Decimal(0)
-    volatilitaet_pct = _volatilitaet_pct(total_values)
-    max_drawdown_pct = _max_drawdown_pct(total_values)
-    risikofreier_zins_pct = _risikofreier_zins_pct(rows)
-    sharpe_ratio = _sharpe_ratio(total_values, risikofreier_zins_pct)
-    sortino_ratio = _sortino_ratio(total_values, risikofreier_zins_pct)
+    liquidations_rendite_pct = k["liquidations_rendite_pct"]
+    volatilitaet_pct = k["volatilitaet_pct"]
+    max_drawdown_pct = k["max_drawdown_pct"]
+    risikofreier_zins_pct = k["risikofreier_zins_pct"]
+    sharpe_ratio = k["sharpe_ratio"]
+    sortino_ratio = k["sortino_ratio"]
     cash_max_pct, cash_max_datum = _cash_anteil_max(points)
     walk_forward_segmente = _walk_forward_segmente(rows, strategy)
     walk_forward_spread_pp = (
