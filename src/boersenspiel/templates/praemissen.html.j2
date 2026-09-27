@@ -419,11 +419,16 @@
     </p>
 
     <h3 data-i18n-en="Metrics on the overview">Kennzahlen auf der Übersicht</h3>
-    <p class="hint" data-i18n-en="Volatility is the annualized standard deviation of weekly returns (&times; &radic;52), max drawdown the largest decline from the previous high. Sharpe divides the annualized return by the overall dispersion, Sortino only by the dispersion of losing weeks. Both measure the excess return over a risk-free rate; since #75 that is no longer hardcoded, but derived from the EUR money-market ETF {{ geldmarkt_ticker }} over exactly the same period the respective strategy is evaluated over - it's therefore shown per strategy/period in the table below and in the detail pages' period sections. This makes the metric automatically track the interest-rate environment (2006-2008 around 3-4%, 2012-2022 near 0%, from 2023 back to 3-4%). Previously a fixed {{ risikofreier_zins }}% applied; Sharpe was then effectively &quot;return &divide; risk&quot; instead of &quot;excess return &divide; risk&quot; and could by construction never show that a strategy did not beat the money market - an error that acted unevenly: it boosted low-volatility strategies (small denominator) more, i.e. precisely the defensive ones. If {{ geldmarkt_ticker }} is missing over the period or too short, the placeholder of {{ risikofreier_zins }}% still applies. If a series has no losing weeks at all, Sortino is reported as 0 instead of undefined.">
+    <p class="hint" data-i18n-en="Volatility is the annualized standard deviation of weekly returns (&times; &radic;52), max drawdown the largest decline from the previous high. Sharpe divides the annualized return by the overall dispersion, Sortino only by the dispersion of weeks that fall short of the risk-free rate (before #114 the target was a fixed 0, so a small positive week never counted as risk even when the money market did better that same week). Both measure the excess return over a risk-free rate; since #75 that is no longer hardcoded, but derived from the EUR money-market ETF {{ geldmarkt_ticker }} over exactly the same period the respective strategy is evaluated over - it's therefore shown per strategy/period in the table below and in the detail pages' period sections. This makes the metric automatically track the interest-rate environment (2006-2008 around 3-4%, 2012-2022 near 0%, from 2023 back to 3-4%). Previously a fixed {{ risikofreier_zins }}% applied; Sharpe was then effectively &quot;return &divide; risk&quot; instead of &quot;excess return &divide; risk&quot; and could by construction never show that a strategy did not beat the money market - an error that acted unevenly: it boosted low-volatility strategies (small denominator) more, i.e. precisely the defensive ones. If {{ geldmarkt_ticker }} is missing over the period or too short, the placeholder of {{ risikofreier_zins }}% still applies. If a series has no week falling short of that target at all, Sortino is reported as 0 instead of undefined.">
       Volatilität ist die annualisierte Standardabweichung der Wochenrenditen
       (&times; &radic;52), Max Drawdown der größte Rückgang vom bisherigen
       Höchststand. Sharpe teilt die annualisierte Rendite durch die gesamte
-      Streuung, Sortino nur durch die Streuung der Verlustwochen. Beide messen die
+      Streuung, Sortino nur durch die Streuung der Wochen, die den risikofreien
+      Zins unterschreiten (vor
+      <a href="https://github.com/S540d/Boersenspiel/issues/114">#114</a> galt
+      dafür fest die Marke 0 &ndash; eine kleine positive Woche zählte damit nie
+      als Risiko, selbst wenn der Geldmarkt in derselben Woche mehr gebracht
+      hätte). Beide messen die
       <em>Über</em>rendite gegenüber einem risikofreien Zins; der wird seit
       <a href="https://github.com/S540d/Boersenspiel/issues/75">#75</a> nicht
       mehr fest hinterlegt, sondern aus dem EUR-Geldmarkt-ETF
@@ -439,8 +444,8 @@
       Fehler, der ungleich wirkte: er hob Strategien mit geringer Volatilität
       (kleiner Nenner) stärker an, also gerade die defensiven. Fehlt
       {{ geldmarkt_ticker }} im Zeitraum oder ist er zu kurz, gilt weiterhin der
-      Platzhalter von {{ risikofreier_zins }} %. Hat eine Reihe gar keine
-      Verlustwochen, wird Sortino als 0 ausgewiesen statt als undefiniert.
+      Platzhalter von {{ risikofreier_zins }} %. Unterschreitet keine einzige
+      Woche diese Marke, wird Sortino als 0 ausgewiesen statt als undefiniert.
     </p>
     <p class="hint" data-i18n-en="The moving averages on the detail pages approximate the classic 50-/200-day lines with {{ sma_kurz }} and {{ sma_lang }} weeks respectively (5 trading days per week) - on weekly data, not daily data. The walk-forward section splits the history into up to {{ walk_forward_segmente }} equal-sized periods and simulates each independently with fresh starting capital; it is omitted below {{ walk_forward_min_wochen }} weeks per segment.">
       Die gleitenden Durchschnitte auf den Detailseiten nähern die klassischen

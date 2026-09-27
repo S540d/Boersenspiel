@@ -48,6 +48,7 @@ from boersenspiel.dashboard import (
     _sortino_ratio,
     _volatilitaet_pct,
     _walk_forward_segmente,
+    _wochenrenditen,
     _zeitraum_presets,
     _ZINS_MIN_WOCHEN,
     build_dashboard,
@@ -484,6 +485,22 @@ def test_downside_deviation_ignoriert_streuung_nach_oben():
 
 def test_downside_deviation_ohne_verlustwochen_ist_null():
     assert _downside_deviation([0.1, 0.2, 0.05]) == 0.0
+
+
+def test_sortino_beruecksichtigt_wochen_unter_dem_risikofreien_zins():
+    # Reine Gewinnwochen, aber eine davon (Woche 2) liegt unter dem woechentlichen
+    # Ziel, das aus dem uebergebenen Zins abgeleitet wird - vor #114 war das Ziel
+    # fest 0, eine positive Woche zaehlte also nie als Risiko, egal wie niedrig sie
+    # im Vergleich zum Geldmarkt ausfiel.
+    werte = [100.0, 100.05, 100.1, 100.4]
+    zins = 5.2
+    renditen = _wochenrenditen(werte)
+    # Gegenprobe mit dem alten Ziel (0.0): keine Verlustwoche -> Downside-Deviation 0.
+    assert _downside_deviation(renditen, ziel=0.0) == 0.0
+    # Mit dem woechentlichen Zins als Ziel ist mindestens eine Woche darunter.
+    woechentliches_ziel = (1 + zins / 100) ** (1 / 52) - 1
+    assert _downside_deviation(renditen, ziel=woechentliches_ziel) > 0.0
+    assert _sortino_ratio(werte, zins) != 0.0
 
 
 def test_summary_table_zeigt_sharpe_und_sortino_spalten(tmp_path: Path):

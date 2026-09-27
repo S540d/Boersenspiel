@@ -342,16 +342,22 @@ def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
 
 
 def _sortino_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
-    """Wie ``_sharpe_ratio``, aber nur Verlustwochen fliessen ins Risikomass ein -
-    Streuung nach oben (Gewinnwochen) wird nicht als Risiko gewertet."""
+    """Wie ``_sharpe_ratio``, aber nur das Unterschreiten des risikofreien Zinses
+    fliesst ins Risikomass ein - Streuung nach oben (Gewinnwochen, oder Wochen
+    ueber dem Zins) wird nicht als Risiko gewertet. Das Ziel fuer
+    ``_downside_deviation()`` ist deshalb konsequent derselbe woechentliche Zins,
+    der auch vom Zaehler abgezogen wird (#114) - vorher war das Ziel fest 0, eine
+    Woche mit z. B. +0,02% zaehlte also nicht als Risiko, obwohl der Geldmarkt in
+    derselben Woche mehr gebracht haette."""
     renditen = _wochenrenditen(total_values)
     if len(renditen) < 2:
         return 0.0
-    downside_pct = _downside_deviation(renditen) * (52**0.5)
-    if downside_pct == 0:
-        return 0.0
     # Einheiten wie bei _sharpe_ratio(): Brueche gegen Prozentpunkte, siehe dort.
     zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
+    woechentliches_ziel = (1 + zins / 100) ** (1 / 52) - 1
+    downside_pct = _downside_deviation(renditen, woechentliches_ziel) * (52**0.5)
+    if downside_pct == 0:
+        return 0.0
     ann_mean_pct = statistics.fmean(renditen) * 52
     return (ann_mean_pct - zins / 100) / downside_pct
 
