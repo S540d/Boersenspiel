@@ -64,6 +64,7 @@ from boersenspiel.strategies import (
     Strategy,
     Topf,
 )
+from conftest import simple_rows
 
 ZWEI_STRATEGIEN = [
     Strategy(
@@ -86,10 +87,7 @@ ZWEI_STRATEGIEN = [
 
 
 def _rows() -> list[PriceRow]:
-    return [
-        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
-        PriceRow(date(2024, 1, 8), {"T1": Decimal("150")}),
-    ]
+    return simple_rows()
 
 
 def _detail_html(tmp_path: Path, slug: str) -> str:
