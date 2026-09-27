@@ -17,6 +17,7 @@ from boersenspiel.dashboard import build_dashboard
 from boersenspiel.history_store import PriceRow
 from boersenspiel.learnings import derive_learnings
 from boersenspiel.strategies import Strategy, Topf
+from conftest import simple_rows
 
 
 def _einfache_strategie(name: str) -> Strategy:
@@ -28,13 +29,6 @@ def _einfache_strategie(name: str) -> Strategy:
         ziel_gewicht=Decimal("1"),
         rebalancing_schwelle_pp=Decimal("1000"),
     )
-
-
-def _rows() -> list[PriceRow]:
-    return [
-        PriceRow(date(2024, 1, 1), {"T1": Decimal("100")}),
-        PriceRow(date(2024, 1, 8), {"T1": Decimal("150")}),
-    ]
 
 
 def _view(
@@ -201,7 +195,7 @@ def test_derive_learnings_mit_leerer_liste():
 
 def test_build_dashboard_rendert_learnings_sektion(tmp_path: Path):
     zwei = [_einfache_strategie("A: Verdoppler"), _einfache_strategie("B: Zwilling")]
-    output = build_dashboard(_rows(), zwei, output_path=tmp_path / "index.html")
+    output = build_dashboard(simple_rows(), zwei, output_path=tmp_path / "index.html")
     html = output.read_text(encoding="utf-8")
 
     assert 'id="key-learnings"' in html
@@ -213,7 +207,7 @@ def test_build_dashboard_rendert_learnings_sektion(tmp_path: Path):
 def test_build_dashboard_ohne_learnings_rendert_keine_leere_sektion(tmp_path: Path):
     """Eine einzelne, handelsfreie Strategie erzeugt kein einziges Learning."""
     output = build_dashboard(
-        _rows(), [_einfache_strategie("Nur eine")], output_path=tmp_path / "index.html"
+        simple_rows(), [_einfache_strategie("Nur eine")], output_path=tmp_path / "index.html"
     )
     html = output.read_text(encoding="utf-8")
 

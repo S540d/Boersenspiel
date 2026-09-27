@@ -152,12 +152,6 @@ class Strategy:
                 gewichte[ticker] = topf.gewicht_am_gesamtdepot(ticker)
         return gewichte
 
-    def topf_von(self, ticker: str) -> Topf:
-        for topf in self.toepfe:
-            if ticker in topf.sub_gewichte:
-                return topf
-        raise KeyError(f"Kein Topf für Ticker {ticker!r} in Strategie {self.name!r}")
-
 
 # --- Rubriken (#94) --------------------------------------------------------
 #
