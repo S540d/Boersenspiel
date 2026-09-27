@@ -699,7 +699,7 @@ def test_mit_ersatzbond_ergaenzt_topf_nur_wenn_ersatzticker_noch_nicht_teil_der_
     assert len(erweitert.toepfe) == len(_ZWEI_TICKER_STRATEGIE.toepfe) + 1
 
     # Ist der Ersatzticker bereits Teil der Strategie, wird kein Topf ergaenzt
-    # (sonst gaebe es den Ticker zweimal, was topf_von() nicht vorsieht).
+    # (sonst gaebe es den Ticker zweimal, was Strategy nicht vorsieht).
     strategie_mit_ersatzticker = Strategy(
         name="D: hat Ersatzbond schon",
         startkapital=Decimal("1000"),

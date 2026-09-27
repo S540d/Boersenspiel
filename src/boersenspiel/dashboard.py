@@ -314,24 +314,6 @@ def _risikofreier_zins_pct(rows: list[PriceRow]) -> float:
     return _cagr_pct(gesamt_pct, (letztes_datum - erstes_datum).days)
 
 
-def _sharpe_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
-    """Annualisierte Ueberrendite je Einheit annualisierter Volatilitaet
-    (Standardabweichung aller Wochenrenditen, positive wie negative)."""
-    renditen = _wochenrenditen(total_values)
-    if len(renditen) < 2:
-        return 0.0
-    std_pct = statistics.pstdev(renditen) * (52**0.5)
-    if std_pct == 0:
-        return 0.0
-    # ACHTUNG Einheiten: _wochenrenditen() liefert BRUECHE (0,01 = 1%), std_pct und
-    # ann_mean_pct sind trotz ihrer Namen ebenfalls Brueche. Der uebergebene Zins
-    # kommt dagegen in Prozentpunkten p.a. herein (wie ueberall sonst in dieser
-    # Datei) und muss deshalb vor dem Abzug umgerechnet werden.
-    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
-    ann_mean_pct = statistics.fmean(renditen) * 52
-    return (ann_mean_pct - zins / 100) / std_pct
-
-
 def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
     """Wurzel des mittleren quadrierten Unterschreitens von ``ziel`` ueber ALLE
     Wochen (nicht nur die negativen) - Standarddefinition der Sortino-Kennzahl."""
@@ -339,6 +321,38 @@ def _downside_deviation(renditen: list[float], ziel: float = 0.0) -> float:
         return 0.0
     quadrate = [min(r - ziel, 0.0) ** 2 for r in renditen]
     return (sum(quadrate) / len(quadrate)) ** 0.5
+
+
+def _risk_adjusted_return(
+    total_values: list[float],
+    risiko_pct_fn,
+    risikofreier_zins_pct: float | None = None,
+) -> float:
+    """Gemeinsamer Kern von Sharpe- und Sortino-Ratio: annualisierte Ueberrendite
+    je Einheit eines annualisierten Risikomasses. ``risiko_pct_fn(renditen, zins)``
+    liefert dieses (noch nicht annualisierte) Risikomass in Bruechen - bei Sharpe
+    die Gesamtstreuung, bei Sortino die Downside-Deviation gegen den Zins.
+
+    ACHTUNG Einheiten: ``_wochenrenditen()`` liefert BRUECHE (0,01 = 1%), das
+    Risikomass und ``ann_mean_pct`` sind trotz ihrer Namen ebenfalls Brueche. Der
+    uebergebene Zins kommt dagegen in Prozentpunkten p.a. herein (wie ueberall
+    sonst in dieser Datei) und muss deshalb vor dem Abzug umgerechnet werden.
+    """
+    renditen = _wochenrenditen(total_values)
+    if len(renditen) < 2:
+        return 0.0
+    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
+    risiko_pct = risiko_pct_fn(renditen, zins) * (52**0.5)
+    if risiko_pct == 0:
+        return 0.0
+    ann_mean_pct = statistics.fmean(renditen) * 52
+    return (ann_mean_pct - zins / 100) / risiko_pct
+
+
+def _sharpe_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
+    """Annualisierte Ueberrendite je Einheit annualisierter Volatilitaet
+    (Standardabweichung aller Wochenrenditen, positive wie negative)."""
+    return _risk_adjusted_return(total_values, lambda renditen, _zins: statistics.pstdev(renditen), risikofreier_zins_pct)
 
 
 def _sortino_ratio(total_values: list[float], risikofreier_zins_pct: float | None = None) -> float:
@@ -349,17 +363,12 @@ def _sortino_ratio(total_values: list[float], risikofreier_zins_pct: float | Non
     der auch vom Zaehler abgezogen wird (#114) - vorher war das Ziel fest 0, eine
     Woche mit z. B. +0,02% zaehlte also nicht als Risiko, obwohl der Geldmarkt in
     derselben Woche mehr gebracht haette."""
-    renditen = _wochenrenditen(total_values)
-    if len(renditen) < 2:
-        return 0.0
-    # Einheiten wie bei _sharpe_ratio(): Brueche gegen Prozentpunkte, siehe dort.
-    zins = _RISIKOFREIER_ZINS_PLATZHALTER if risikofreier_zins_pct is None else risikofreier_zins_pct
-    woechentliches_ziel = (1 + zins / 100) ** (1 / 52) - 1
-    downside_pct = _downside_deviation(renditen, woechentliches_ziel) * (52**0.5)
-    if downside_pct == 0:
-        return 0.0
-    ann_mean_pct = statistics.fmean(renditen) * 52
-    return (ann_mean_pct - zins / 100) / downside_pct
+
+    def downside(renditen: list[float], zins: float) -> float:
+        woechentliches_ziel = (1 + zins / 100) ** (1 / 52) - 1
+        return _downside_deviation(renditen, woechentliches_ziel)
+
+    return _risk_adjusted_return(total_values, downside, risikofreier_zins_pct)
 
 
 # --- Walk-Forward-Robustheit ueber Teilperioden -----------------------------------
@@ -464,12 +473,16 @@ def _benchmark_reihen(rows: list[PriceRow], strategy: Strategy) -> list[dict]:
     Strategie selbst (z. B. SP500_BENCHMARK auf seiner eigenen Detailseite)
     wird ausgeschlossen, eine identische Linie als "Overlay" auf sich selbst
     wäre nur redundant."""
+    verfuegbare_ticker: set[str] = set()
+    for row in rows:
+        verfuegbare_ticker.update(row.prices)
+
     overlays = []
     for bench in BENCHMARK_STRATEGIEN:
         if bench.name == strategy.name:
             continue
         bench_ticker = bench.alle_ticker_gewichte()
-        if not all(any(t in row.prices for row in rows) for t in bench_ticker):
+        if not all(t in verfuegbare_ticker for t in bench_ticker):
             continue
         bench_result = simulate(rows, replace(bench, startkapital=strategy.startkapital))
         overlays.append(
