@@ -6,4 +6,5 @@ venv/
 *.egg-info/
 .env
 *.env
-docs/
+docs/*.html
+docs/private/
