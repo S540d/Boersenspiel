@@ -2,6 +2,21 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+## Wartung
+
+**Vorfälle gehören in `INCIDENTS.md`, nicht ausführlich hierher**
+(project-templates#160): ein Abschnitt, der einen konkreten
+gefundenen-und-behobenen Bug beschreibt, bekommt hier maximal 2-3 Zeilen
+Kernregel + kurzer Auslöser-Kontext und einen Link auf den passenden
+Abschnitt in `INCIDENTS.md`. Datum, betroffene Dateien, Diagnose-Schritte
+und Beispielzahlen stehen ausschließlich dort. Gilt nur für
+Vorfälle/Bugfixes — laufende Architektur- und
+Modellierungsentscheidungen (warum eine Strategie so aufgebaut ist, wie
+eine Steuerregel funktioniert) bleiben bewusst direkt hier, das ist kein
+Vorfall. Schwellenwert für "CLAUDE.md zu groß" analog zum
+Code-Health-Audit-Rhythmus: > 500 Zeilen bzw. > 30 KB als Anlass für den
+nächsten Cleanup-Pass.
+
 ## Project
 
 Virtuelles Portfolio-Dashboard nach einer Barbell-Strategie, basierend auf
@@ -78,12 +93,10 @@ inkrementell fortgeschrieben).
   Benchmark (`strategies.SP500_BENCHMARK`), die übrigen sechs sind Teil von
   `strategies.BARBELL_20_80_DIVERSIFIZIERT` (siehe unten). Ihre
   Steuerattribute (`teilfreistellung`/`thesaurierend`/`ausschuettend`) sind
-  gegen öffentliche Fondsanbieter-Fact-Sheets (justETF/extraETF/onvista/DAS
-  INVESTMENT) verifiziert — dabei wurde ein Fehler gefunden und korrigiert:
-  `IBCI` und `EXXY` sind tatsächlich thesaurierende Acc-Anteilsklassen,
-  waren aber zunächst fälschlich als ausschüttend markiert (relevant, weil
-  sie jetzt tatsächlich alloziert sind und die Vorabpauschale-/
-  Dividendenmodellierung dadurch beeinflusst wird).
+  gegen öffentliche Fondsanbieter-Fact-Sheets verifiziert; ein dabei
+  gefundener und korrigierter Fehler bei `IBCI`/`EXXY`
+  (fälschlich als ausschüttend markiert) steht in
+  → `INCIDENTS.md#ibci-exxy-ausschuettend`.
   **Zwei Instrumente für Dividende/Value (#99):** `ISPA` (iShares STOXX
   Global Select Dividend 100, ausschüttend, Kurse ab 2009-11) und `IS3S`
   (iShares Edge MSCI World Value Factor, thesaurierend, erst ab 2014-11) —
@@ -413,22 +426,14 @@ inkrementell fortgeschrieben).
   ausschließlich in der Darstellungsschicht, bevor `rows` an `simulate()`
   übergeben werden — `engine.py` bleibt dadurch unverändert gegenüber den
   bestehenden, gegen die volle Testhistorie hand-gerechneten Engine-Tests.
-  **Zielgewicht-Änderungs-Trigger (Reaktion auf eine Projektprüfung, ergänzt
-  #63):** der Topf-Trigger oben vergleicht Ist- gegen Ziel-Gewicht je Topf —
-  eine `gewichte_fn` (siehe `scenarios.py`), die nur INNERHALB eines Topfs
-  umschichtet (Topf-Summe bleibt gleich), löste dadurch NIE ein Rebalancing
-  aus: das "Ziel" wird pro Zeile direkt aus der bereits verschobenen
-  `current_weights` abgeleitet, Topf-Ist und Topf-Ziel stimmten also immer
-  überein. Betroffen war vor allem das Momentum-Szenario (`scenarios.py`,
-  Top-2-Rotation der Wachstums-Instrumente): über den vollen
-  Vergleichszeitraum löste NUR der initiale Erstkauf ein einziges Mal aus,
-  danach folgte der simulierte Wertverlauf bis auf einen einzigen Handelstag
-  am Ende exakt dem zugrundeliegenden Barbell-Portfolio, obwohl die Regel
-  wöchentlich sieben verschiedene Ziel-Gewichtsvektoren berechnete (u. a.
-  40% Bitcoin + 40% Halbleiter-ETF) — die Rotation fand in den ausgewiesenen
-  Zahlen schlicht nie statt. `simulate()` führt seither zusätzlich
-  `letzte_ziel_gewichte` (die Ziel-Gewichte zum Zeitpunkt des letzten
-  vollständigen Rebalancings bzw. Initialkaufs) und prüft VOR dem
+  **Zielgewicht-Änderungs-Trigger:** der Topf-Trigger oben vergleicht Ist-
+  gegen Ziel-Gewicht nur je Topf — eine `gewichte_fn` (siehe
+  `scenarios.py`), die nur INNERHALB eines Topfs umschichtet (Topf-Summe
+  bleibt gleich), löst ihn nie aus, weil Topf-Ist und Topf-Ziel dabei immer
+  übereinstimmen (ursprünglicher Bug im Momentum-Szenario →
+  `INCIDENTS.md#zielgewicht-trigger`). `simulate()` führt deshalb
+  zusätzlich `letzte_ziel_gewichte` (die Ziel-Gewichte zum Zeitpunkt des
+  letzten vollständigen Rebalancings bzw. Initialkaufs) und prüft VOR dem
   bestehenden Topf-Trigger für jedes Instrument dieselbe 5/25-Schwelle gegen
   die Differenz aus `current_weights` und `letzte_ziel_gewichte` — sobald
   sich das Ziel eines einzelnen Instruments seit dem letzten Rebalancing
@@ -438,11 +443,9 @@ inkrementell fortgeschrieben).
   Ziel aktualisiert (`opt.rebalancing=True`), nie bei der nur teilweisen
   Neuinstrument-Finanzierung (`erstkauf_gewichte()`). Für Strategien ohne
   `gewichte_fn` (alle Barbell-Strategien, deren Ziel-Gewichte konstant
-  bleiben) ändert sich dadurch nichts: `current_weights` weicht dort nach
-  vollständiger Instrumentenverfügbarkeit nie mehr von
-  `letzte_ziel_gewichte` ab, der neue Trigger feuert folglich nie zusätzlich
-  — bestätigt durch die unveränderte Test-Suite (alle handgerechneten
-  Engine-Tests bleiben bit-identisch). Regressionstest:
+  bleiben) ändert sich dadurch nichts — bestätigt durch die unveränderte
+  Test-Suite (alle handgerechneten Engine-Tests bleiben bit-identisch).
+  Regressionstest:
   `tests/test_engine.py::test_zielgewicht_aenderung_innerhalb_eines_topfs_
   loest_rebalancing_aus` (zwei Instrumente innerhalb eines Topfs tauschen bei
   unveränderten Kursen ihre Zielgewichte, ein reiner Topf-Trigger sähe keine
@@ -455,11 +458,10 @@ inkrementell fortgeschrieben).
   Instrument einfach zu überspringen zerstört diese Invariante und lässt
   Geld ersatzlos verschwinden. Für Instrumente ohne Kurs in der aktuellen
   Zeile wird der Zielanteil deshalb als `pending_cash` geparkt — dieselbe
-  Mechanik wie beim Initialkauf (`delayed_initial_buy`). Vor dieser
-  Korrektur schrumpften alle rebalancierenden Strategien über die lange
-  Historie wöchentlich um ~50% bis auf 0 EUR (nur `BUY_AND_HOLD` blieb
-  korrekt, da es nie rebalanciert) — Regressionstests in
-  `tests/test_engine.py`.
+  Mechanik wie beim Initialkauf (`delayed_initial_buy`). Regressionstests in
+  `tests/test_engine.py`; der ursprüngliche Bug (Depotwert schrumpfte
+  wöchentlich Richtung 0) steht in
+  `INCIDENTS.md#werterhaltung-rebalancing`.
   **Noch nicht existierende Instrumente (`handelbare_gewichte()`):** Über
   die 20-Jahres-Historie existiert ein großer Teil der Instrumente anfangs
   noch nicht (Bitcoin vor 2009, Rivian vor dem IPO 2021, die meisten ETFs
@@ -481,11 +483,10 @@ inkrementell fortgeschrieben).
   ausgeschaltetem Rebalancing baut `erstkauf_gewichte()` eine Zielverteilung,
   in der das neue Instrument sein reguläres Zielgewicht bekommt und der
   gesamte Rest die *aktuellen* Marktwert-Verhältnisse behält (nur proportional
-  herunterskaliert). Vorher lief bei jedem Börsengang ein komplettes
-  Rebalancing über `current_weights` — über die 20-Jahres-Historie 27
-  verdeckte Voll-Rebalancings, wodurch „Time in the market beats timing the
-  market" bit-identische 1-/3-/5-Jahres-Renditen wie die rebalancierende
-  Barbell-Strategie lieferte und am Ende exakt deren Zielgewichte hielt. Letzteres ist nötig, weil der
+  herunterskaliert). Vorher lief bei jedem Börsengang stattdessen ein
+  komplettes Rebalancing über `current_weights` (Details/Zahlen zum Bug →
+  `INCIDENTS.md#verdecktes-vollrebalancing`) und hielt am Ende exakt die
+  Zielgewichte der rebalancierenden Barbell-Strategie. Letzteres ist nötig, weil der
   Rebalancing-Trigger nur Topf A prüft: war zeitweise *kein* Zielinstrument
   handelbar (z. B. „Sell in May" startet im September 2006 defensiv, Topf A
   existiert aber erst ab 2008), sind Ist- und Zielgewicht von Topf A beide
@@ -1114,14 +1115,12 @@ Request pro Ticker) und schreibt über `history_store.record_week()`
 werden mit dem historischen `FX_WEEKLY`-Kurs derselben Woche umgerechnet
 (Forward-Fill bei fehlender Woche).
 
-**Splitbereinigung (#62):** Der Backfill lief bis dahin über
-`TIME_SERIES_WEEKLY`, also über *nominale* Schlusskurse. Jeder Aktiensplit
-sieht dort wie ein Kurssturz aus — in der 20-Jahres-Historie betraf das fünf
-der zehn Satelliten-Aktien mit Phantom-Wochenverlusten bis -91% (TSLA 5:1
-2020 und 3:1 2022, MSTR 10:1 2024, KO 2:1 2012, RHHBY und BYDDY je ein
-ADR-Verhältniswechsel). `_split_bereinigte_close_series()` leitet aus
-`close / adjusted close` den kumulierten **Split**-Faktor ab und teilt die
-Nominalkurse dadurch. Bewusst split-only statt des vollen `adjusted close`:
+**Splitbereinigung (#62):** Der Backfill nutzt `_split_bereinigte_close_series()`,
+die aus `close / adjusted close` den kumulierten **Split**-Faktor ableitet und
+die Nominalkurse dadurch teilt — sonst sieht jeder Aktiensplit wie ein
+Kurssturz aus (betroffene Ticker/Phantom-Verluste vor dem Fix →
+`INCIDENTS.md#splitbereinigung`). Bewusst split-only statt des vollen
+`adjusted close`:
 der ist eine Total-Return-Reihe und enthält auch Dividenden, die die
 Simulation bereits separat als Barertrag modelliert (`ausschuettend` /
 `Instrument.dividendenrendite`, #57/#74) — sonst zählten sie doppelt. Liefert
@@ -1168,14 +1167,12 @@ entfernt werden, sobald die API die Woche selbst liefert.
 kommen als Parameter herein, gelesen wird in `main()`.
 
 **Keine Rückwärts-Extrapolation des Wechselkurses (#62):**
-`_nearest_fx_rate()` fiel für Wochen *vor* Beginn der FX-Reihe auf den
-ältesten verfügbaren Kurs zurück — der aber jünger ist als das umzurechnende
-Datum. Alpha Vantages `FX_WEEKLY` liefert USD/EUR erst ab **November 2014**;
-dadurch wurden im 20-Jahres-Backfill 227 Wochen (Juli 2010 bis November 2014)
-aller USD-Ticker *und* die komplette frühe BTC-Historie mit dem konstanten
-Kurs 0,7982 EUR/USD von 2014 umgerechnet, die Wechselkursbewegung dieser
-Jahre fehlte also vollständig. Jetzt liefert die Funktion für solche Wochen
-`None`, `record_week()` trägt „missing" ein (dieselbe Regel, der
+`_nearest_fx_rate()` liefert für Wochen *vor* Beginn der FX-Reihe (Alpha
+Vantages `FX_WEEKLY` startet erst November 2014) `None`, statt wie zuvor
+auf den ältesten verfügbaren Kurs zurückzufallen — der historische Bug
+rechnete dadurch 227 Wochen USD-Kurse und die frühe BTC-Historie mit
+einem falschen, zu jungen Kurs um (Details → `INCIDENTS.md#fx-rueckwaerts-extrapolation`).
+`record_week()` trägt „missing" ein (dieselbe Regel, der
 `AlphaVantageSource.fetch()` beim Live-Abruf schon folgt), und `_fx_luecken()`
 meldet jeden Zeitraum ohne Abdeckung. Diese Prüfung schaut bewusst nicht nur
 auf den **Beginn** der Reihe, sondern auch auf Löcher **mittendrin**: sobald
@@ -1192,15 +1189,11 @@ umgerechnet mit dem jeweils zeitgleichen echten Wechselkurs. Reine Datenbeschaff
 (`collect_weekly_series`) und CSV-Schreiben (`write_backfilled_history`)
 sind als separate, unabhängig testbare Funktionen im Skript
 implementiert - siehe `tests/test_backfill_history.py` (mockt
-`AlphaVantageSource`, kein echter Netzwerkzugriff). **Stand:** Alle drei Endpunkte
-(`TIME_SERIES_WEEKLY`/`FX_WEEKLY`/`DIGITAL_CURRENCY_WEEKLY`) sind im
-Free-Tier verfügbar und alle 17 Symbol-Mappings lösen auf — belegt durch
-den Lauf vom 18.08.2026. Der Lauf brach dennoch ab, weil der
-Zeitreihen-Schlüssel für `FX_WEEKLY` falsch angenommen war; Alpha Vantage
-benennt ihn je Endpunkt unterschiedlich (`Weekly Time Series` /
-`Time Series FX (Weekly)` / `Time Series (Digital Currency Weekly)`).
-`_extract_time_series()` rät den Namen deshalb nicht mehr, sondern nimmt
-den einzigen Objekt-Wert der Antwort außer `Meta Data` — Fehler- und
+`AlphaVantageSource`, kein echter Netzwerkzugriff). `_extract_time_series()`
+rät den Zeitreihen-Schlüssel der Antwort nicht (Alpha Vantage benennt ihn je
+Endpunkt unterschiedlich, ein früherer Lauf brach deshalb ab →
+`INCIDENTS.md#fx-weekly-schluessel`), sondern nimmt den einzigen
+Objekt-Wert der Antwort außer `Meta Data` — Fehler- und
 Rate-Limit-Antworten haben nur String-Werte und lösen damit automatisch
 eine aussagekräftige Exception aus. Der FX-Abruf läuft bewusst **vor** den
 Ticker-Abrufen, damit ein Fehlschlag einen statt 17 Requests kostet. Für den Lauf gibt es den manuell startbaren
@@ -1245,14 +1238,13 @@ Ticker seines Batches hingen dauerhaft eine Woche hinterher. Braucht die Secrets
 `ALPHAVANTAGE_API_KEY`; Settings → Actions → Workflow permissions → "Read
 and write permissions"; Settings → Pages → Source → "GitHub Actions".
 **Der Commit-Schritt trägt bewusst `continue-on-error: true`:** ein
-zeitgleicher Merge auf `main` (z. B. während der Workflow läuft) kann den
-`git push` der Kurshistorie in einen echten Merge-Konflikt laufen lassen
-(beobachtet am 22.08.2026, Lauf #16 — Fetch und Dashboard-Build liefen
-beide durch, nur der anschließende Push/Rebase scheiterte). Ohne
-`continue-on-error` riss das den gesamten Job ab und übersprang damit
-„Pages-Artefakt hochladen" sowie den `deploy`-Job — ein für den Pages-Deploy
-irrelevanter git-Konflikt verhinderte so die Veröffentlichung eines bereits
-fertig gebauten Dashboards. `record_week()` ist wochen-idempotent (siehe
+zeitgleicher Merge auf `main` kann den `git push` der Kurshistorie in einen
+Merge-Konflikt laufen lassen; ohne `continue-on-error` reißt das den
+gesamten Job ab und überspringt damit auch „Pages-Artefakt hochladen" und
+`deploy` — ein für den Pages-Deploy irrelevanter git-Konflikt hat so einmal
+die Veröffentlichung eines bereits fertig gebauten Dashboards verhindert
+(Details → `INCIDENTS.md#commit-merge-konflikt`). `record_week()` ist
+wochen-idempotent (siehe
 `history_store.py`), ein bei einem Konflikt verpasster Commit holt sich beim
 nächsten erfolgreichen Lauf von selbst nach — es geht keine Kurswoche
 verloren, nur die Veröffentlichung dieses einen Laufs würde sonst unnötig
