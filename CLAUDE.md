@@ -27,20 +27,12 @@ statisches Dashboard (Chart.js) auf GitHub Pages. Default-Branch ist `main`
 (ursprünglich hieß er `claude/pflichtenheft-umsetzung-planen-6kf05s`, da das
 Repo leer angelegt wurde, und wurde nachträglich zu `main` umbenannt).
 
-**README.md ist ein technisches Referenzdokument** (kurzzeitig im Zuge von
-#64-Nachfolgearbeit zu einem kurzen Marketing-/Onboarding-Dokument
-umgeschrieben, auf Wunsch des Owners aber wieder auf die ausführliche
-technische Fassung zurückgesetzt): Architektur-Diagramm, Engine-
-Modellierungsentscheidungen, volle Steuerlogik, Szenario-Tabellen und
-bekannte Einschränkungen stehen direkt im README, nicht nur verlinkt auf die
-Dashboard-Seiten. Ein `## Portfolio overview`-Abschnitt listet alle 26
-Instrumente mit der Strategie, die sie tatsächlich hält. Die Ableitung aus
-dem ursprünglichen Anforderungsdokument (Pflichtenheft) wurde auf
-Owner-Wunsch aus dem README gestrichen — das Dokument ist ohnehin nicht Teil
-dieses Repos und für externe Leser nicht nachprüfbar; die wenigen Stellen, die
-zuvor explizit "requirements document"/"Pflichtenheft" zitiert hatten (Tax-
-Logic-Absatz, Guiding-Principle-Überschrift, "Adding a strategy"), wurden neutral
-umformuliert statt die Aussage selbst zu streichen.
+**README.md richtet sich an Nutzer** (Zweck, Dashboard-Link, Hinweise; project-templates#156) —
+keine Entwickler-Details. Die frühere ausführliche technische Fassung (Architektur-Diagramm,
+Engine-Modellierungsentscheidungen, Steuerlogik, Szenario-Tabellen, Portfolio overview,
+bekannte Einschränkungen) liegt unverändert in
+[`docs/TECHNICAL_REFERENCE.md`](docs/TECHNICAL_REFERENCE.md). Code-Kommentare mit
+„siehe README" meinen diese Datei.
 
 ## Commands
 
